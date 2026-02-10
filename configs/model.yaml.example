@@ -1,0 +1,6 @@
+yolo_version: "yolo11n"
+model_version: "1.0.0"
+model_path: ""
+conf_threshold: 0.25
+nms_iou: 0.45
+device: "cpu"

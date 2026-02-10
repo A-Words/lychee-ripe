@@ -1,0 +1,12 @@
+services:
+  lychee-ripe:
+    build:
+      context: .
+      dockerfile: docker/Dockerfile
+    ports:
+      - "8000:8000"
+    environment:
+      - LYCHEE_MODEL_CONFIG=configs/model.yaml
+      - LYCHEE_SERVICE_CONFIG=configs/service.yaml
+    volumes:
+      - ./weights:/app/weights

@@ -1,0 +1,4 @@
+app_name: "lychee-ripe"
+api_prefix: "/v1"
+schema_version: "v1"
+max_upload_mb: 10
