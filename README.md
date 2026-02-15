@@ -19,13 +19,29 @@ uv run uvicorn app.main:app --reload
 ```bash
 uv run pytest -q
 uv run python training/train.py --data path/to/data.yaml --model yolov8n.pt
-uv run python training/eval.py --model artifacts/train/lychee_v1/weights/best.pt --data path/to/data.yaml
+uv run python training/eval.py --model artifacts/models/lychee_v1/weights/best.pt --data path/to/data.yaml
 ```
+
+## Project structure
+- `app/`: FastAPI inference service and API endpoints
+- `training/`: training and evaluation scripts
+- `tests/`: unit, integration, and performance tests
+- `frontend/`: frontend visualization client
+- `shared/`: shared contracts and constants between backend/frontend
+- `configs/`: local and example configuration files
+- `data/`: dataset workspace (`raw/`, `processed/`, `samples/`, `lichi/`)
+- `artifacts/`: model artifacts, metrics, and runtime logs
+- `scripts/`: automation scripts for dev, train, eval, and checks
+- `docker/`: container build assets
+- `docs/`: project documentation
 
 ## Dataset layout
 - Recommended path in this repo: `data/lichi/`
 - Keep raw datasets out of git (already ignored via `.gitignore`).
 - Current label mapping (4 classes): `0=green`, `1=half`, `2=red`, `3=young`.
+
+## Dataset source
+- Zhiqing, Zhao (2025), "lichi-maturity", Mendeley Data, V1, doi: `10.17632/c3rk9gv4w9.1`
 
 ## Export requirements (optional compatibility)
 ```bash

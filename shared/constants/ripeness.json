@@ -1,0 +1,9 @@
+{
+  "classes": ["green", "half", "red", "young"],
+  "color_map": {
+    "green": "#3D8D40",
+    "half": "#F5A623",
+    "red": "#D64545",
+    "young": "#6AAED6"
+  }
+}

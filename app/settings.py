@@ -13,7 +13,7 @@ DEFAULT_SCHEMA_VERSION = "v1"
 
 
 class ModelConfig(BaseModel):
-    yolo_version: str = "yolo11n"
+    yolo_version: str = "yolo26n"
     model_version: str = "1.0.0"
     model_path: str = ""
     conf_threshold: float = Field(default=0.25, ge=0.0, le=1.0)

@@ -11,7 +11,7 @@ def parse_args() -> argparse.Namespace:
     parser.add_argument('--data', required=True, help='Path to data YAML')
     parser.add_argument('--imgsz', type=int, default=640)
     parser.add_argument('--device', default='0')
-    parser.add_argument('--output', default='artifacts/eval/metrics.json')
+    parser.add_argument('--output', default='artifacts/metrics/eval_metrics.json')
     return parser.parse_args()
 
 

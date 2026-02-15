@@ -12,7 +12,7 @@ def parse_args() -> argparse.Namespace:
     parser.add_argument('--imgsz', type=int, default=640)
     parser.add_argument('--batch', type=int, default=16)
     parser.add_argument('--device', default='0')
-    parser.add_argument('--project', default='artifacts/train')
+    parser.add_argument('--project', default='artifacts/models')
     parser.add_argument('--name', default='lychee_v1')
     parser.add_argument('--export-onnx', action='store_true')
     return parser.parse_args()
