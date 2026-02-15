@@ -18,8 +18,16 @@ uv run uvicorn app.main:app --reload
 ## Dev commands
 ```bash
 uv run pytest -q
-uv run python training/train.py --data path/to/data.yaml --model yolov8n.pt
+uv run python training/train.py --data path/to/data.yaml --model yolo26n.pt
 uv run python training/eval.py --model artifacts/models/lychee_v1/weights/best.pt --data path/to/data.yaml
+```
+
+## Script shortcuts (sh)
+```bash
+sh scripts/dev.sh --host 127.0.0.1 --port 8000
+sh scripts/train.sh --data data/lichi/data.yaml --name lychee_v1
+sh scripts/eval.sh --data data/lichi/data.yaml --exp lychee_v1
+sh scripts/check.sh
 ```
 
 ## Project structure

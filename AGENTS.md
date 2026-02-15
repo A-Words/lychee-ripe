@@ -30,7 +30,17 @@
 - 训练模型：`uv run python training/train.py --data path/to/data.yaml --model yolo26n.pt`
 - 评估模型：`uv run python training/eval.py --model artifacts/models/<exp>/weights/best.pt --data path/to/data.yaml`
 
-## 5. 开发与改动规则
+## 5. 脚本入口（优先使用）
+- `sh scripts/dev.sh --host 127.0.0.1 --port 8000`
+- `sh scripts/train.sh --data data/lichi/data.yaml --name lychee_v1`
+- `sh scripts/eval.sh --data data/lichi/data.yaml --exp lychee_v1`
+- `sh scripts/check.sh`
+- `powershell -ExecutionPolicy Bypass -File scripts/dev.ps1`
+- `powershell -ExecutionPolicy Bypass -File scripts/train.ps1 -Data data/lichi/data.yaml -Name lychee_v1`
+- `powershell -ExecutionPolicy Bypass -File scripts/eval.ps1 -Data data/lichi/data.yaml -Exp lychee_v1`
+- `powershell -ExecutionPolicy Bypass -File scripts/check.ps1`
+
+## 6. 开发与改动规则
 - 优先最小改动：只改与任务直接相关的文件。
 - 不要擅自重命名顶层目录（如 `app/`、`training/`、`tests/`）。
 - 修改配置或路径时，同步检查：
@@ -40,18 +50,18 @@
 - 新增共享字段时，优先更新 `shared/` 下定义并保持前后端一致。
 - 任何会影响行为的改动，至少运行一次相关测试。
 
-## 6. 数据与版本信息
+## 7. 数据与版本信息
 - 数据集引用：
   - Zhiqing, Zhao (2025), "lichi-maturity", Mendeley Data, V1, doi: `10.17632/c3rk9gv4w9.1`
 - 本仓库不提交原始数据与大模型权重（遵循 `.gitignore`）。
 
-## 7. 提交前检查清单
+## 8. 提交前检查清单
 - 命令和路径示例是否可运行。
 - 是否引入了新的硬编码绝对路径。
 - 是否破坏 `configs/*.yaml.example` 的可用性。
 - 是否保留类别映射一致性（green/half/red/young）。
 - 测试是否通过，或已明确说明未执行原因。
 
-## 8. 不确定时的默认策略
+## 9. 不确定时的默认策略
 - 选择保守方案：优先保证现有 API 与训练流程兼容。
 - 若需要结构性重构，先在 PR/变更说明里给出迁移步骤，再实施。

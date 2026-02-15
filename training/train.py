@@ -7,7 +7,7 @@ from pathlib import Path
 def parse_args() -> argparse.Namespace:
     parser = argparse.ArgumentParser(description='Train YOLO stable baseline for lychee ripeness')
     parser.add_argument('--data', required=True, help='Path to data YAML')
-    parser.add_argument('--model', default='yolov8n.pt', help='Pretrained model checkpoint')
+    parser.add_argument('--model', default='yolo26n.pt', help='Pretrained model checkpoint')
     parser.add_argument('--epochs', type=int, default=100)
     parser.add_argument('--imgsz', type=int, default=640)
     parser.add_argument('--batch', type=int, default=16)
