@@ -7,6 +7,7 @@
 
 ## 2. 目录约定
 - `app/`：FastAPI 推理服务与 API（生产推理主路径）。
+- `gateway/`：Go 网关服务（对外 API、鉴权、限流、编排、观测），通过 HTTP/gRPC 调用 `app/`。
 - `training/`：训练与评估脚本。
 - `tests/`：单元/集成/性能测试。
 - `frontend/`：前端可视化客户端。
@@ -22,11 +23,15 @@
 - 训练输出默认目录：`artifacts/models/`
 - 评估指标默认目录：`artifacts/metrics/`
 - 在线推理模型路径：由 `configs/model.yaml` 的 `model_path` 控制。
+- 网关配置路径：`configs/gateway.yaml`（模板：`configs/gateway.yaml.example`）。
+- 对外接口契约路径：`shared/schemas/openapi.yaml`（网关、前端、推理服务字段以此对齐）。
 
 ## 4. 常用命令
 - 安装依赖：`uv sync`
 - 启动服务：`uv run uvicorn app.main:app --reload`
+- 启动 Go 网关（示例）：`go run ./gateway/cmd/gateway`
 - 运行测试：`uv run pytest -q`
+- 运行 Go 测试（示例）：`go test ./gateway/...`
 - 训练模型：`uv run python training/train.py --data path/to/data.yaml --model yolo26n.pt`
 - 评估模型：`uv run python training/eval.py --model artifacts/models/<exp>/weights/best.pt --data path/to/data.yaml`
 
@@ -42,12 +47,13 @@
 
 ## 6. 开发与改动规则
 - 优先最小改动：只改与任务直接相关的文件。
-- 不要擅自重命名顶层目录（如 `app/`、`training/`、`tests/`）。
+- 不要擅自重命名顶层目录（如 `app/`、`gateway/`、`training/`、`tests/`）。
 - 修改配置或路径时，同步检查：
   - `README.md` 示例命令
   - `configs/*.yaml.example`
   - 相关测试
 - 新增共享字段时，优先更新 `shared/` 下定义并保持前后端一致。
+- 前端默认只调用 `gateway/`，不直连 `app/`。
 - 任何会影响行为的改动，至少运行一次相关测试。
 
 ## 7. 数据与版本信息
@@ -60,6 +66,7 @@
 - 是否引入了新的硬编码绝对路径。
 - 是否破坏 `configs/*.yaml.example` 的可用性。
 - 是否保留类别映射一致性（green/half/red/young）。
+- `shared/schemas/openapi.yaml` 与 `frontend/`、`gateway/`、`app/` 的字段是否一致。
 - 测试是否通过，或已明确说明未执行原因。
 
 ## 9. 不确定时的默认策略

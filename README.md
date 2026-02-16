@@ -8,6 +8,7 @@ Lychee detection and ripeness classification service.
 - Stream inference (`WS /v1/infer/stream`)
 - Session-level ripeness statistics and harvest suggestion
 - Configurable YOLO runtime version via `configs/model.yaml` (`yolo_version`)
+- Optional Go gateway layer for external API, auth/rate limit, and orchestration
 
 ## Quick start
 ```bash
@@ -20,6 +21,8 @@ uv run uvicorn app.main:app --reload
 uv run pytest -q
 uv run python training/train.py --data path/to/data.yaml --model yolo26n.pt
 uv run python training/eval.py --model artifacts/models/lychee_v1/weights/best.pt --data path/to/data.yaml
+go run ./gateway/cmd/gateway
+go test ./gateway/...
 ```
 
 ## Script shortcuts (sh)
@@ -32,6 +35,7 @@ sh scripts/check.sh
 
 ## Project structure
 - `app/`: FastAPI inference service and API endpoints
+- `gateway/`: Go gateway service for external API access and request orchestration
 - `training/`: training and evaluation scripts
 - `tests/`: unit, integration, and performance tests
 - `frontend/`: frontend visualization client
@@ -59,11 +63,18 @@ uv export --no-hashes -o requirements.txt
 ## Config
 - `configs/model.yaml.example` (copy to `configs/model.yaml` for local use)
 - `configs/service.yaml.example` (copy to `configs/service.yaml` for local use)
+- `configs/gateway.yaml.example` (copy to `configs/gateway.yaml` for local use)
 - `model_path` precedence: if non-empty, use it directly; if empty, fallback to `${yolo_version}.pt`
 
 Override paths with env vars:
 - `LYCHEE_MODEL_CONFIG`
 - `LYCHEE_SERVICE_CONFIG`
+- `LYCHEE_GATEWAY_CONFIG`
+
+## API contract and service boundary
+- Keep OpenAPI at `shared/schemas/openapi.yaml` as the single source of truth for external API fields.
+- Recommended call path: `frontend -> gateway -> app`.
+- Frontend should use gateway APIs only and avoid direct calls to `app`.
 
 ## Local config files (not committed)
 - Copy `configs/model.yaml.example` to `configs/model.yaml`.
