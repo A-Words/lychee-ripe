@@ -1,0 +1,258 @@
+openapi: "3.1.0"
+info:
+  title: Lychee Ripe Gateway API
+  version: "1.0.0"
+  description: >
+    External API served by the Go gateway. All requests are forwarded to the
+    upstream FastAPI inference service after authentication and rate limiting.
+
+servers:
+  - url: http://localhost:9000
+    description: Local gateway
+
+paths:
+  /healthz:
+    get:
+      operationId: gatewayHealth
+      summary: Aggregated gateway and upstream health
+      tags: [system]
+      responses:
+        "200":
+          description: All systems healthy
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/GatewayHealthResponse"
+        "503":
+          description: Upstream degraded or unreachable
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/GatewayHealthResponse"
+
+  /v1/health:
+    get:
+      operationId: upstreamHealth
+      summary: Upstream FastAPI health (proxied)
+      tags: [v1]
+      responses:
+        "200":
+          description: Upstream health
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/HealthResponse"
+
+  /v1/models/current:
+    get:
+      operationId: currentModel
+      summary: Current loaded model info (proxied)
+      tags: [v1]
+      responses:
+        "200":
+          description: Model metadata
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/CurrentModelResponse"
+
+  /v1/infer/image:
+    post:
+      operationId: inferImage
+      summary: Single image inference (proxied)
+      tags: [v1]
+      requestBody:
+        required: true
+        content:
+          multipart/form-data:
+            schema:
+              type: object
+              required: [file]
+              properties:
+                file:
+                  type: string
+                  format: binary
+      responses:
+        "200":
+          description: Inference result
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ImageInferResponse"
+        "400":
+          description: Invalid image
+        "413":
+          description: File too large
+        "503":
+          description: Model not loaded
+
+  /v1/infer/stream:
+    get:
+      operationId: inferStream
+      summary: WebSocket streaming inference (proxied)
+      tags: [v1]
+      description: >
+        WebSocket endpoint. Send binary frames (image bytes) to receive per-frame
+        detection results. Send text "close"/"stop"/"eos" to end. On disconnect,
+        server sends a SessionSummary envelope.
+
+components:
+  securitySchemes:
+    ApiKeyAuth:
+      type: apiKey
+      in: header
+      name: X-API-Key
+    BearerAuth:
+      type: http
+      scheme: bearer
+
+  schemas:
+    RipenessLabel:
+      type: string
+      enum: [green, half, red, young]
+
+    HarvestSuggestion:
+      type: string
+      enum: [not_ready, partially_ready, ready, overripe_risk]
+
+    Detection:
+      type: object
+      required: [bbox, class_name, ripeness, confidence]
+      properties:
+        bbox:
+          type: array
+          items:
+            type: number
+          minItems: 4
+          maxItems: 4
+        class_name:
+          type: string
+          enum: [lychee]
+        ripeness:
+          $ref: "#/components/schemas/RipenessLabel"
+        confidence:
+          type: number
+          minimum: 0
+          maximum: 1
+        track_id:
+          type: integer
+          nullable: true
+
+    FrameSummary:
+      type: object
+      properties:
+        total:
+          type: integer
+        green:
+          type: integer
+        half:
+          type: integer
+        red:
+          type: integer
+        young:
+          type: integer
+
+    FrameResult:
+      type: object
+      required: [frame_index, timestamp_ms, detections, frame_summary]
+      properties:
+        frame_index:
+          type: integer
+          minimum: 0
+        timestamp_ms:
+          type: integer
+          minimum: 0
+        detections:
+          type: array
+          items:
+            $ref: "#/components/schemas/Detection"
+        frame_summary:
+          $ref: "#/components/schemas/FrameSummary"
+
+    RipenessRatio:
+      type: object
+      properties:
+        green:
+          type: number
+        half:
+          type: number
+        red:
+          type: number
+        young:
+          type: number
+
+    SessionSummary:
+      type: object
+      properties:
+        total_detected:
+          type: integer
+        ripeness_ratio:
+          $ref: "#/components/schemas/RipenessRatio"
+        harvest_suggestion:
+          $ref: "#/components/schemas/HarvestSuggestion"
+
+    ModelMeta:
+      type: object
+      required: [model_version, schema_version, adapter, loaded]
+      properties:
+        model_version:
+          type: string
+        schema_version:
+          type: string
+        adapter:
+          type: string
+        loaded:
+          type: boolean
+
+    HealthResponse:
+      type: object
+      required: [status, model]
+      properties:
+        status:
+          type: string
+        model:
+          $ref: "#/components/schemas/ModelMeta"
+
+    CurrentModelResponse:
+      type: object
+      required: [model_version, schema_version, adapter, loaded]
+      properties:
+        model_version:
+          type: string
+        schema_version:
+          type: string
+        adapter:
+          type: string
+        loaded:
+          type: boolean
+
+    ImageInferResponse:
+      type: object
+      required: [model_version, schema_version, inference_ms, result]
+      properties:
+        model_version:
+          type: string
+        schema_version:
+          type: string
+        inference_ms:
+          type: number
+        result:
+          $ref: "#/components/schemas/FrameResult"
+
+    GatewayHealthResponse:
+      type: object
+      required: [status, gateway]
+      properties:
+        status:
+          type: string
+          enum: [ok, degraded]
+        gateway:
+          type: string
+        upstream:
+          $ref: "#/components/schemas/HealthResponse"
+        error:
+          type: string
+
+security:
+  - ApiKeyAuth: []
+  - BearerAuth: []

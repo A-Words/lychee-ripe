@@ -1,0 +1,39 @@
+server:
+  host: "0.0.0.0"
+  port: 9000
+  read_timeout_s: 30
+  write_timeout_s: 60
+
+upstream:
+  base_url: "http://127.0.0.1:8000"
+  timeout_s: 30
+
+auth:
+  enabled: false
+  api_keys:
+    - "changeme"
+
+rate_limit:
+  enabled: true
+  requests_per_second: 20
+  burst: 40
+  exclude_paths:
+    - "/healthz"
+
+cors:
+  enabled: true
+  allowed_origins:
+    - "*"
+  allowed_methods:
+    - "GET"
+    - "POST"
+    - "OPTIONS"
+  allowed_headers:
+    - "Content-Type"
+    - "Authorization"
+    - "X-API-Key"
+  max_age_s: 3600
+
+logging:
+  level: "info"
+  format: "json"

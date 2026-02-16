@@ -27,10 +27,22 @@ go test ./gateway/...
 
 ## Script shortcuts (sh)
 ```bash
-sh scripts/dev.sh --host 127.0.0.1 --port 8000
+sh scripts/app.sh --host 127.0.0.1 --port 8000
+sh scripts/gateway.sh --config configs/gateway.yaml
+sh scripts/stack.sh --app-host 127.0.0.1 --app-port 8000 --gateway-config configs/gateway.yaml
 sh scripts/train.sh --data data/lichi/data.yaml --name lychee_v1
 sh scripts/eval.sh --data data/lichi/data.yaml --exp lychee_v1
-sh scripts/check.sh
+sh scripts/verify.sh
+```
+
+## Script shortcuts (PowerShell)
+```powershell
+powershell -ExecutionPolicy Bypass -File scripts/app.ps1 -Host 127.0.0.1 -Port 8000
+powershell -ExecutionPolicy Bypass -File scripts/gateway.ps1 -Config configs/gateway.yaml
+powershell -ExecutionPolicy Bypass -File scripts/stack.ps1 -AppHost 127.0.0.1 -AppPort 8000 -GatewayConfig configs/gateway.yaml
+powershell -ExecutionPolicy Bypass -File scripts/train.ps1 -Data data/lichi/data.yaml -Name lychee_v1
+powershell -ExecutionPolicy Bypass -File scripts/eval.ps1 -Data data/lichi/data.yaml -Exp lychee_v1
+powershell -ExecutionPolicy Bypass -File scripts/verify.ps1
 ```
 
 ## Project structure
@@ -79,6 +91,7 @@ Override paths with env vars:
 ## Local config files (not committed)
 - Copy `configs/model.yaml.example` to `configs/model.yaml`.
 - Copy `configs/service.yaml.example` to `configs/service.yaml`.
+- Copy `configs/gateway.yaml.example` to `configs/gateway.yaml`.
 - Any `configs/*.yaml` is ignored by git; only `configs/*.yaml.example` is tracked.
 - Edit local files for machine-specific settings (e.g. `device: "cuda:0"`).
 - Startup fails fast if either local config file is missing.

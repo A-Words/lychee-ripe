@@ -10,3 +10,16 @@ services:
       - LYCHEE_SERVICE_CONFIG=configs/service.yaml
     volumes:
       - ./weights:/app/weights
+
+  gateway:
+    build:
+      context: .
+      dockerfile: docker/Dockerfile.gateway
+    ports:
+      - "9000:9000"
+    environment:
+      - LYCHEE_GATEWAY_CONFIG=/etc/gateway/gateway.yaml
+    volumes:
+      - ./configs:/etc/gateway:ro
+    depends_on:
+      - lychee-ripe

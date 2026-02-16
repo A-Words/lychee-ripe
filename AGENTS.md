@@ -23,27 +23,32 @@
 - 训练输出默认目录：`artifacts/models/`
 - 评估指标默认目录：`artifacts/metrics/`
 - 在线推理模型路径：由 `configs/model.yaml` 的 `model_path` 控制。
+- Go 工作区：`go.work`（根目录，指向 `./gateway`，使 `go run/test/build ./gateway/...` 可在根目录执行）。
 - 网关配置路径：`configs/gateway.yaml`（模板：`configs/gateway.yaml.example`）。
 - 对外接口契约路径：`shared/schemas/openapi.yaml`（网关、前端、推理服务字段以此对齐）。
 
 ## 4. 常用命令
 - 安装依赖：`uv sync`
 - 启动服务：`uv run uvicorn app.main:app --reload`
-- 启动 Go 网关（示例）：`go run ./gateway/cmd/gateway`
+- 启动 Go 网关：`go run ./gateway/cmd/gateway`
 - 运行测试：`uv run pytest -q`
-- 运行 Go 测试（示例）：`go test ./gateway/...`
+- 运行 Go 测试：`go test ./gateway/...`
 - 训练模型：`uv run python training/train.py --data path/to/data.yaml --model yolo26n.pt`
 - 评估模型：`uv run python training/eval.py --model artifacts/models/<exp>/weights/best.pt --data path/to/data.yaml`
 
 ## 5. 脚本入口（优先使用）
-- `sh scripts/dev.sh --host 127.0.0.1 --port 8000`
+- `sh scripts/app.sh --host 127.0.0.1 --port 8000`
+- `sh scripts/gateway.sh --config configs/gateway.yaml`
+- `sh scripts/stack.sh --app-host 127.0.0.1 --app-port 8000 --gateway-config configs/gateway.yaml`
 - `sh scripts/train.sh --data data/lichi/data.yaml --name lychee_v1`
 - `sh scripts/eval.sh --data data/lichi/data.yaml --exp lychee_v1`
-- `sh scripts/check.sh`
-- `powershell -ExecutionPolicy Bypass -File scripts/dev.ps1`
+- `sh scripts/verify.sh`
+- `powershell -ExecutionPolicy Bypass -File scripts/app.ps1 -Host 127.0.0.1 -Port 8000`
+- `powershell -ExecutionPolicy Bypass -File scripts/gateway.ps1 -Config configs/gateway.yaml`
+- `powershell -ExecutionPolicy Bypass -File scripts/stack.ps1 -AppHost 127.0.0.1 -AppPort 8000 -GatewayConfig configs/gateway.yaml`
 - `powershell -ExecutionPolicy Bypass -File scripts/train.ps1 -Data data/lichi/data.yaml -Name lychee_v1`
 - `powershell -ExecutionPolicy Bypass -File scripts/eval.ps1 -Data data/lichi/data.yaml -Exp lychee_v1`
-- `powershell -ExecutionPolicy Bypass -File scripts/check.ps1`
+- `powershell -ExecutionPolicy Bypass -File scripts/verify.ps1`
 
 ## 6. 开发与改动规则
 - 优先最小改动：只改与任务直接相关的文件。
