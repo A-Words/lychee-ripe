@@ -9,6 +9,7 @@ Lychee detection and ripeness classification service.
 - Session-level ripeness statistics and harvest suggestion
 - Configurable YOLO runtime version via `configs/model.yaml` (`yolo_version`)
 - Optional Go gateway layer for external API, auth/rate limit, and orchestration
+- Nuxt 4 + Nuxt UI frontend for live camera inference overlays (Web + Tauri desktop shell)
 
 ## Quick start
 ```bash
@@ -23,6 +24,12 @@ uv run python training/train.py --data path/to/data.yaml --model yolo26n.pt
 uv run python training/eval.py --model artifacts/models/lychee_v1/weights/best.pt --data path/to/data.yaml
 go run ./gateway/cmd/gateway
 go test ./gateway/...
+bun --cwd frontend install
+bun --cwd frontend run dev
+bun --cwd frontend run typecheck
+bun --cwd frontend run test
+bun --cwd frontend run generate
+bun --cwd frontend run tauri:dev
 ```
 
 ## Script shortcuts (sh)
@@ -30,6 +37,8 @@ go test ./gateway/...
 sh scripts/app.sh --host 127.0.0.1 --port 8000
 sh scripts/gateway.sh --config configs/gateway.yaml
 sh scripts/stack.sh --app-host 127.0.0.1 --app-port 8000 --gateway-config configs/gateway.yaml
+sh scripts/frontend.sh --host 127.0.0.1 --port 3000
+sh scripts/desktop.sh
 sh scripts/train.sh --data data/lichi/data.yaml --name lychee_v1
 sh scripts/eval.sh --data data/lichi/data.yaml --exp lychee_v1
 sh scripts/verify.sh
@@ -40,6 +49,8 @@ sh scripts/verify.sh
 powershell -ExecutionPolicy Bypass -File scripts/app.ps1 -Host 127.0.0.1 -Port 8000
 powershell -ExecutionPolicy Bypass -File scripts/gateway.ps1 -Config configs/gateway.yaml
 powershell -ExecutionPolicy Bypass -File scripts/stack.ps1 -AppHost 127.0.0.1 -AppPort 8000 -GatewayConfig configs/gateway.yaml
+powershell -ExecutionPolicy Bypass -File scripts/frontend.ps1 -Host 127.0.0.1 -Port 3000
+powershell -ExecutionPolicy Bypass -File scripts/desktop.ps1
 powershell -ExecutionPolicy Bypass -File scripts/train.ps1 -Data data/lichi/data.yaml -Name lychee_v1
 powershell -ExecutionPolicy Bypass -File scripts/eval.ps1 -Data data/lichi/data.yaml -Exp lychee_v1
 powershell -ExecutionPolicy Bypass -File scripts/verify.ps1
@@ -76,12 +87,41 @@ uv export --no-hashes -o requirements.txt
 - `configs/model.yaml.example` (copy to `configs/model.yaml` for local use)
 - `configs/service.yaml.example` (copy to `configs/service.yaml` for local use)
 - `configs/gateway.yaml.example` (copy to `configs/gateway.yaml` for local use)
+- `frontend/.env.example` (copy to `frontend/.env` for local frontend config)
 - `model_path` precedence: if non-empty, use it directly; if empty, fallback to `${yolo_version}.pt`
 
 Override paths with env vars:
 - `LYCHEE_MODEL_CONFIG`
 - `LYCHEE_SERVICE_CONFIG`
 - `LYCHEE_GATEWAY_CONFIG`
+- `NUXT_PUBLIC_GATEWAY_BASE` (frontend gateway URL, default: `http://127.0.0.1:9000`)
+
+## Frontend quick start (Web)
+```bash
+uv sync
+go run ./gateway/cmd/gateway
+bun --cwd frontend install
+bun --cwd frontend run dev
+```
+
+Open `http://127.0.0.1:3000`, click **Start**, grant camera permission, and verify detection boxes and ripeness labels are overlaid on video.
+
+## Frontend quick start (Desktop / Tauri)
+```bash
+bun --cwd frontend install
+bun --cwd frontend run tauri:dev
+```
+
+Notes:
+- This repo currently ships the Tauri 2 project structure in `frontend/src-tauri`.
+- You need Rust/Cargo and Tauri desktop dependencies installed locally for `tauri:dev`.
+- Desktop build packaging (`tauri build`) is intentionally out of scope in this first phase.
+
+## First-phase frontend behavior and limits
+- Default stream profile: `640x360`, ~`5 FPS`, JPEG frames.
+- Data path is fixed: `frontend -> gateway -> app`.
+- Gateway auth is expected to stay disabled for local first-phase integration (`configs/gateway.yaml.example`).
+- The frontend currently focuses on live overlay + current frame stats + session summary; no history playback/charting yet.
 
 ## API contract and service boundary
 - Keep OpenAPI at `shared/schemas/openapi.yaml` as the single source of truth for external API fields.

@@ -29,10 +29,16 @@
 
 ## 4. 常用命令
 - 安装依赖：`uv sync`
+- 安装前端依赖：`bun --cwd frontend install`
 - 启动服务：`uv run uvicorn app.main:app --reload`
 - 启动 Go 网关：`go run ./gateway/cmd/gateway`
+- 启动前端（Web）：`bun --cwd frontend run dev`
+- 启动前端（Desktop）：`bun --cwd frontend run tauri:dev`
 - 运行测试：`uv run pytest -q`
 - 运行 Go 测试：`go test ./gateway/...`
+- 前端类型检查：`bun --cwd frontend run typecheck`
+- 前端测试：`bun --cwd frontend run test`
+- 前端构建（CSR/SSG）：`bun --cwd frontend run generate`
 - 训练模型：`uv run python training/train.py --data path/to/data.yaml --model yolo26n.pt`
 - 评估模型：`uv run python training/eval.py --model artifacts/models/<exp>/weights/best.pt --data path/to/data.yaml`
 
@@ -40,12 +46,16 @@
 - `sh scripts/app.sh --host 127.0.0.1 --port 8000`
 - `sh scripts/gateway.sh --config configs/gateway.yaml`
 - `sh scripts/stack.sh --app-host 127.0.0.1 --app-port 8000 --gateway-config configs/gateway.yaml`
+- `sh scripts/frontend.sh --host 127.0.0.1 --port 3000`
+- `sh scripts/desktop.sh`
 - `sh scripts/train.sh --data data/lichi/data.yaml --name lychee_v1`
 - `sh scripts/eval.sh --data data/lichi/data.yaml --exp lychee_v1`
 - `sh scripts/verify.sh`
 - `powershell -ExecutionPolicy Bypass -File scripts/app.ps1 -Host 127.0.0.1 -Port 8000`
 - `powershell -ExecutionPolicy Bypass -File scripts/gateway.ps1 -Config configs/gateway.yaml`
 - `powershell -ExecutionPolicy Bypass -File scripts/stack.ps1 -AppHost 127.0.0.1 -AppPort 8000 -GatewayConfig configs/gateway.yaml`
+- `powershell -ExecutionPolicy Bypass -File scripts/frontend.ps1 -Host 127.0.0.1 -Port 3000`
+- `powershell -ExecutionPolicy Bypass -File scripts/desktop.ps1`
 - `powershell -ExecutionPolicy Bypass -File scripts/train.ps1 -Data data/lichi/data.yaml -Name lychee_v1`
 - `powershell -ExecutionPolicy Bypass -File scripts/eval.ps1 -Data data/lichi/data.yaml -Exp lychee_v1`
 - `powershell -ExecutionPolicy Bypass -File scripts/verify.ps1`
@@ -72,6 +82,9 @@
 - 是否破坏 `configs/*.yaml.example` 的可用性。
 - 是否保留类别映射一致性（green/half/red/young）。
 - `shared/schemas/openapi.yaml` 与 `frontend/`、`gateway/`、`app/` 的字段是否一致。
+- `frontend` 的类型检查/测试/构建是否通过（`typecheck`、`test`、`generate`）。
+- 前端调用路径是否仍为 `frontend -> gateway -> app`。
+- 前端颜色与标签映射是否与 `shared/constants/ripeness.json` 一致。
 - 测试是否通过，或已明确说明未执行原因。
 
 ## 9. 不确定时的默认策略

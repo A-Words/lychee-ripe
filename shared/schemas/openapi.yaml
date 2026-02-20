@@ -95,6 +95,19 @@ paths:
         WebSocket endpoint. Send binary frames (image bytes) to receive per-frame
         detection results. Send text "close"/"stop"/"eos" to end. On disconnect,
         server sends a SessionSummary envelope.
+      x-websocket-messages:
+        - direction: server-to-client
+          description: Per-frame inference envelope.
+          schema:
+            $ref: "#/components/schemas/StreamFrameEnvelope"
+        - direction: server-to-client
+          description: Session summary envelope sent when stream closes.
+          schema:
+            $ref: "#/components/schemas/StreamSummaryEnvelope"
+        - direction: server-to-client
+          description: Non-fatal processing error envelope.
+          schema:
+            $ref: "#/components/schemas/StreamErrorEnvelope"
 
 components:
   securitySchemes:
@@ -238,6 +251,44 @@ components:
           type: number
         result:
           $ref: "#/components/schemas/FrameResult"
+
+    StreamFrameEnvelope:
+      type: object
+      required: [type, model_version, schema_version, result]
+      properties:
+        type:
+          type: string
+          enum: [frame]
+        model_version:
+          type: string
+        schema_version:
+          type: string
+        result:
+          $ref: "#/components/schemas/FrameResult"
+
+    StreamSummaryEnvelope:
+      type: object
+      required: [type, model_version, schema_version, summary]
+      properties:
+        type:
+          type: string
+          enum: [summary]
+        model_version:
+          type: string
+        schema_version:
+          type: string
+        summary:
+          $ref: "#/components/schemas/SessionSummary"
+
+    StreamErrorEnvelope:
+      type: object
+      required: [type, detail]
+      properties:
+        type:
+          type: string
+          enum: [error]
+        detail:
+          type: string
 
     GatewayHealthResponse:
       type: object
