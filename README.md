@@ -24,12 +24,12 @@ uv run python training/train.py --data path/to/data.yaml --model yolo26n.pt
 uv run python training/eval.py --model artifacts/models/lychee_v1/weights/best.pt --data path/to/data.yaml
 go run ./gateway/cmd/gateway
 go test ./gateway/...
-bun --cwd frontend install
-bun --cwd frontend run dev
-bun --cwd frontend run typecheck
-bun --cwd frontend run test
-bun --cwd frontend run generate
-bun --cwd frontend run tauri:dev
+bun install --cwd frontend
+bun run --cwd frontend dev
+bun run --cwd frontend typecheck
+bun run --cwd frontend test
+bun run --cwd frontend generate
+bun run --cwd frontend tauri:dev
 ```
 
 ## Script shortcuts (sh)
@@ -100,16 +100,16 @@ Override paths with env vars:
 ```bash
 uv sync
 go run ./gateway/cmd/gateway
-bun --cwd frontend install
-bun --cwd frontend run dev
+bun install --cwd frontend
+bun run --cwd frontend dev
 ```
 
 Open `http://127.0.0.1:3000`, click **Start**, grant camera permission, and verify detection boxes and ripeness labels are overlaid on video.
 
 ## Frontend quick start (Desktop / Tauri)
 ```bash
-bun --cwd frontend install
-bun --cwd frontend run tauri:dev
+bun install --cwd frontend
+bun run --cwd frontend tauri:dev
 ```
 
 Notes:

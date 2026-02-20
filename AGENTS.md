@@ -29,16 +29,16 @@
 
 ## 4. 常用命令
 - 安装依赖：`uv sync`
-- 安装前端依赖：`bun --cwd frontend install`
+- 安装前端依赖：`bun install --cwd frontend`
 - 启动服务：`uv run uvicorn app.main:app --reload`
 - 启动 Go 网关：`go run ./gateway/cmd/gateway`
-- 启动前端（Web）：`bun --cwd frontend run dev`
-- 启动前端（Desktop）：`bun --cwd frontend run tauri:dev`
+- 启动前端（Web）：`bun run --cwd frontend dev`
+- 启动前端（Desktop）：`bun run --cwd frontend tauri:dev`
 - 运行测试：`uv run pytest -q`
 - 运行 Go 测试：`go test ./gateway/...`
-- 前端类型检查：`bun --cwd frontend run typecheck`
-- 前端测试：`bun --cwd frontend run test`
-- 前端构建（CSR/SSG）：`bun --cwd frontend run generate`
+- 前端类型检查：`bun run --cwd frontend typecheck`
+- 前端测试：`bun run --cwd frontend test`
+- 前端构建（CSR/SSG）：`bun run --cwd frontend generate`
 - 训练模型：`uv run python training/train.py --data path/to/data.yaml --model yolo26n.pt`
 - 评估模型：`uv run python training/eval.py --model artifacts/models/<exp>/weights/best.pt --data path/to/data.yaml`
 
