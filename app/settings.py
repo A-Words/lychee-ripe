@@ -20,7 +20,7 @@ class ModelConfig(BaseModel):
     model_path: str = ""
     conf_threshold: float = Field(default=0.25, ge=0.0, le=1.0)
     nms_iou: float = Field(default=0.45, ge=0.0, le=1.0)
-    device: str = "cpu"
+    device: str = "auto"
 
 
 class ServiceConfig(BaseModel):

@@ -41,6 +41,8 @@
 - 前端构建（CSR/SSG）：`bun run --cwd frontend generate`
 - 训练模型：`uv run python training/train.py --data path/to/data.yaml --model yolo26n.pt`
 - 评估模型：`uv run python training/eval.py --model artifacts/models/<exp>/weights/best.pt --data path/to/data.yaml`
+- 切换依赖锁文件（sh）：`sh scripts/switch-lock.sh --target cpu|cu128|auto`
+- 切换依赖锁文件（PowerShell）：`powershell -ExecutionPolicy Bypass -File scripts/switch-lock.ps1 -Target cpu|cu128|auto`
 
 ## 5. 脚本入口（优先使用）
 - `sh scripts/app.sh --host 127.0.0.1 --port 8000`
@@ -51,6 +53,7 @@
 - `sh scripts/train.sh --data data/lichi/data.yaml --name lychee_v1`
 - `sh scripts/eval.sh --data data/lichi/data.yaml --exp lychee_v1`
 - `sh scripts/verify.sh`
+- `sh scripts/switch-lock.sh --target cpu|cu128|auto`
 - `powershell -ExecutionPolicy Bypass -File scripts/app.ps1 -Host 127.0.0.1 -Port 8000`
 - `powershell -ExecutionPolicy Bypass -File scripts/gateway.ps1 -Config configs/gateway.yaml`
 - `powershell -ExecutionPolicy Bypass -File scripts/stack.ps1 -AppHost 127.0.0.1 -AppPort 8000 -GatewayConfig configs/gateway.yaml`
@@ -59,6 +62,7 @@
 - `powershell -ExecutionPolicy Bypass -File scripts/train.ps1 -Data data/lichi/data.yaml -Name lychee_v1`
 - `powershell -ExecutionPolicy Bypass -File scripts/eval.ps1 -Data data/lichi/data.yaml -Exp lychee_v1`
 - `powershell -ExecutionPolicy Bypass -File scripts/verify.ps1`
+- `powershell -ExecutionPolicy Bypass -File scripts/switch-lock.ps1 -Target cpu|cu128|auto`
 
 ## 6. 开发与改动规则
 - 优先最小改动：只改与任务直接相关的文件。
@@ -67,6 +71,7 @@
   - `README.md` 示例命令
   - `configs/*.yaml.example`
   - 相关测试
+- 若改动 Python 依赖，需同步更新 `uv.lock.cpu` 与 `uv.lock.cu128`，并在提交前恢复 `uv.lock` 为 CPU 基线（与 `uv.lock.cpu` 一致）。
 - 新增共享字段时，优先更新 `shared/` 下定义并保持前后端一致。
 - 前端默认只调用 `gateway/`，不直连 `app/`。
 - 任何会影响行为的改动，至少运行一次相关测试。

@@ -42,6 +42,9 @@ sh scripts/desktop.sh
 sh scripts/train.sh --data data/lichi/data.yaml --name lychee_v1
 sh scripts/eval.sh --data data/lichi/data.yaml --exp lychee_v1
 sh scripts/verify.sh
+sh scripts/switch-lock.sh --target cpu
+sh scripts/switch-lock.sh --target cu128
+sh scripts/switch-lock.sh --target auto
 ```
 
 ## Script shortcuts (PowerShell)
@@ -54,6 +57,9 @@ powershell -ExecutionPolicy Bypass -File scripts/desktop.ps1
 powershell -ExecutionPolicy Bypass -File scripts/train.ps1 -Data data/lichi/data.yaml -Name lychee_v1
 powershell -ExecutionPolicy Bypass -File scripts/eval.ps1 -Data data/lichi/data.yaml -Exp lychee_v1
 powershell -ExecutionPolicy Bypass -File scripts/verify.ps1
+powershell -ExecutionPolicy Bypass -File scripts/switch-lock.ps1 -Target cpu
+powershell -ExecutionPolicy Bypass -File scripts/switch-lock.ps1 -Target cu128
+powershell -ExecutionPolicy Bypass -File scripts/switch-lock.ps1 -Target auto
 ```
 
 ## Project structure
@@ -96,6 +102,25 @@ Override paths with env vars:
 - `LYCHEE_GATEWAY_CONFIG`
 - `NUXT_PUBLIC_GATEWAY_BASE` (frontend gateway URL, default: `http://127.0.0.1:9000`)
 
+## Dependency profiles (CPU/CUDA)
+- Runtime `device: "auto"` only controls inference-time selection and fallback behavior.
+- Installing CPU or CUDA dependencies is controlled by lock profile switching, not by `device`.
+- Canonical repo default is CPU: `uv.lock` must match `uv.lock.cpu`.
+- CUDA profile is fixed to `cu128` in this repo.
+
+Switch profiles before running `uv run`:
+```bash
+sh scripts/switch-lock.sh --target cpu
+sh scripts/switch-lock.sh --target cu128
+sh scripts/switch-lock.sh --target auto
+```
+
+```powershell
+powershell -ExecutionPolicy Bypass -File scripts/switch-lock.ps1 -Target cpu
+powershell -ExecutionPolicy Bypass -File scripts/switch-lock.ps1 -Target cu128
+powershell -ExecutionPolicy Bypass -File scripts/switch-lock.ps1 -Target auto
+```
+
 ## Frontend quick start (Web)
 ```bash
 uv sync
@@ -133,7 +158,7 @@ Notes:
 - Copy `configs/service.yaml.example` to `configs/service.yaml`.
 - Copy `configs/gateway.yaml.example` to `configs/gateway.yaml`.
 - Any `configs/*.yaml` is ignored by git; only `configs/*.yaml.example` is tracked.
-- Edit local files for machine-specific settings (default `device: "cpu"`; set `device: "cuda:0"` only when CUDA is available).
+- Edit local files for machine-specific settings (default `device: "auto"`; set `device: "cpu"` or `device: "cuda:0"` only when you need explicit pinning).
 - Startup fails fast if either local config file is missing.
 - Start service (defaults to these local files):
 ```powershell
