@@ -90,6 +90,7 @@
 - `frontend` 的类型检查/测试/构建是否通过（`typecheck`、`test`、`generate`）。
 - 前端调用路径是否仍为 `frontend -> gateway -> app`。
 - 前端颜色与标签映射是否与 `shared/constants/ripeness.json` 一致。
+- 前端摄像头切换能力是否可用（空闲态/识别中切换、拔插后列表刷新、上次选择恢复）。
 - 测试是否通过，或已明确说明未执行原因。
 
 ## 9. 不确定时的默认策略

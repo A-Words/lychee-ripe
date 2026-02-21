@@ -146,6 +146,7 @@ Notes:
 - Default stream profile: `640x360`, ~`5 FPS`, JPEG frames.
 - Data path is fixed: `frontend -> gateway -> app`.
 - Gateway auth is expected to stay disabled for local first-phase integration (`configs/gateway.yaml.example`).
+- The frontend currently supports camera selection and live switching (including while streaming), and stores the last selected camera in local storage.
 - The frontend currently focuses on live overlay + current frame stats + session summary; no history playback/charting yet.
 
 ## API contract and service boundary

@@ -5,6 +5,7 @@ import type { FrameSummary, SessionSummary } from '../types/infer'
 interface Props {
   streamStatus: string
   cameraStatus: string
+  cameraLabel: string | null
   frameSummary: FrameSummary | null
   sessionSummary: SessionSummary | null
   lastError: string | null
@@ -55,6 +56,10 @@ const cameraColor = computed(() => {
       <div class="flex items-center justify-between gap-2">
         <span>Camera</span>
         <UBadge :color="cameraColor" variant="subtle">{{ cameraStatus }}</UBadge>
+      </div>
+      <div class="flex items-center justify-between gap-2">
+        <span>Selected Camera</span>
+        <span class="truncate text-right text-neutral-600">{{ cameraLabel ?? 'N/A' }}</span>
       </div>
     </div>
 
