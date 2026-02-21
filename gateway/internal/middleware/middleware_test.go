@@ -1,7 +1,10 @@
 package middleware
 
 import (
+	"bufio"
+	"io"
 	"log/slog"
+	"net"
 	"net/http"
 	"net/http/httptest"
 	"testing"
@@ -301,4 +304,56 @@ func TestRequestIDPreserved(t *testing.T) {
 	if rec.Header().Get("X-Request-ID") != "existing-id" {
 		t.Error("should preserve existing X-Request-ID")
 	}
+}
+
+type hijackableRecorder struct {
+	*httptest.ResponseRecorder
+	hijacked bool
+}
+
+func (h *hijackableRecorder) Hijack() (net.Conn, *bufio.ReadWriter, error) {
+	h.hijacked = true
+	return nil, nil, nil
+}
+
+func TestLoggingPreservesHijacker(t *testing.T) {
+	logger := slog.New(slog.NewTextHandler(io.Discard, nil))
+	mw := Logging(logger)
+	handler := mw(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		hj, ok := w.(http.Hijacker)
+		if !ok {
+			t.Fatal("response writer should implement http.Hijacker")
+		}
+		_, _, err := hj.Hijack()
+		if err != nil {
+			t.Fatalf("hijack failed: %v", err)
+		}
+	}))
+
+	rec := &hijackableRecorder{ResponseRecorder: httptest.NewRecorder()}
+	req := httptest.NewRequest(http.MethodGet, "/v1/infer/stream", nil)
+	handler.ServeHTTP(rec, req)
+
+	if !rec.hijacked {
+		t.Fatal("expected underlying writer to be hijacked")
+	}
+}
+
+func TestLoggingHijackNotSupported(t *testing.T) {
+	logger := slog.New(slog.NewTextHandler(io.Discard, nil))
+	mw := Logging(logger)
+	handler := mw(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		hj, ok := w.(http.Hijacker)
+		if !ok {
+			t.Fatal("response writer should implement http.Hijacker")
+		}
+		_, _, err := hj.Hijack()
+		if err == nil {
+			t.Fatal("expected hijack to fail when underlying writer does not support it")
+		}
+	}))
+
+	rec := httptest.NewRecorder()
+	req := httptest.NewRequest(http.MethodGet, "/v1/infer/stream", nil)
+	handler.ServeHTTP(rec, req)
 }
