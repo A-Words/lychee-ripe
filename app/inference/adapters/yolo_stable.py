@@ -5,7 +5,7 @@ from typing import Sequence
 import numpy as np
 
 from app.inference.adapters.base import DetectorAdapter, RawDetection
-from app.settings import ModelConfig
+from app.settings import ModelConfig, resolve_torch_device
 
 
 class YoloStableAdapter(DetectorAdapter):
@@ -16,6 +16,9 @@ class YoloStableAdapter(DetectorAdapter):
         self.name = cfg.yolo_version
         self._model = None
         self._loaded = False
+        self._device, device_warning = resolve_torch_device(cfg.device)
+        if device_warning:
+            print(f"[device] {device_warning}")
         self._class_map = {
             0: "green",
             1: "half",
@@ -62,7 +65,7 @@ class YoloStableAdapter(DetectorAdapter):
             source=frame,
             conf=self.cfg.conf_threshold,
             iou=self.cfg.nms_iou,
-            device=self.cfg.device,
+            device=self._device,
             verbose=False,
         )
 

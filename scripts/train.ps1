@@ -6,7 +6,7 @@ param(
     [int]$Epochs = 100,
     [int]$Imgsz = 640,
     [int]$Batch = 16,
-    [string]$Device = "0",
+    [string]$Device = "cpu",
     [string]$Name = "lychee_v1",
     [switch]$ExportOnnx
 )

@@ -3,6 +3,8 @@ from __future__ import annotations
 import argparse
 from pathlib import Path
 
+from app.settings import resolve_torch_device
+
 
 def parse_args() -> argparse.Namespace:
     parser = argparse.ArgumentParser(description='Train YOLO stable baseline for lychee ripeness')
@@ -11,7 +13,7 @@ def parse_args() -> argparse.Namespace:
     parser.add_argument('--epochs', type=int, default=100)
     parser.add_argument('--imgsz', type=int, default=640)
     parser.add_argument('--batch', type=int, default=16)
-    parser.add_argument('--device', default='0')
+    parser.add_argument('--device', default='cpu')
     parser.add_argument('--project', default='artifacts/models')
     parser.add_argument('--name', default='lychee_v1')
     parser.add_argument('--export-onnx', action='store_true')
@@ -20,6 +22,9 @@ def parse_args() -> argparse.Namespace:
 
 def main() -> None:
     args = parse_args()
+    resolved_device, device_warning = resolve_torch_device(args.device)
+    if device_warning:
+        print(f'[device] {device_warning}')
 
     from ultralytics import YOLO
 
@@ -29,7 +34,7 @@ def main() -> None:
         epochs=args.epochs,
         imgsz=args.imgsz,
         batch=args.batch,
-        device=args.device,
+        device=resolved_device,
         project=args.project,
         name=args.name,
     )

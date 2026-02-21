@@ -4,7 +4,7 @@ param(
     [string]$Data,
     [string]$Exp = "lychee_v1",
     [int]$Imgsz = 640,
-    [string]$Device = "0",
+    [string]$Device = "cpu",
     [string]$Output = ""
 )
 

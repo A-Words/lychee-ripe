@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import re
 from pathlib import Path
 
 from pydantic import BaseModel, Field
@@ -10,6 +11,7 @@ except Exception:  # pragma: no cover
     yaml = None
 
 DEFAULT_SCHEMA_VERSION = "v1"
+_CUDA_DEVICE_PATTERN = re.compile(r"^\d+(,\d+)*$")
 
 
 class ModelConfig(BaseModel):
@@ -26,6 +28,56 @@ class ServiceConfig(BaseModel):
     api_prefix: str = "/v1"
     schema_version: str = DEFAULT_SCHEMA_VERSION
     max_upload_mb: int = 10
+
+
+def _torch_cuda_runtime() -> tuple[bool, int]:
+    try:
+        import torch
+    except Exception:
+        return False, 0
+
+    try:
+        return bool(torch.cuda.is_available()), int(torch.cuda.device_count())
+    except Exception:
+        return False, 0
+
+
+def _requests_cuda(device: str) -> bool:
+    normalized = device.strip().lower()
+    if not normalized or normalized in {"cpu", "mps"}:
+        return False
+    if normalized.startswith("cuda"):
+        return True
+    return bool(_CUDA_DEVICE_PATTERN.fullmatch(normalized))
+
+
+def resolve_torch_device(device: str) -> tuple[str, str | None]:
+    requested = (device or "").strip() or "cpu"
+    cuda_available, cuda_device_count = _torch_cuda_runtime()
+
+    if requested.lower() == "auto":
+        if cuda_available and cuda_device_count > 0:
+            return "cuda:0", None
+        return (
+            "cpu",
+            (
+                "Requested device='auto' but CUDA is unavailable "
+                f"(torch.cuda.is_available()={cuda_available}, "
+                f"torch.cuda.device_count()={cuda_device_count}). Falling back to CPU."
+            ),
+        )
+
+    if _requests_cuda(requested) and (not cuda_available or cuda_device_count <= 0):
+        return (
+            "cpu",
+            (
+                f"Requested device='{requested}' but CUDA is unavailable "
+                f"(torch.cuda.is_available()={cuda_available}, "
+                f"torch.cuda.device_count()={cuda_device_count}). Falling back to CPU."
+            ),
+        )
+
+    return requested, None
 
 
 def _parse_simple_yaml(text: str) -> dict:

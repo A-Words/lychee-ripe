@@ -4,7 +4,7 @@ set -eu
 DATA=""
 EXP="lychee_v1"
 IMGSZ="640"
-DEVICE="0"
+DEVICE="cpu"
 OUTPUT=""
 
 while [ "$#" -gt 0 ]; do

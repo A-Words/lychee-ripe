@@ -6,7 +6,7 @@ MODEL="yolo26n.pt"
 EPOCHS="100"
 IMGSZ="640"
 BATCH="16"
-DEVICE="0"
+DEVICE="cpu"
 NAME="lychee_v1"
 EXPORT_ONNX="0"
 

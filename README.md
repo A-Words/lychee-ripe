@@ -133,7 +133,7 @@ Notes:
 - Copy `configs/service.yaml.example` to `configs/service.yaml`.
 - Copy `configs/gateway.yaml.example` to `configs/gateway.yaml`.
 - Any `configs/*.yaml` is ignored by git; only `configs/*.yaml.example` is tracked.
-- Edit local files for machine-specific settings (e.g. `device: "cuda:0"`).
+- Edit local files for machine-specific settings (default `device: "cpu"`; set `device: "cuda:0"` only when CUDA is available).
 - Startup fails fast if either local config file is missing.
 - Start service (defaults to these local files):
 ```powershell
