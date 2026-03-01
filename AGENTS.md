@@ -6,6 +6,7 @@
 - 本文档不替代接口契约与代码实现：
   - 接口与字段以 `shared/schemas/openapi.yaml` 为准。
   - 成熟度映射以 `shared/constants/ripeness.json` 为准。
+  - 产品需求与范围以 `docs/prd.md` 为准。
 
 ## 2. 项目快照
 - 项目目标：荔枝目标检测与成熟度识别，提供后端推理、网关治理与前端可视化。
@@ -28,6 +29,7 @@
   - 推理模型配置：`configs/model.yaml`
   - 网关配置：`configs/gateway.yaml`
   - 对外契约：`shared/schemas/openapi.yaml`
+  - PRD 文档：`docs/prd.md`
 
 ## 3. 执行工作流
 ### 3.1 依赖与配置准备
