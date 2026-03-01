@@ -1,10 +1,10 @@
 openapi: "3.1.0"
 info:
   title: Lychee Ripe Gateway API
-  version: "1.0.0"
+  version: "1.1.0"
   description: >
-    External API served by the Go gateway. All requests are forwarded to the
-    upstream FastAPI inference service after authentication and rate limiting.
+    External API served by the Go gateway. The gateway provides auth/rate-limit,
+    forwards inference requests, and exposes business APIs for batch traceability.
 
 servers:
   - url: http://localhost:9000
@@ -16,6 +16,7 @@ paths:
       operationId: gatewayHealth
       summary: Aggregated gateway and upstream health
       tags: [system]
+      security: []
       responses:
         "200":
           description: All systems healthy
@@ -35,6 +36,7 @@ paths:
       operationId: upstreamHealth
       summary: Upstream FastAPI health (proxied)
       tags: [v1]
+      security: []
       responses:
         "200":
           description: Upstream health
@@ -48,6 +50,9 @@ paths:
       operationId: currentModel
       summary: Current loaded model info (proxied)
       tags: [v1]
+      security:
+        - ApiKeyAuth: []
+        - BearerAuth: []
       responses:
         "200":
           description: Model metadata
@@ -55,12 +60,33 @@ paths:
             application/json:
               schema:
                 $ref: "#/components/schemas/CurrentModelResponse"
+        "401":
+          description: Missing or invalid API key
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ErrorResponse"
+        "403":
+          description: Forbidden by policy
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ErrorResponse"
+        "503":
+          description: Upstream unavailable
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ErrorResponse"
 
   /v1/infer/image:
     post:
       operationId: inferImage
       summary: Single image inference (proxied)
       tags: [v1]
+      security:
+        - ApiKeyAuth: []
+        - BearerAuth: []
       requestBody:
         required: true
         content:
@@ -80,17 +106,44 @@ paths:
               schema:
                 $ref: "#/components/schemas/ImageInferResponse"
         "400":
-          description: Invalid image
+          description: Invalid image or request
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ErrorResponse"
+        "401":
+          description: Missing or invalid API key
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ErrorResponse"
+        "403":
+          description: Forbidden by policy
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ErrorResponse"
         "413":
           description: File too large
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ErrorResponse"
         "503":
-          description: Model not loaded
+          description: Model not loaded or upstream unavailable
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ErrorResponse"
 
   /v1/infer/stream:
     get:
       operationId: inferStream
       summary: WebSocket streaming inference (proxied)
       tags: [v1]
+      security:
+        - ApiKeyAuth: []
+        - BearerAuth: []
       description: >
         WebSocket endpoint. Send binary frames (image bytes) to receive per-frame
         detection results. Send text "close"/"stop"/"eos" to end. On disconnect,
@@ -109,6 +162,216 @@ paths:
           schema:
             $ref: "#/components/schemas/StreamErrorEnvelope"
 
+  /v1/batches:
+    post:
+      operationId: createBatch
+      summary: Create a harvest batch and trigger anchor workflow
+      tags: [batch]
+      security:
+        - ApiKeyAuth: []
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/BatchCreateRequest"
+      responses:
+        "201":
+          description: Batch created and anchored
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Batch"
+        "202":
+          description: Batch accepted and saved, chain anchor pending
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Batch"
+        "400":
+          description: Invalid request or unripe confirmation missing
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ErrorResponse"
+        "401":
+          description: Missing or invalid API key
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ErrorResponse"
+        "403":
+          description: Forbidden by policy
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ErrorResponse"
+        "409":
+          description: Duplicated batch conflict
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ErrorResponse"
+        "503":
+          description: Service unavailable or unrecoverable chain error
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ErrorResponse"
+
+  /v1/batches/{batch_id}:
+    get:
+      operationId: getBatch
+      summary: Get batch detail by batch id
+      tags: [batch]
+      security:
+        - ApiKeyAuth: []
+      parameters:
+        - $ref: "#/components/parameters/BatchID"
+      responses:
+        "200":
+          description: Batch detail
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Batch"
+        "401":
+          description: Missing or invalid API key
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ErrorResponse"
+        "403":
+          description: Forbidden by policy
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ErrorResponse"
+        "404":
+          description: Batch not found
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ErrorResponse"
+        "503":
+          description: Service unavailable
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ErrorResponse"
+
+  /v1/trace/{trace_code}:
+    get:
+      operationId: getPublicTrace
+      summary: Public trace query and verification result
+      tags: [trace]
+      security: []
+      parameters:
+        - $ref: "#/components/parameters/TraceCode"
+      responses:
+        "200":
+          description: Public trace data
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/TraceResponse"
+        "404":
+          description: Trace code not found
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ErrorResponse"
+        "503":
+          description: Verify service unavailable
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ErrorResponse"
+
+  /v1/dashboard/overview:
+    get:
+      operationId: getDashboardOverview
+      summary: Get dashboard aggregate metrics
+      tags: [dashboard]
+      security:
+        - ApiKeyAuth: []
+      responses:
+        "200":
+          description: Dashboard overview
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/DashboardOverviewResponse"
+        "401":
+          description: Missing or invalid API key
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ErrorResponse"
+        "403":
+          description: Forbidden by policy
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ErrorResponse"
+        "503":
+          description: Service unavailable
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ErrorResponse"
+
+  /v1/batches/reconcile:
+    post:
+      operationId: reconcileBatches
+      summary: Trigger manual reconcile for pending anchor batches
+      tags: [batch]
+      security:
+        - ApiKeyAuth: []
+      requestBody:
+        required: false
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/ReconcileRequest"
+      responses:
+        "202":
+          description: Reconcile accepted
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ReconcileResponse"
+        "400":
+          description: Invalid request
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ErrorResponse"
+        "401":
+          description: Missing or invalid API key
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ErrorResponse"
+        "403":
+          description: Forbidden by policy
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ErrorResponse"
+        "404":
+          description: No requested pending batch found
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ErrorResponse"
+        "503":
+          description: Reconcile service unavailable
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ErrorResponse"
+
 components:
   securitySchemes:
     ApiKeyAuth:
@@ -119,6 +382,22 @@ components:
       type: http
       scheme: bearer
 
+  parameters:
+    BatchID:
+      name: batch_id
+      in: path
+      required: true
+      schema:
+        type: string
+      description: Batch unique identifier.
+    TraceCode:
+      name: trace_code
+      in: path
+      required: true
+      schema:
+        type: string
+      description: Public trace code.
+
   schemas:
     RipenessLabel:
       type: string
@@ -127,6 +406,18 @@ components:
     HarvestSuggestion:
       type: string
       enum: [not_ready, partially_ready, ready, overripe_risk]
+
+    BatchStatus:
+      type: string
+      enum: [pending_anchor, anchored, anchor_failed]
+
+    VerifyStatus:
+      type: string
+      enum: [pass, fail, pending]
+
+    UnripeHandling:
+      type: string
+      enum: [sorted_out]
 
     Detection:
       type: object
@@ -304,6 +595,340 @@ components:
         error:
           type: string
 
-security:
-  - ApiKeyAuth: []
-  - BearerAuth: []
+    BatchSummaryInput:
+      type: object
+      required: [total, green, half, red, young]
+      properties:
+        total:
+          type: integer
+          minimum: 0
+        green:
+          type: integer
+          minimum: 0
+        half:
+          type: integer
+          minimum: 0
+        red:
+          type: integer
+          minimum: 0
+        young:
+          type: integer
+          minimum: 0
+
+    BatchSummary:
+      type: object
+      description: >
+        Aggregated ripeness summary. unripe_count = green + young.
+        unripe_ratio = unripe_count / total (total > 0). Default threshold is 0.15.
+      required: [total, green, half, red, young, unripe_count, unripe_ratio, unripe_handling]
+      properties:
+        total:
+          type: integer
+          minimum: 0
+        green:
+          type: integer
+          minimum: 0
+        half:
+          type: integer
+          minimum: 0
+        red:
+          type: integer
+          minimum: 0
+        young:
+          type: integer
+          minimum: 0
+        unripe_count:
+          type: integer
+          minimum: 0
+        unripe_ratio:
+          type: number
+          minimum: 0
+          maximum: 1
+        unripe_handling:
+          $ref: "#/components/schemas/UnripeHandling"
+
+    BatchCreateRequest:
+      type: object
+      required: [orchard_id, orchard_name, plot_id, harvested_at, summary]
+      properties:
+        orchard_id:
+          type: string
+        orchard_name:
+          type: string
+        plot_id:
+          type: string
+        plot_name:
+          type: string
+        harvested_at:
+          type: string
+          format: date-time
+        summary:
+          $ref: "#/components/schemas/BatchSummaryInput"
+        note:
+          type: string
+        confirm_unripe:
+          type: boolean
+          default: false
+          description: >
+            Required to be true when unripe_ratio > 0.15 in order to create the batch.
+
+    AnchorProof:
+      type: object
+      required: [tx_hash, block_number, chain_id, contract_address, anchor_hash, anchored_at]
+      properties:
+        tx_hash:
+          type: string
+        block_number:
+          type: integer
+          minimum: 0
+        chain_id:
+          type: string
+        contract_address:
+          type: string
+        anchor_hash:
+          type: string
+        anchored_at:
+          type: string
+          format: date-time
+
+    Batch:
+      type: object
+      required:
+        [batch_id, trace_code, status, orchard_id, orchard_name, plot_id, harvested_at, summary, created_at]
+      properties:
+        batch_id:
+          type: string
+        trace_code:
+          type: string
+        status:
+          $ref: "#/components/schemas/BatchStatus"
+        orchard_id:
+          type: string
+        orchard_name:
+          type: string
+        plot_id:
+          type: string
+        plot_name:
+          type: string
+          nullable: true
+        harvested_at:
+          type: string
+          format: date-time
+        summary:
+          $ref: "#/components/schemas/BatchSummary"
+        note:
+          type: string
+          nullable: true
+        created_at:
+          type: string
+          format: date-time
+        anchor_proof:
+          oneOf:
+            - $ref: "#/components/schemas/AnchorProof"
+            - type: "null"
+
+    TraceBatch:
+      type: object
+      required: [batch_id, trace_code, status, orchard_name, plot_name, harvested_at, summary, created_at]
+      properties:
+        batch_id:
+          type: string
+        trace_code:
+          type: string
+        status:
+          $ref: "#/components/schemas/BatchStatus"
+        orchard_name:
+          type: string
+        plot_name:
+          type: string
+        harvested_at:
+          type: string
+          format: date-time
+        summary:
+          $ref: "#/components/schemas/BatchSummary"
+        created_at:
+          type: string
+          format: date-time
+
+    TraceVerifyResult:
+      type: object
+      required: [verify_status, reason]
+      properties:
+        verify_status:
+          $ref: "#/components/schemas/VerifyStatus"
+        reason:
+          type: string
+
+    TraceResponse:
+      type: object
+      required: [batch, verify_result]
+      properties:
+        batch:
+          $ref: "#/components/schemas/TraceBatch"
+        verify_result:
+          $ref: "#/components/schemas/TraceVerifyResult"
+
+    DashboardTotals:
+      type: object
+      required: [batch_total]
+      properties:
+        batch_total:
+          type: integer
+          minimum: 0
+
+    BatchStatusDistribution:
+      type: object
+      required: [anchored, pending_anchor, anchor_failed]
+      properties:
+        anchored:
+          type: integer
+          minimum: 0
+        pending_anchor:
+          type: integer
+          minimum: 0
+        anchor_failed:
+          type: integer
+          minimum: 0
+
+    RipenessDistribution:
+      type: object
+      required: [green, half, red, young]
+      properties:
+        green:
+          type: integer
+          minimum: 0
+        half:
+          type: integer
+          minimum: 0
+        red:
+          type: integer
+          minimum: 0
+        young:
+          type: integer
+          minimum: 0
+
+    UnripeMetrics:
+      type: object
+      required: [unripe_batch_count, unripe_batch_ratio, threshold, unripe_handling]
+      properties:
+        unripe_batch_count:
+          type: integer
+          minimum: 0
+        unripe_batch_ratio:
+          type: number
+          minimum: 0
+          maximum: 1
+        threshold:
+          type: number
+          minimum: 0
+          maximum: 1
+          default: 0.15
+        unripe_handling:
+          $ref: "#/components/schemas/UnripeHandling"
+
+    RecentAnchorRecord:
+      type: object
+      required: [batch_id, trace_code, status, created_at]
+      properties:
+        batch_id:
+          type: string
+        trace_code:
+          type: string
+        status:
+          $ref: "#/components/schemas/BatchStatus"
+        tx_hash:
+          type: string
+          nullable: true
+        anchored_at:
+          type: string
+          format: date-time
+          nullable: true
+        created_at:
+          type: string
+          format: date-time
+
+    ReconcileStats:
+      type: object
+      required: [pending_count, retried_total, failed_total]
+      properties:
+        pending_count:
+          type: integer
+          minimum: 0
+        retried_total:
+          type: integer
+          minimum: 0
+        failed_total:
+          type: integer
+          minimum: 0
+        last_reconcile_at:
+          type: string
+          format: date-time
+          nullable: true
+
+    DashboardOverviewResponse:
+      type: object
+      required:
+        [totals, status_distribution, ripeness_distribution, unripe_metrics, recent_anchors, reconcile_stats]
+      properties:
+        totals:
+          $ref: "#/components/schemas/DashboardTotals"
+        status_distribution:
+          $ref: "#/components/schemas/BatchStatusDistribution"
+        ripeness_distribution:
+          $ref: "#/components/schemas/RipenessDistribution"
+        unripe_metrics:
+          $ref: "#/components/schemas/UnripeMetrics"
+        recent_anchors:
+          type: array
+          items:
+            $ref: "#/components/schemas/RecentAnchorRecord"
+        reconcile_stats:
+          $ref: "#/components/schemas/ReconcileStats"
+
+    ReconcileRequest:
+      type: object
+      properties:
+        batch_ids:
+          type: array
+          items:
+            type: string
+          description: >
+            Optional explicit pending batch ids to reconcile.
+            If omitted, the service selects pending batches by limit.
+        limit:
+          type: integer
+          minimum: 1
+          maximum: 1000
+          default: 100
+
+    ReconcileResponse:
+      type: object
+      required: [accepted, requested_count, scheduled_count, skipped_count]
+      properties:
+        accepted:
+          type: boolean
+        requested_count:
+          type: integer
+          minimum: 0
+        scheduled_count:
+          type: integer
+          minimum: 0
+        skipped_count:
+          type: integer
+          minimum: 0
+        message:
+          type: string
+
+    ErrorResponse:
+      type: object
+      required: [error, message]
+      properties:
+        error:
+          type: string
+        message:
+          type: string
+        request_id:
+          type: string
+        details:
+          type: object
+          additionalProperties: true

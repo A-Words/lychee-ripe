@@ -173,6 +173,7 @@ flowchart TD
 | summary.red | integer | 是 | 红果数量 |
 | summary.young | integer | 是 | 嫩果数量 |
 | note | string | 否 | 备注 |
+| confirm_unripe | boolean | 否 | 未成熟占比超阈值（>0.15）时，需传 `true` 进行二次确认 |
 
 #### `Batch`
 
@@ -182,6 +183,9 @@ flowchart TD
 | trace_code | string | 对外溯源码 |
 | status | enum | `pending_anchor \| anchored \| anchor_failed` |
 | summary | object | 成熟度汇总 |
+| summary.unripe_count | integer | 未成熟数量（`green + young`） |
+| summary.unripe_ratio | number | 未成熟占比（`unripe_count / total`） |
+| summary.unripe_handling | enum | 默认 `sorted_out` |
 | created_at | string(date-time) | 创建时间 |
 | anchor_proof | AnchorProof/null | 锚定证明（可空） |
 
@@ -254,6 +258,7 @@ stateDiagram-v2
     "red": 58,
     "young": 7
   },
+  "confirm_unripe": true,
   "note": "首批果园采摘批次"
 }
 ```
@@ -265,6 +270,16 @@ stateDiagram-v2
   "batch_id": "batch_20260302_0001",
   "trace_code": "TRC-9A7X-11QF",
   "status": "anchored",
+  "summary": {
+    "total": 128,
+    "green": 22,
+    "half": 41,
+    "red": 58,
+    "young": 7,
+    "unripe_count": 29,
+    "unripe_ratio": 0.2266,
+    "unripe_handling": "sorted_out"
+  },
   "created_at": "2026-03-02T10:31:02+08:00",
   "anchor_proof": {
     "tx_hash": "0xabc123...",
@@ -284,6 +299,16 @@ stateDiagram-v2
   "batch_id": "batch_20260302_0002",
   "trace_code": "TRC-7K2N-3MPL",
   "status": "pending_anchor",
+  "summary": {
+    "total": 128,
+    "green": 22,
+    "half": 41,
+    "red": 58,
+    "young": 7,
+    "unripe_count": 29,
+    "unripe_ratio": 0.2266,
+    "unripe_handling": "sorted_out"
+  },
   "created_at": "2026-03-02T10:32:15+08:00",
   "anchor_proof": null
 }
@@ -304,7 +329,10 @@ stateDiagram-v2
       "green": 22,
       "half": 41,
       "red": 58,
-      "young": 7
+      "young": 7,
+      "unripe_count": 29,
+      "unripe_ratio": 0.2266,
+      "unripe_handling": "sorted_out"
     },
     "created_at": "2026-03-02T10:31:02+08:00"
   },
@@ -323,7 +351,9 @@ stateDiagram-v2
 | 请求参数非法 | 400 | invalid request |
 | 批次不存在 | 404 | batch not found |
 | 重复提交冲突 | 409 | duplicated batch |
-| 链服务暂不可用 | 202/503 | pending anchor / chain unavailable |
+| 建批时链服务降级（已落库） | 202 | pending anchor |
+| 补链任务受理 | 202 | reconcile accepted |
+| 链服务不可用（不可降级或查询失败） | 503 | chain unavailable |
 | 验签失败 | 200 | verify_status=fail, reason=... |
 
 ## 9. 安全与权限
