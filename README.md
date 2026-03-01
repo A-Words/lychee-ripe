@@ -1,167 +1,294 @@
 # lychee-ripe
 
-Lychee detection and ripeness classification service.
+荔枝目标检测与成熟度识别项目，提供：
 
-## Features
-- FastAPI service with `v1` endpoints
-- Image inference (`POST /v1/infer/image`)
-- Stream inference (`WS /v1/infer/stream`)
-- Session-level ripeness statistics and harvest suggestion
-- Configurable YOLO runtime version via `configs/model.yaml` (`yolo_version`)
-- Optional Go gateway layer for external API, auth/rate limit, and orchestration
-- Nuxt 4 + Nuxt UI frontend for live camera inference overlays (Web + Tauri desktop shell)
+- FastAPI 推理服务（`app/`）
+- Go 网关服务（`gateway/`）
+- Nuxt 前端可视化（`frontend/`，支持 Web/Desktop）
+- 训练与评估脚本（`training/`）
 
-## Quick start
+成熟度类别映射（4 类）：
+
+- `0 = green`
+- `1 = half`
+- `2 = red`
+- `3 = young`
+
+共享常量来源：`shared/constants/ripeness.json`  
+接口契约来源：`shared/schemas/openapi.yaml`
+
+---
+
+## 1. 系统架构与目录
+
+调用链（默认）：
+
+`Web/Desktop Frontend -> Go Gateway -> FastAPI Inference`
+
+关键目录：
+
+- `app/`：推理服务与 API
+- `gateway/`：对外 API、鉴权、限流、观测
+- `frontend/`：前端可视化客户端（Nuxt + Tauri）
+- `training/`：训练与评估脚本
+- `tests/`：Python/Go/前端测试
+- `shared/`：共享常量与 OpenAPI 契约
+- `configs/`：配置模板与本地配置
+- `scripts/`：联调、训练、评估、校验脚本
+- `artifacts/`：模型、指标、日志产物
+
+关键路径约定：
+
+- 训练输出：`artifacts/models/`
+- 评估输出：`artifacts/metrics/`
+- 推理模型配置：`configs/model.yaml`
+- 网关配置：`configs/gateway.yaml`
+- OpenAPI 契约：`shared/schemas/openapi.yaml`
+
+---
+
+## 2. 环境要求
+
+- Python `>= 3.11`（见 `pyproject.toml`）
+- Go（见 `gateway/go.mod`，当前为 `go 1.25.6`）
+- Bun（前端）
+- 可选：NVIDIA GPU + `nvidia-smi`（用于自动选择 `uv.lock`）
+
+推荐依赖流程（先锁文件再安装）：
+
+### Linux/macOS (sh)
+
 ```bash
+sh scripts/switch-lock.sh --target auto
 uv sync
-uv run uvicorn app.main:app --reload
+bun install --cwd frontend
 ```
 
-## Dev commands
+### Windows (PowerShell)
+
+```powershell
+powershell -ExecutionPolicy Bypass -File scripts/switch-lock.ps1 -Target auto
+uv sync
+bun install --cwd frontend
+```
+
+---
+
+## 3. 快速开始
+
+### 3.1 准备配置文件
+
+先从模板复制本地配置（本地 `.yaml` 不提交）：
+
+### Linux/macOS (sh)
+
+```bash
+cp configs/model.yaml.example configs/model.yaml
+cp configs/service.yaml.example configs/service.yaml
+cp configs/gateway.yaml.example configs/gateway.yaml
+```
+
+### Windows (PowerShell)
+
+```powershell
+Copy-Item configs/model.yaml.example configs/model.yaml
+Copy-Item configs/service.yaml.example configs/service.yaml
+Copy-Item configs/gateway.yaml.example configs/gateway.yaml
+```
+
+### 3.2 一键联调启动（推荐）
+
+### Linux/macOS (sh)
+
+```bash
+sh scripts/stack.sh --app-host 127.0.0.1 --app-port 8000 --gateway-config configs/gateway.yaml --frontend-host 127.0.0.1 --frontend-port 3000
+```
+
+### Windows (PowerShell)
+
+```powershell
+powershell -ExecutionPolicy Bypass -File scripts/stack.ps1 -AppHost 127.0.0.1 -AppPort 8000 -GatewayConfig configs/gateway.yaml -FrontendHost 127.0.0.1 -FrontendPort 3000
+```
+
+默认端口：
+
+- app：`8000`
+- gateway：`9000`
+- frontend：`3000`
+
+### 3.3 分服务启动
+
+#### app（FastAPI）
+
+```bash
+sh scripts/app.sh --host 127.0.0.1 --port 8000
+```
+
+```powershell
+powershell -ExecutionPolicy Bypass -File scripts/app.ps1 -Host 127.0.0.1 -Port 8000
+```
+
+#### gateway（Go）
+
+```bash
+sh scripts/gateway.sh --config configs/gateway.yaml
+```
+
+```powershell
+powershell -ExecutionPolicy Bypass -File scripts/gateway.ps1 -Config configs/gateway.yaml
+```
+
+#### frontend（Web）
+
+```bash
+sh scripts/frontend.sh --host 127.0.0.1 --port 3000
+```
+
+```powershell
+powershell -ExecutionPolicy Bypass -File scripts/frontend.ps1 -Host 127.0.0.1 -Port 3000
+```
+
+#### frontend（Desktop / Tauri）
+
+```bash
+sh scripts/desktop.sh
+```
+
+```powershell
+powershell -ExecutionPolicy Bypass -File scripts/desktop.ps1
+```
+
+---
+
+## 4. 配置说明
+
+### `configs/model.yaml`
+
+- `model_path`：在线推理模型路径（为空时使用默认模型加载行为）
+- `conf_threshold`：检测置信度阈值
+- `nms_iou`：NMS IoU 阈值
+- `device`：`auto` / `cpu` / `cuda`（或 CUDA 设备编号）
+
+### `configs/service.yaml`
+
+- `app_name`：服务名
+- `schema_version`：响应协议版本
+- `max_upload_mb`：单图接口上传大小限制（MB）
+
+### `configs/gateway.yaml`
+
+- `server`：网关监听地址与读写超时
+- `upstream.base_url`：上游 FastAPI 地址（默认 `http://127.0.0.1:8000`）
+- `auth`：API Key 开关与密钥列表
+- `rate_limit`：限流参数
+- `cors`：跨域策略
+- `logging`：日志级别与格式
+
+### 环境变量入口
+
+- `LYCHEE_MODEL_CONFIG`（app 模型配置路径）
+- `LYCHEE_SERVICE_CONFIG`（app 服务配置路径）
+- `LYCHEE_GATEWAY_CONFIG`（gateway 配置路径）
+
+前端网关地址默认在 `frontend/nuxt.config.ts` 中为 `http://127.0.0.1:9000`，可通过 Nuxt 公共运行时配置覆盖（例如 `NUXT_PUBLIC_GATEWAY_BASE`）。
+
+---
+
+## 5. 训练与评估
+
+### 5.1 训练
+
+```bash
+sh scripts/train.sh --data data/lichi/data.yaml --name lychee_v1
+```
+
+```powershell
+powershell -ExecutionPolicy Bypass -File scripts/train.ps1 -Data data/lichi/data.yaml -Name lychee_v1
+```
+
+可选导出 ONNX：
+
+```bash
+sh scripts/train.sh --data data/lichi/data.yaml --name lychee_v1 --export-onnx
+```
+
+### 5.2 评估
+
+```bash
+sh scripts/eval.sh --data data/lichi/data.yaml --exp lychee_v1
+```
+
+```powershell
+powershell -ExecutionPolicy Bypass -File scripts/eval.ps1 -Data data/lichi/data.yaml -Exp lychee_v1
+```
+
+默认产物：
+
+- checkpoint：`artifacts/models/<exp>/weights/best.pt`
+- 指标：`artifacts/metrics/<exp>-eval_metrics.json`
+
+---
+
+## 6. 质量检查与提交流程
+
+一键检查：
+
+```bash
+sh scripts/verify.sh
+```
+
+```powershell
+powershell -ExecutionPolicy Bypass -File scripts/verify.ps1
+```
+
+分层检查：
+
 ```bash
 uv run pytest -q
-uv run python training/train.py --data path/to/data.yaml --model yolo26n.pt
-uv run python training/eval.py --model artifacts/models/lychee_v1/weights/best.pt --data path/to/data.yaml
-go run ./gateway/cmd/gateway
 go test ./gateway/...
-bun install --cwd frontend
-bun run --cwd frontend dev
 bun run --cwd frontend typecheck
 bun run --cwd frontend test
 bun run --cwd frontend generate
-bun run --cwd frontend tauri:dev
 ```
 
-## Script shortcuts (sh)
-```bash
-sh scripts/app.sh --host 127.0.0.1 --port 8000
-sh scripts/gateway.sh --config configs/gateway.yaml
-sh scripts/stack.sh --app-host 127.0.0.1 --app-port 8000 --gateway-config configs/gateway.yaml
-sh scripts/frontend.sh --host 127.0.0.1 --port 3000
-sh scripts/desktop.sh
-sh scripts/train.sh --data data/lichi/data.yaml --name lychee_v1
-sh scripts/eval.sh --data data/lichi/data.yaml --exp lychee_v1
-sh scripts/verify.sh
-sh scripts/switch-lock.sh --target cpu
-sh scripts/switch-lock.sh --target cu128
-sh scripts/switch-lock.sh --target auto
-```
+提交前检查清单（精简版）：
 
-## Script shortcuts (PowerShell)
-```powershell
-powershell -ExecutionPolicy Bypass -File scripts/app.ps1 -Host 127.0.0.1 -Port 8000
-powershell -ExecutionPolicy Bypass -File scripts/gateway.ps1 -Config configs/gateway.yaml
-powershell -ExecutionPolicy Bypass -File scripts/stack.ps1 -AppHost 127.0.0.1 -AppPort 8000 -GatewayConfig configs/gateway.yaml
-powershell -ExecutionPolicy Bypass -File scripts/frontend.ps1 -Host 127.0.0.1 -Port 3000
-powershell -ExecutionPolicy Bypass -File scripts/desktop.ps1
-powershell -ExecutionPolicy Bypass -File scripts/train.ps1 -Data data/lichi/data.yaml -Name lychee_v1
-powershell -ExecutionPolicy Bypass -File scripts/eval.ps1 -Data data/lichi/data.yaml -Exp lychee_v1
-powershell -ExecutionPolicy Bypass -File scripts/verify.ps1
-powershell -ExecutionPolicy Bypass -File scripts/switch-lock.ps1 -Target cpu
-powershell -ExecutionPolicy Bypass -File scripts/switch-lock.ps1 -Target cu128
-powershell -ExecutionPolicy Bypass -File scripts/switch-lock.ps1 -Target auto
-```
+- 命令示例是否可运行，路径是否正确
+- 未引入硬编码绝对路径
+- `configs/*.yaml.example` 可用性不被破坏
+- 类别映射保持 `green/half/red/young` 一致
+- `shared/schemas/openapi.yaml` 与 `app/`、`gateway/`、`frontend/` 字段一致
+- 前端调用路径保持 `frontend -> gateway -> app`
+- 前端颜色与标签映射与 `shared/constants/ripeness.json` 一致
+- 摄像头切换能力可用（空闲/识别中切换、拔插刷新、上次选择恢复）
 
-## Project structure
-- `app/`: FastAPI inference service and API endpoints
-- `gateway/`: Go gateway service for external API access and request orchestration
-- `training/`: training and evaluation scripts
-- `tests/`: unit, integration, and performance tests
-- `frontend/`: frontend visualization client
-- `shared/`: shared contracts and constants between backend/frontend
-- `configs/`: local and example configuration files
-- `data/`: dataset workspace (`raw/`, `processed/`, `samples/`, `lichi/`)
-- `artifacts/`: model artifacts, metrics, and runtime logs
-- `scripts/`: automation scripts for dev, train, eval, and checks
-- `docker/`: container build assets
-- `docs/`: project documentation
+---
 
-## Dataset layout
-- Recommended path in this repo: `data/lichi/`
-- Keep raw datasets out of git (already ignored via `.gitignore`).
-- Current label mapping (4 classes): `0=green`, `1=half`, `2=red`, `3=young`.
+## 7. 已知限制
 
-## Dataset source
-- Zhiqing, Zhao (2025), "lichi-maturity", Mendeley Data, V1, doi: `10.17632/c3rk9gv4w9.1`
+- 当前 README 不提供 Docker 作为可执行主流程。
+- 原因：`docker/Dockerfile` 依赖的 `requirements.txt` 当前未在仓库中提供，按现状构建可能失败。
+- 待容器构建链路修复后，再补充 Docker 章节。
 
-## Export requirements (optional compatibility)
-```bash
-uv export --no-hashes -o requirements.txt
-```
+---
 
-## Config
-- `configs/model.yaml.example` (copy to `configs/model.yaml` for local use)
-- `configs/service.yaml.example` (copy to `configs/service.yaml` for local use)
-- `configs/gateway.yaml.example` (copy to `configs/gateway.yaml` for local use)
-- `frontend/.env.example` (copy to `frontend/.env` for local frontend config)
-- `model_path` precedence: if non-empty, use it directly; if empty, fallback to `${yolo_version}.pt`
+## 8. 常见问题（FAQ）
 
-Override paths with env vars:
-- `LYCHEE_MODEL_CONFIG`
-- `LYCHEE_SERVICE_CONFIG`
-- `LYCHEE_GATEWAY_CONFIG`
-- `NUXT_PUBLIC_GATEWAY_BASE` (frontend gateway URL, default: `http://127.0.0.1:9000`)
+### Q1：为什么前端不能直连 `app/`？
 
-## Dependency profiles (CPU/CUDA)
-- Runtime `device: "auto"` only controls inference-time selection and fallback behavior.
-- Installing CPU or CUDA dependencies is controlled by lock profile switching, not by `device`.
-- Canonical repo default is CPU: `uv.lock` must match `uv.lock.cpu`.
-- CUDA profile is fixed to `cu128` in this repo.
+项目约定前端只调用 `gateway/`。网关负责统一鉴权、限流、日志与跨域策略，避免把这些能力散落在前端或推理服务中。
 
-Switch profiles before running `uv run`:
-```bash
-sh scripts/switch-lock.sh --target cpu
-sh scripts/switch-lock.sh --target cu128
-sh scripts/switch-lock.sh --target auto
-```
+### Q2：为什么 `/v1/health` 可能返回 `degraded`？
 
-```powershell
-powershell -ExecutionPolicy Bypass -File scripts/switch-lock.ps1 -Target cpu
-powershell -ExecutionPolicy Bypass -File scripts/switch-lock.ps1 -Target cu128
-powershell -ExecutionPolicy Bypass -File scripts/switch-lock.ps1 -Target auto
-```
+服务启动时如果模型加载/预热失败，FastAPI 会保持进程可用并暴露健康信息。此时可见 `status=degraded`，便于观测与排障。
 
-## Frontend quick start (Web)
-```bash
-uv sync
-go run ./gateway/cmd/gateway
-bun install --cwd frontend
-bun run --cwd frontend dev
-```
+### Q3：摄像头拔插后前端如何处理？
 
-Open `http://127.0.0.1:3000`, click **Start**, grant camera permission, and verify detection boxes and ripeness labels are overlaid on video.
+前端会监听设备变化并刷新列表，支持空闲态与识别中切换，并保留上次选择设备。当前摄像头不可用时会尝试回退到可用设备。
 
-## Frontend quick start (Desktop / Tauri)
-```bash
-bun install --cwd frontend
-bun run --cwd frontend tauri:dev
-```
+---
 
-Notes:
-- This repo currently ships the Tauri 2 project structure in `frontend/src-tauri`.
-- You need Rust/Cargo and Tauri desktop dependencies installed locally for `tauri:dev`.
-- Desktop build packaging (`tauri build`) is intentionally out of scope in this first phase.
+## 9. 参考与数据
 
-## First-phase frontend behavior and limits
-- Default stream profile: `640x360`, ~`5 FPS`, JPEG frames.
-- Data path is fixed: `frontend -> gateway -> app`.
-- Gateway auth is expected to stay disabled for local first-phase integration (`configs/gateway.yaml.example`).
-- The frontend currently supports camera selection and live switching (including while streaming), and stores the last selected camera in local storage.
-- The frontend currently focuses on live overlay + current frame stats + session summary; no history playback/charting yet.
-
-## API contract and service boundary
-- Keep OpenAPI at `shared/schemas/openapi.yaml` as the single source of truth for external API fields.
-- Recommended call path: `frontend -> gateway -> app`.
-- Frontend should use gateway APIs only and avoid direct calls to `app`.
-
-## Local config files (not committed)
-- Copy `configs/model.yaml.example` to `configs/model.yaml`.
-- Copy `configs/service.yaml.example` to `configs/service.yaml`.
-- Copy `configs/gateway.yaml.example` to `configs/gateway.yaml`.
-- Any `configs/*.yaml` is ignored by git; only `configs/*.yaml.example` is tracked.
-- Edit local files for machine-specific settings (default `device: "auto"`; set `device: "cpu"` or `device: "cuda:0"` only when you need explicit pinning).
-- Startup fails fast if either local config file is missing.
-- Start service (defaults to these local files):
-```powershell
-uv run uvicorn app.main:app --reload
-```
+- 数据集引用：Zhiqing, Zhao (2025), "lichi-maturity", Mendeley Data, V1, doi: `10.17632/c3rk9gv4w9.1`
+- 本仓库不提交原始数据与大模型权重（遵循 `.gitignore`）
