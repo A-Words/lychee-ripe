@@ -151,6 +151,52 @@ func TestAuthStillRequiresKeyForProtectedPath(t *testing.T) {
 	}
 }
 
+func TestAuthRequiresKeyForProtectedReadPath(t *testing.T) {
+	cfg := config.AuthConfig{Enabled: true, APIKeys: []string{"secret-key"}}
+	mw := Auth(cfg, slog.Default())
+	handler := mw(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		w.WriteHeader(http.StatusOK)
+	}))
+
+	tests := []struct {
+		name   string
+		method string
+		path   string
+	}{
+		{name: "batch detail", method: http.MethodGet, path: "/v1/batches/batch_01"},
+		{name: "dashboard overview", method: http.MethodGet, path: "/v1/dashboard/overview"},
+		{name: "reconcile", method: http.MethodPost, path: "/v1/batches/reconcile"},
+		{name: "proxy infer image", method: http.MethodPost, path: "/v1/infer/image"},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			req := httptest.NewRequest(tt.method, tt.path, nil)
+			rec := httptest.NewRecorder()
+			handler.ServeHTTP(rec, req)
+			if rec.Code != http.StatusUnauthorized {
+				t.Fatalf("%s %s: expected 401, got %d", tt.method, tt.path, rec.Code)
+			}
+		})
+	}
+}
+
+func TestAuthAllowsProtectedPathWithValidKey(t *testing.T) {
+	cfg := config.AuthConfig{Enabled: true, APIKeys: []string{"secret-key"}}
+	mw := Auth(cfg, slog.Default())
+	handler := mw(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		w.WriteHeader(http.StatusOK)
+	}))
+
+	req := httptest.NewRequest(http.MethodGet, "/v1/dashboard/overview", nil)
+	req.Header.Set("X-API-Key", "secret-key")
+	rec := httptest.NewRecorder()
+	handler.ServeHTTP(rec, req)
+	if rec.Code != http.StatusOK {
+		t.Errorf("expected 200 for protected path with valid key, got %d", rec.Code)
+	}
+}
+
 func TestRateLimitAllows(t *testing.T) {
 	cfg := config.RateLimitConfig{Enabled: true, RequestsPerSecond: 100, Burst: 10}
 	mw := RateLimit(cfg, slog.Default())
