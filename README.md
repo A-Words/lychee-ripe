@@ -179,6 +179,7 @@ powershell -ExecutionPolicy Bypass -File scripts/desktop.ps1
 
 - `server`：网关监听地址与读写超时
 - `upstream.base_url`：上游 FastAPI 地址（默认 `http://127.0.0.1:8000`）
+- `db`：SQLite 持久化配置（`path`、`busy_timeout_ms`、`journal_mode`）
 - `auth`：API Key 开关与密钥列表
 - `rate_limit`：限流参数
 - `cors`：跨域策略

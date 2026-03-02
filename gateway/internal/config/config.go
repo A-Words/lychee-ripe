@@ -12,6 +12,7 @@ import (
 type Config struct {
 	Server    ServerConfig    `yaml:"server"`
 	Upstream  UpstreamConfig  `yaml:"upstream"`
+	DB        DBConfig        `yaml:"db"`
 	Auth      AuthConfig      `yaml:"auth"`
 	RateLimit RateLimitConfig `yaml:"rate_limit"`
 	CORS      CORSConfig      `yaml:"cors"`
@@ -30,6 +31,13 @@ type ServerConfig struct {
 type UpstreamConfig struct {
 	BaseURL  string `yaml:"base_url"`
 	TimeoutS int    `yaml:"timeout_s"`
+}
+
+// DBConfig defines SQLite connection settings.
+type DBConfig struct {
+	Path          string `yaml:"path"`
+	BusyTimeoutMS int    `yaml:"busy_timeout_ms"`
+	JournalMode   string `yaml:"journal_mode"`
 }
 
 // AuthConfig defines API key authentication settings.
@@ -73,6 +81,11 @@ func Defaults() Config {
 		Upstream: UpstreamConfig{
 			BaseURL:  "http://127.0.0.1:8000",
 			TimeoutS: 30,
+		},
+		DB: DBConfig{
+			Path:          filepath.Join("artifacts", "data", "gateway.db"),
+			BusyTimeoutMS: 5000,
+			JournalMode:   "WAL",
 		},
 		Auth: AuthConfig{
 			Enabled: false,

@@ -12,6 +12,7 @@ import (
 	"time"
 
 	"github.com/lychee-ripe/gateway/internal/config"
+	gatewaydb "github.com/lychee-ripe/gateway/internal/db"
 	"github.com/lychee-ripe/gateway/internal/handler"
 	"github.com/lychee-ripe/gateway/internal/middleware"
 	"github.com/lychee-ripe/gateway/internal/proxy"
@@ -49,6 +50,23 @@ func main() {
 	}
 	logger := slog.New(logHandler)
 
+	// Initialize SQLite and run schema migrations before serving traffic.
+	dbConn, err := gatewaydb.Open(context.Background(), cfg.DB)
+	if err != nil {
+		logger.Error("failed to open sqlite", "path", cfg.DB.Path, "error", err)
+		os.Exit(1)
+	}
+	defer func() {
+		if err := dbConn.Close(); err != nil {
+			logger.Error("failed to close sqlite", "error", err)
+		}
+	}()
+
+	if err := gatewaydb.Migrate(context.Background(), dbConn); err != nil {
+		logger.Error("failed to migrate sqlite schema", "error", err)
+		os.Exit(1)
+	}
+
 	// Build the reverse proxy.
 	rp, err := proxy.New(cfg.Upstream, logger)
 	if err != nil {
@@ -85,6 +103,7 @@ func main() {
 		logger.Info("gateway listening",
 			"addr", cfg.Addr(),
 			"upstream", cfg.Upstream.BaseURL,
+			"db_path", cfg.DB.Path,
 			"auth", cfg.Auth.Enabled,
 			"rate_limit", cfg.RateLimit.Enabled,
 		)

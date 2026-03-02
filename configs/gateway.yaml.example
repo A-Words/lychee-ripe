@@ -8,6 +8,11 @@ upstream:
   base_url: "http://127.0.0.1:8000"
   timeout_s: 30
 
+db:
+  path: "artifacts/data/gateway.db"
+  busy_timeout_ms: 5000
+  journal_mode: "WAL"
+
 auth:
   enabled: false
   api_keys:

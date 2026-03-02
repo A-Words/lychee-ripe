@@ -14,6 +14,15 @@ func TestDefaults(t *testing.T) {
 	if cfg.Upstream.BaseURL != "http://127.0.0.1:8000" {
 		t.Errorf("unexpected default upstream: %s", cfg.Upstream.BaseURL)
 	}
+	if cfg.DB.Path != filepath.Join("artifacts", "data", "gateway.db") {
+		t.Errorf("unexpected default db path: %s", cfg.DB.Path)
+	}
+	if cfg.DB.BusyTimeoutMS != 5000 {
+		t.Errorf("unexpected default busy timeout: %d", cfg.DB.BusyTimeoutMS)
+	}
+	if cfg.DB.JournalMode != "WAL" {
+		t.Errorf("unexpected default journal mode: %s", cfg.DB.JournalMode)
+	}
 }
 
 func TestLoad(t *testing.T) {
@@ -26,6 +35,10 @@ server:
 upstream:
   base_url: "http://localhost:3000"
   timeout_s: 10
+db:
+  path: "tmp/test-gateway.db"
+  busy_timeout_ms: 999
+  journal_mode: "WAL"
 auth:
   enabled: true
   api_keys:
@@ -50,6 +63,15 @@ rate_limit:
 	}
 	if cfg.Upstream.BaseURL != "http://localhost:3000" {
 		t.Errorf("upstream = %q", cfg.Upstream.BaseURL)
+	}
+	if cfg.DB.Path != "tmp/test-gateway.db" {
+		t.Errorf("db.path = %q", cfg.DB.Path)
+	}
+	if cfg.DB.BusyTimeoutMS != 999 {
+		t.Errorf("db.busy_timeout_ms = %d, want 999", cfg.DB.BusyTimeoutMS)
+	}
+	if cfg.DB.JournalMode != "WAL" {
+		t.Errorf("db.journal_mode = %q, want WAL", cfg.DB.JournalMode)
 	}
 	if !cfg.Auth.Enabled {
 		t.Error("auth should be enabled")
