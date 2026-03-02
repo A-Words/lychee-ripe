@@ -96,6 +96,7 @@ func main() {
 	batchSvc := service.NewBatchCreateService(repo, chainAdapter, cfg.Chain.Enabled, logger)
 	traceSvc := service.NewTraceService(repo, chainAdapter, cfg.Chain.Enabled)
 	reconcileSvc := service.NewReconcileService(repo, repo, chainAdapter, cfg.Chain.Enabled, logger)
+	dashboardSvc := service.NewDashboardService(repo, repo)
 
 	appCtx, appCancel := context.WithCancel(context.Background())
 	defer appCancel()
@@ -107,6 +108,7 @@ func main() {
 	mux.HandleFunc("POST /v1/batches", handler.CreateBatch(batchSvc, logger))
 	mux.HandleFunc("GET /v1/batches/{batch_id}", handler.GetBatch(batchSvc, logger))
 	mux.HandleFunc("GET /v1/trace/{trace_code}", handler.GetPublicTrace(traceSvc, logger))
+	mux.HandleFunc("GET /v1/dashboard/overview", handler.GetDashboardOverview(dashboardSvc, logger))
 	mux.HandleFunc("POST /v1/batches/reconcile", handler.ReconcileBatches(reconcileSvc, logger))
 	mux.Handle("/", rp)
 

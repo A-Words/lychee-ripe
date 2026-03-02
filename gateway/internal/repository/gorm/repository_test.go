@@ -248,8 +248,13 @@ func TestDashboardAggregationsSQLite(t *testing.T) {
 	if err != nil {
 		t.Fatalf("list recent anchors: %v", err)
 	}
-	if len(recent) != 2 {
-		t.Fatalf("recent anchors len = %d, want 2", len(recent))
+	if len(recent) != 1 {
+		t.Fatalf("recent anchors len = %d, want 1", len(recent))
+	}
+	for _, item := range recent {
+		if item.Status != domain.BatchStatusAnchored {
+			t.Fatalf("recent anchor status = %q, want anchored", item.Status)
+		}
 	}
 }
 

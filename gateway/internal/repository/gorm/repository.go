@@ -397,6 +397,7 @@ func (r *Repository) ListRecentAnchors(ctx context.Context, limit int) ([]domain
 			b.batch_id, b.trace_code, b.status, ap.tx_hash, ap.anchored_at, b.created_at
 		FROM batches b
 		LEFT JOIN anchor_proofs ap ON ap.batch_id = b.batch_id
+		WHERE b.status = 'anchored'
 		ORDER BY b.created_at DESC
 		LIMIT ?`,
 		limit,
