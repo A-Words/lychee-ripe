@@ -17,6 +17,8 @@ import (
 	"github.com/lychee-ripe/gateway/internal/handler"
 	"github.com/lychee-ripe/gateway/internal/middleware"
 	"github.com/lychee-ripe/gateway/internal/proxy"
+	repositorygorm "github.com/lychee-ripe/gateway/internal/repository/gorm"
+	"github.com/lychee-ripe/gateway/internal/service"
 )
 
 func main() {
@@ -90,9 +92,13 @@ func main() {
 		os.Exit(1)
 	}
 
+	repo := repositorygorm.New(gdb)
+	batchSvc := service.NewBatchCreateService(repo, chainAdapter, cfg.Chain.Enabled, logger)
+
 	// Compose the middleware chain.
 	mux := http.NewServeMux()
 	mux.HandleFunc("GET /healthz", handler.Health(cfg.Upstream, logger))
+	mux.HandleFunc("POST /v1/batches", handler.CreateBatch(batchSvc, logger))
 	mux.Handle("/", rp)
 
 	// Apply middleware (outermost runs first).
