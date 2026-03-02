@@ -99,6 +99,7 @@ func main() {
 	mux := http.NewServeMux()
 	mux.HandleFunc("GET /healthz", handler.Health(cfg.Upstream, logger))
 	mux.HandleFunc("POST /v1/batches", handler.CreateBatch(batchSvc, logger))
+	mux.HandleFunc("GET /v1/batches/{batch_id}", handler.GetBatch(batchSvc, logger))
 	mux.Handle("/", rp)
 
 	// Apply middleware (outermost runs first).

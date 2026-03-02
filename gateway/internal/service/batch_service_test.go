@@ -216,6 +216,73 @@ func TestCreateBatchReturnsConflictAfterMaxRetries(t *testing.T) {
 	}
 }
 
+func TestGetBatchByIDSuccess(t *testing.T) {
+	t.Parallel()
+
+	repo := newFakeBatchRepository()
+	base := sampleCreateInput(10, 1, 3, 6, 0, false)
+	record, err := repo.CreateBatch(context.Background(), domain.CreateBatchParams{
+		BatchID:       "batch_get_ok",
+		TraceCode:     "TRC-GETB-0001",
+		Status:        domain.BatchStatusPendingAnchor,
+		OrchardID:     base.OrchardID,
+		OrchardName:   base.OrchardName,
+		PlotID:        base.PlotID,
+		PlotName:      base.PlotName,
+		HarvestedAt:   time.Date(2026, 3, 2, 10, 30, 0, 0, time.UTC),
+		Summary:       domain.BatchSummary{Total: 10, Green: 1, Half: 3, Red: 6, Young: 0, UnripeCount: 1, UnripeRatio: 0.1, UnripeHandling: domain.UnripeHandlingSortedOut},
+		ConfirmUnripe: false,
+		CreatedAt:     time.Date(2026, 3, 2, 10, 31, 0, 0, time.UTC),
+		UpdatedAt:     time.Date(2026, 3, 2, 10, 31, 0, 0, time.UTC),
+	})
+	if err != nil {
+		t.Fatalf("seed record failed: %v", err)
+	}
+	repo.batches[record.BatchID] = record
+
+	svc := NewBatchCreateService(repo, nil, false, nil)
+	got, err := svc.GetBatchByID(context.Background(), "batch_get_ok")
+	if err != nil {
+		t.Fatalf("GetBatchByID failed: %v", err)
+	}
+	if got.BatchID != "batch_get_ok" {
+		t.Fatalf("batch_id = %q, want batch_get_ok", got.BatchID)
+	}
+}
+
+func TestGetBatchByIDNotFound(t *testing.T) {
+	t.Parallel()
+
+	svc := NewBatchCreateService(newFakeBatchRepository(), nil, false, nil)
+	_, err := svc.GetBatchByID(context.Background(), "not_found")
+	if !errors.Is(err, ErrNotFound) {
+		t.Fatalf("error = %v, want ErrNotFound", err)
+	}
+}
+
+func TestGetBatchByIDRepositoryError(t *testing.T) {
+	t.Parallel()
+
+	repo := newFakeBatchRepository()
+	repo.getByIDErr = errors.New("db down")
+	svc := NewBatchCreateService(repo, nil, false, nil)
+
+	_, err := svc.GetBatchByID(context.Background(), "batch_x")
+	if !errors.Is(err, ErrServiceUnavailable) {
+		t.Fatalf("error = %v, want ErrServiceUnavailable", err)
+	}
+}
+
+func TestGetBatchByIDEmptyID(t *testing.T) {
+	t.Parallel()
+
+	svc := NewBatchCreateService(newFakeBatchRepository(), nil, false, nil)
+	_, err := svc.GetBatchByID(context.Background(), "   ")
+	if !errors.Is(err, ErrInvalidRequest) {
+		t.Fatalf("error = %v, want ErrInvalidRequest", err)
+	}
+}
+
 func sampleCreateInput(total, green, half, red, young int, confirm bool) BatchCreateInput {
 	plotName := "plot-a1"
 	note := "note"
@@ -250,6 +317,7 @@ type fakeBatchRepository struct {
 	traceIndex      map[string]string
 	createErrors    []error
 	createCallCount int
+	getByIDErr      error
 }
 
 func newFakeBatchRepository() *fakeBatchRepository {
@@ -300,6 +368,9 @@ func (f *fakeBatchRepository) CreateBatch(_ context.Context, params domain.Creat
 }
 
 func (f *fakeBatchRepository) GetBatchByID(_ context.Context, batchID string) (domain.BatchRecord, error) {
+	if f.getByIDErr != nil {
+		return domain.BatchRecord{}, f.getByIDErr
+	}
 	record, ok := f.batches[batchID]
 	if !ok {
 		return domain.BatchRecord{}, repository.ErrNotFound
