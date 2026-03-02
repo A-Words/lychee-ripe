@@ -3,13 +3,9 @@ package service
 import (
 	"context"
 	"crypto/rand"
-	"crypto/sha256"
-	"encoding/hex"
-	"encoding/json"
 	"errors"
 	"fmt"
 	"log/slog"
-	"math"
 	"net/http"
 	"strings"
 	"time"
@@ -21,9 +17,8 @@ import (
 )
 
 const (
-	unripeThreshold   = 0.15
-	maxIDRetry        = 3
-	unripeRatioDigits = 6
+	unripeThreshold = 0.15
+	maxIDRetry      = 3
 )
 
 type AnchorClient interface {
@@ -182,6 +177,22 @@ func (s *BatchCreateService) CreateBatch(ctx context.Context, input BatchCreateI
 	return CreateBatchResult{}, fmt.Errorf("%w: unable to allocate unique ids", ErrConflict)
 }
 
+func (s *BatchCreateService) GetBatchByID(ctx context.Context, batchID string) (domain.BatchRecord, error) {
+	id := strings.TrimSpace(batchID)
+	if id == "" {
+		return domain.BatchRecord{}, fmt.Errorf("%w: batch_id is required", ErrInvalidRequest)
+	}
+
+	record, err := s.repo.GetBatchByID(ctx, id)
+	if err != nil {
+		if errors.Is(err, repository.ErrNotFound) {
+			return domain.BatchRecord{}, fmt.Errorf("%w: batch not found", ErrNotFound)
+		}
+		return domain.BatchRecord{}, fmt.Errorf("%w: %v", ErrServiceUnavailable, err)
+	}
+	return record, nil
+}
+
 func (s *BatchCreateService) degradeBatch(
 	ctx context.Context,
 	record domain.BatchRecord,
@@ -295,70 +306,6 @@ func normalizeOptionalString(value *string) *string {
 	return &trimmed
 }
 
-type anchorHashPayload struct {
-	BatchID     string
-	TraceCode   string
-	OrchardID   string
-	OrchardName string
-	PlotID      string
-	PlotName    *string
-	HarvestedAt time.Time
-	Summary     domain.BatchSummary
-	Note        *string
-}
-
-type canonicalBatchPayload struct {
-	BatchID     string                `json:"batch_id"`
-	TraceCode   string                `json:"trace_code"`
-	OrchardID   string                `json:"orchard_id"`
-	OrchardName string                `json:"orchard_name"`
-	PlotID      string                `json:"plot_id"`
-	PlotName    *string               `json:"plot_name"`
-	HarvestedAt string                `json:"harvested_at"`
-	Summary     canonicalBatchSummary `json:"summary"`
-	Note        *string               `json:"note"`
-}
-
-type canonicalBatchSummary struct {
-	Total          int         `json:"total"`
-	Green          int         `json:"green"`
-	Half           int         `json:"half"`
-	Red            int         `json:"red"`
-	Young          int         `json:"young"`
-	UnripeCount    int         `json:"unripe_count"`
-	UnripeRatio    json.Number `json:"unripe_ratio"`
-	UnripeHandling string      `json:"unripe_handling"`
-}
-
-func computeAnchorHash(payload anchorHashPayload) (string, error) {
-	canonical := canonicalBatchPayload{
-		BatchID:     payload.BatchID,
-		TraceCode:   payload.TraceCode,
-		OrchardID:   payload.OrchardID,
-		OrchardName: payload.OrchardName,
-		PlotID:      payload.PlotID,
-		PlotName:    payload.PlotName,
-		HarvestedAt: payload.HarvestedAt.UTC().Format(time.RFC3339Nano),
-		Summary: canonicalBatchSummary{
-			Total:          payload.Summary.Total,
-			Green:          payload.Summary.Green,
-			Half:           payload.Summary.Half,
-			Red:            payload.Summary.Red,
-			Young:          payload.Summary.Young,
-			UnripeCount:    payload.Summary.UnripeCount,
-			UnripeRatio:    json.Number(fmt.Sprintf("%.6f", payload.Summary.UnripeRatio)),
-			UnripeHandling: string(payload.Summary.UnripeHandling),
-		},
-		Note: payload.Note,
-	}
-	raw, err := json.Marshal(canonical)
-	if err != nil {
-		return "", err
-	}
-	sum := sha256.Sum256(raw)
-	return "0x" + hex.EncodeToString(sum[:]), nil
-}
-
 func defaultBatchID() string {
 	id := ulid.MustNew(ulid.Timestamp(time.Now().UTC()), rand.Reader)
 	return "batch_" + strings.ToLower(id.String())
@@ -377,9 +324,4 @@ func defaultTraceCode() string {
 		buf[i] = traceAlphabet[int(buf[i])%len(traceAlphabet)]
 	}
 	return "TRC-" + string(buf[:4]) + "-" + string(buf[4:])
-}
-
-func roundTo(value float64, digits int) float64 {
-	pow := math.Pow10(digits)
-	return math.Round(value*pow) / pow
 }

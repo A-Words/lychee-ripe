@@ -31,6 +31,11 @@ func Auth(cfg config.AuthConfig, logger *slog.Logger) func(http.Handler) http.Ha
 
 	return func(next http.Handler) http.Handler {
 		return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+			if isPublicPath(r.URL.Path) {
+				next.ServeHTTP(w, r)
+				return
+			}
+
 			key := r.Header.Get("X-API-Key")
 			if key == "" {
 				if bearer := r.Header.Get("Authorization"); bearer != "" {
@@ -53,4 +58,12 @@ func Auth(cfg config.AuthConfig, logger *slog.Logger) func(http.Handler) http.Ha
 			next.ServeHTTP(w, r)
 		})
 	}
+}
+
+func isPublicPath(path string) bool {
+	switch path {
+	case "/healthz", "/v1/health", "/v1/trace":
+		return true
+	}
+	return strings.HasPrefix(path, "/v1/trace/")
 }

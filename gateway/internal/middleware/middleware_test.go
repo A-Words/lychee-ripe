@@ -121,6 +121,36 @@ func TestAuthNoKey(t *testing.T) {
 	}
 }
 
+func TestAuthAllowsPublicTracePathWithoutKey(t *testing.T) {
+	cfg := config.AuthConfig{Enabled: true, APIKeys: []string{"secret-key"}}
+	mw := Auth(cfg, slog.Default())
+	handler := mw(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		w.WriteHeader(http.StatusOK)
+	}))
+
+	req := httptest.NewRequest(http.MethodGet, "/v1/trace/TRC-ABCD-EFGH", nil)
+	rec := httptest.NewRecorder()
+	handler.ServeHTTP(rec, req)
+	if rec.Code != http.StatusOK {
+		t.Errorf("expected 200 for public trace path, got %d", rec.Code)
+	}
+}
+
+func TestAuthStillRequiresKeyForProtectedPath(t *testing.T) {
+	cfg := config.AuthConfig{Enabled: true, APIKeys: []string{"secret-key"}}
+	mw := Auth(cfg, slog.Default())
+	handler := mw(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		w.WriteHeader(http.StatusOK)
+	}))
+
+	req := httptest.NewRequest(http.MethodPost, "/v1/batches", nil)
+	rec := httptest.NewRecorder()
+	handler.ServeHTTP(rec, req)
+	if rec.Code != http.StatusUnauthorized {
+		t.Errorf("expected 401 for protected path without key, got %d", rec.Code)
+	}
+}
+
 func TestRateLimitAllows(t *testing.T) {
 	cfg := config.RateLimitConfig{Enabled: true, RequestsPerSecond: 100, Burst: 10}
 	mw := RateLimit(cfg, slog.Default())
