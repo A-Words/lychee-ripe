@@ -41,6 +41,15 @@ func TestDefaults(t *testing.T) {
 	if cfg.DB.Postgres.Schema != "public" {
 		t.Errorf("unexpected default postgres schema: %s", cfg.DB.Postgres.Schema)
 	}
+	if cfg.Chain.Enabled {
+		t.Error("unexpected default chain.enabled: true")
+	}
+	if cfg.Chain.TxTimeoutS != 30 {
+		t.Errorf("unexpected default chain.tx_timeout_s: %d", cfg.Chain.TxTimeoutS)
+	}
+	if cfg.Chain.ReceiptPollIntervalMS != 500 {
+		t.Errorf("unexpected default chain.receipt_poll_interval_ms: %d", cfg.Chain.ReceiptPollIntervalMS)
+	}
 }
 
 func TestLoad(t *testing.T) {
@@ -120,9 +129,88 @@ rate_limit:
 	if cfg.RateLimit.Enabled {
 		t.Error("rate_limit should be disabled")
 	}
+	if cfg.Chain.Enabled {
+		t.Error("chain should be disabled by default")
+	}
 	// Defaults should be preserved for unset fields.
 	if cfg.CORS.MaxAgeS != 3600 {
 		t.Errorf("cors max_age_s = %d, want 3600 (default)", cfg.CORS.MaxAgeS)
+	}
+}
+
+func TestLoadChainEnabledValid(t *testing.T) {
+	dir := t.TempDir()
+	cfgPath := filepath.Join(dir, "gateway.yaml")
+	content := `
+chain:
+  enabled: true
+  rpc_url: "http://127.0.0.1:8545"
+  chain_id: "31337"
+  contract_address: "0x1234567890abcdef1234567890abcdef12345678"
+  private_key: "0123456789abcdef0123456789abcdef0123456789abcdef0123456789abcdef"
+  tx_timeout_s: 45
+  receipt_poll_interval_ms: 200
+`
+	if err := os.WriteFile(cfgPath, []byte(content), 0o644); err != nil {
+		t.Fatal(err)
+	}
+
+	cfg, err := Load(cfgPath)
+	if err != nil {
+		t.Fatalf("Load failed: %v", err)
+	}
+	if !cfg.Chain.Enabled {
+		t.Fatal("chain.enabled should be true")
+	}
+	if cfg.Chain.ChainID != "31337" {
+		t.Fatalf("chain.chain_id = %q, want 31337", cfg.Chain.ChainID)
+	}
+	if cfg.Chain.TxTimeoutS != 45 {
+		t.Fatalf("chain.tx_timeout_s = %d, want 45", cfg.Chain.TxTimeoutS)
+	}
+	if cfg.Chain.ReceiptPollIntervalMS != 200 {
+		t.Fatalf("chain.receipt_poll_interval_ms = %d, want 200", cfg.Chain.ReceiptPollIntervalMS)
+	}
+}
+
+func TestLoadChainEnabledMissingField(t *testing.T) {
+	dir := t.TempDir()
+	cfgPath := filepath.Join(dir, "gateway.yaml")
+	content := `
+chain:
+  enabled: true
+  chain_id: "31337"
+  contract_address: "0x1234567890abcdef1234567890abcdef12345678"
+  private_key: "0123456789abcdef0123456789abcdef0123456789abcdef0123456789abcdef"
+`
+	if err := os.WriteFile(cfgPath, []byte(content), 0o644); err != nil {
+		t.Fatal(err)
+	}
+
+	_, err := Load(cfgPath)
+	if err == nil {
+		t.Fatal("expected validation error when chain.rpc_url is missing")
+	}
+}
+
+func TestLoadChainEnabledInvalidFormat(t *testing.T) {
+	dir := t.TempDir()
+	cfgPath := filepath.Join(dir, "gateway.yaml")
+	content := `
+chain:
+  enabled: true
+  rpc_url: "http://127.0.0.1:8545"
+  chain_id: "31337"
+  contract_address: "0xinvalid"
+  private_key: "abc"
+`
+	if err := os.WriteFile(cfgPath, []byte(content), 0o644); err != nil {
+		t.Fatal(err)
+	}
+
+	_, err := Load(cfgPath)
+	if err == nil {
+		t.Fatal("expected validation error for invalid chain contract/key format")
 	}
 }
 

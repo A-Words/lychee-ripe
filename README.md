@@ -184,6 +184,7 @@ powershell -ExecutionPolicy Bypass -File scripts/desktop.ps1
 - `db.max_open_conns` / `db.max_idle_conns` / `db.conn_max_lifetime_s`：连接池参数
 - `db.sqlite`：SQLite 参数（`journal_mode`、`busy_timeout_ms`）
 - `db.postgres`：PostgreSQL 参数（`ssl_mode`、`schema`）
+- `chain`：EVM 锚定参数（`enabled`、`rpc_url`、`chain_id`、`contract_address`、`private_key`、`tx_timeout_s`、`receipt_poll_interval_ms`）
 - `auth`：API Key 开关与密钥列表
 - `rate_limit`：限流参数
 - `cors`：跨域策略
@@ -202,6 +203,21 @@ db:
     ssl_mode: "disable"
     schema: "public"
 ```
+
+EVM 链配置示例（本地测试链）：
+
+```yaml
+chain:
+  enabled: true
+  rpc_url: "http://127.0.0.1:8545"
+  chain_id: "31337"
+  contract_address: "0x1234567890abcdef1234567890abcdef12345678"
+  private_key: "0123456789abcdef0123456789abcdef0123456789abcdef0123456789abcdef"
+  tx_timeout_s: 30
+  receipt_poll_interval_ms: 500
+```
+
+说明：`private_key` 仅用于本地开发测试链。生产环境应替换为专用密钥管理方案，避免明文配置。
 
 ### 环境变量入口
 

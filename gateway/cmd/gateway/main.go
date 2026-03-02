@@ -11,6 +11,7 @@ import (
 	"syscall"
 	"time"
 
+	"github.com/lychee-ripe/gateway/internal/chain/evm"
 	"github.com/lychee-ripe/gateway/internal/config"
 	gatewaydb "github.com/lychee-ripe/gateway/internal/db"
 	"github.com/lychee-ripe/gateway/internal/handler"
@@ -72,6 +73,16 @@ func main() {
 		os.Exit(1)
 	}
 
+	var chainAdapter *evm.Adapter
+	if cfg.Chain.Enabled {
+		chainAdapter, err = evm.NewAdapter(context.Background(), cfg.Chain)
+		if err != nil {
+			logger.Error("failed to initialize chain adapter", "error", err)
+			os.Exit(1)
+		}
+		defer chainAdapter.Close()
+	}
+
 	// Build the reverse proxy.
 	rp, err := proxy.New(cfg.Upstream, logger)
 	if err != nil {
@@ -110,6 +121,10 @@ func main() {
 			"upstream", cfg.Upstream.BaseURL,
 			"db_driver", cfg.DB.Driver,
 			"db_dsn", gatewaydb.SanitizeDSN(cfg.DB.Driver, cfg.DB.DSN),
+			"chain_enabled", cfg.Chain.Enabled,
+			"chain_rpc_url", cfg.Chain.RPCURL,
+			"chain_id", cfg.Chain.ChainID,
+			"chain_contract_address", cfg.Chain.ContractAddress,
 			"auth", cfg.Auth.Enabled,
 			"rate_limit", cfg.RateLimit.Enabled,
 		)

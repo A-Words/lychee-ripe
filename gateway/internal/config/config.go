@@ -3,8 +3,11 @@ package config
 import (
 	"bytes"
 	"fmt"
+	"net/url"
 	"os"
 	"path/filepath"
+	"regexp"
+	"strconv"
 	"strings"
 
 	"gopkg.in/yaml.v3"
@@ -15,6 +18,7 @@ type Config struct {
 	Server    ServerConfig    `yaml:"server"`
 	Upstream  UpstreamConfig  `yaml:"upstream"`
 	DB        DBConfig        `yaml:"db"`
+	Chain     ChainConfig     `yaml:"chain"`
 	Auth      AuthConfig      `yaml:"auth"`
 	RateLimit RateLimitConfig `yaml:"rate_limit"`
 	CORS      CORSConfig      `yaml:"cors"`
@@ -54,6 +58,17 @@ type SQLiteDBConfig struct {
 type PostgresDBConfig struct {
 	SSLMode string `yaml:"ssl_mode"`
 	Schema  string `yaml:"schema"`
+}
+
+// ChainConfig defines EVM chain adapter settings.
+type ChainConfig struct {
+	Enabled               bool   `yaml:"enabled"`
+	RPCURL                string `yaml:"rpc_url"`
+	ChainID               string `yaml:"chain_id"`
+	ContractAddress       string `yaml:"contract_address"`
+	PrivateKey            string `yaml:"private_key"`
+	TxTimeoutS            int    `yaml:"tx_timeout_s"`
+	ReceiptPollIntervalMS int    `yaml:"receipt_poll_interval_ms"`
 }
 
 // AuthConfig defines API key authentication settings.
@@ -112,6 +127,11 @@ func Defaults() Config {
 				SSLMode: "disable",
 				Schema:  "public",
 			},
+		},
+		Chain: ChainConfig{
+			Enabled:               false,
+			TxTimeoutS:            30,
+			ReceiptPollIntervalMS: 500,
 		},
 		Auth: AuthConfig{
 			Enabled: false,
@@ -201,6 +221,48 @@ func (c *Config) Validate() error {
 	}
 	if c.DB.Postgres.Schema == "" {
 		c.DB.Postgres.Schema = "public"
+	}
+
+	if c.Chain.TxTimeoutS <= 0 {
+		c.Chain.TxTimeoutS = 30
+	}
+	if c.Chain.ReceiptPollIntervalMS <= 0 {
+		c.Chain.ReceiptPollIntervalMS = 500
+	}
+
+	if !c.Chain.Enabled {
+		return nil
+	}
+
+	if strings.TrimSpace(c.Chain.RPCURL) == "" {
+		return fmt.Errorf("chain.rpc_url is required when chain.enabled=true")
+	}
+	parsedURL, err := url.Parse(strings.TrimSpace(c.Chain.RPCURL))
+	if err != nil || parsedURL.Scheme == "" || parsedURL.Host == "" {
+		return fmt.Errorf("chain.rpc_url must be a valid absolute url")
+	}
+
+	if strings.TrimSpace(c.Chain.ChainID) == "" {
+		return fmt.Errorf("chain.chain_id is required when chain.enabled=true")
+	}
+	chainID, err := strconv.ParseInt(strings.TrimSpace(c.Chain.ChainID), 10, 64)
+	if err != nil || chainID <= 0 {
+		return fmt.Errorf("chain.chain_id must be a positive integer string")
+	}
+
+	if strings.TrimSpace(c.Chain.ContractAddress) == "" {
+		return fmt.Errorf("chain.contract_address is required when chain.enabled=true")
+	}
+	if ok, _ := regexp.MatchString(`^0x[0-9a-fA-F]{40}$`, strings.TrimSpace(c.Chain.ContractAddress)); !ok {
+		return fmt.Errorf("chain.contract_address must be a 20-byte hex address")
+	}
+
+	if strings.TrimSpace(c.Chain.PrivateKey) == "" {
+		return fmt.Errorf("chain.private_key is required when chain.enabled=true")
+	}
+	key := strings.TrimPrefix(strings.TrimSpace(c.Chain.PrivateKey), "0x")
+	if ok, _ := regexp.MatchString(`^[0-9a-fA-F]{64}$`, key); !ok {
+		return fmt.Errorf("chain.private_key must be a 32-byte hex private key")
 	}
 
 	return nil

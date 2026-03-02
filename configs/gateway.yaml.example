@@ -21,6 +21,15 @@ db:
     ssl_mode: "disable"
     schema: "public"
 
+chain:
+  enabled: false
+  rpc_url: "http://127.0.0.1:8545"
+  chain_id: "31337"
+  contract_address: "0x1234567890abcdef1234567890abcdef12345678"
+  private_key: "0123456789abcdef0123456789abcdef0123456789abcdef0123456789abcdef" # local dev only
+  tx_timeout_s: 30
+  receipt_poll_interval_ms: 500
+
 auth:
   enabled: false
   api_keys:
