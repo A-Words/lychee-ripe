@@ -95,6 +95,11 @@ func main() {
 	repo := repositorygorm.New(gdb)
 	batchSvc := service.NewBatchCreateService(repo, chainAdapter, cfg.Chain.Enabled, logger)
 	traceSvc := service.NewTraceService(repo, chainAdapter, cfg.Chain.Enabled)
+	reconcileSvc := service.NewReconcileService(repo, repo, chainAdapter, cfg.Chain.Enabled, logger)
+
+	appCtx, appCancel := context.WithCancel(context.Background())
+	defer appCancel()
+	go reconcileSvc.StartAutoReconcileWorker(appCtx)
 
 	// Compose the middleware chain.
 	mux := http.NewServeMux()
@@ -102,6 +107,7 @@ func main() {
 	mux.HandleFunc("POST /v1/batches", handler.CreateBatch(batchSvc, logger))
 	mux.HandleFunc("GET /v1/batches/{batch_id}", handler.GetBatch(batchSvc, logger))
 	mux.HandleFunc("GET /v1/trace/{trace_code}", handler.GetPublicTrace(traceSvc, logger))
+	mux.HandleFunc("POST /v1/batches/reconcile", handler.ReconcileBatches(reconcileSvc, logger))
 	mux.Handle("/", rp)
 
 	// Apply middleware (outermost runs first).
@@ -145,6 +151,7 @@ func main() {
 
 	<-done
 	logger.Info("shutting down...")
+	appCancel()
 
 	ctx, cancel := context.WithTimeout(context.Background(), 10*time.Second)
 	defer cancel()
