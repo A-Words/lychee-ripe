@@ -1,9 +1,11 @@
 package config
 
 import (
+	"bytes"
 	"fmt"
 	"os"
 	"path/filepath"
+	"strings"
 
 	"gopkg.in/yaml.v3"
 )
@@ -33,11 +35,25 @@ type UpstreamConfig struct {
 	TimeoutS int    `yaml:"timeout_s"`
 }
 
-// DBConfig defines SQLite connection settings.
+// DBConfig defines database connection settings.
 type DBConfig struct {
-	Path          string `yaml:"path"`
-	BusyTimeoutMS int    `yaml:"busy_timeout_ms"`
+	Driver           string           `yaml:"driver"`
+	DSN              string           `yaml:"dsn"`
+	MaxOpenConns     int              `yaml:"max_open_conns"`
+	MaxIdleConns     int              `yaml:"max_idle_conns"`
+	ConnMaxLifetimeS int              `yaml:"conn_max_lifetime_s"`
+	SQLite           SQLiteDBConfig   `yaml:"sqlite"`
+	Postgres         PostgresDBConfig `yaml:"postgres"`
+}
+
+type SQLiteDBConfig struct {
 	JournalMode   string `yaml:"journal_mode"`
+	BusyTimeoutMS int    `yaml:"busy_timeout_ms"`
+}
+
+type PostgresDBConfig struct {
+	SSLMode string `yaml:"ssl_mode"`
+	Schema  string `yaml:"schema"`
 }
 
 // AuthConfig defines API key authentication settings.
@@ -83,9 +99,19 @@ func Defaults() Config {
 			TimeoutS: 30,
 		},
 		DB: DBConfig{
-			Path:          filepath.Join("artifacts", "data", "gateway.db"),
-			BusyTimeoutMS: 5000,
-			JournalMode:   "WAL",
+			Driver:           "sqlite",
+			DSN:              filepath.Join("artifacts", "data", "gateway.db"),
+			MaxOpenConns:     10,
+			MaxIdleConns:     5,
+			ConnMaxLifetimeS: 300,
+			SQLite: SQLiteDBConfig{
+				JournalMode:   "WAL",
+				BusyTimeoutMS: 5000,
+			},
+			Postgres: PostgresDBConfig{
+				SSLMode: "disable",
+				Schema:  "public",
+			},
 		},
 		Auth: AuthConfig{
 			Enabled: false,
@@ -128,8 +154,13 @@ func Load(path string) (Config, error) {
 		return Config{}, fmt.Errorf("read gateway config %s: %w", path, err)
 	}
 
-	if err := yaml.Unmarshal(data, &cfg); err != nil {
+	decoder := yaml.NewDecoder(bytes.NewReader(data))
+	decoder.KnownFields(true)
+	if err := decoder.Decode(&cfg); err != nil {
 		return Config{}, fmt.Errorf("parse gateway config %s: %w", path, err)
+	}
+	if err := cfg.Validate(); err != nil {
+		return Config{}, fmt.Errorf("validate gateway config %s: %w", path, err)
 	}
 
 	return cfg, nil
@@ -138,4 +169,39 @@ func Load(path string) (Config, error) {
 // Addr returns the listen address string "host:port".
 func (c *Config) Addr() string {
 	return fmt.Sprintf("%s:%d", c.Server.Host, c.Server.Port)
+}
+
+func (c *Config) Validate() error {
+	c.DB.Driver = strings.ToLower(strings.TrimSpace(c.DB.Driver))
+	switch c.DB.Driver {
+	case "sqlite", "postgres":
+	default:
+		return fmt.Errorf("db.driver must be one of sqlite|postgres, got %q", c.DB.Driver)
+	}
+
+	if strings.TrimSpace(c.DB.DSN) == "" {
+		return fmt.Errorf("db.dsn is required")
+	}
+
+	if c.DB.MaxOpenConns <= 0 {
+		return fmt.Errorf("db.max_open_conns must be > 0")
+	}
+	if c.DB.MaxIdleConns < 0 {
+		return fmt.Errorf("db.max_idle_conns must be >= 0")
+	}
+	if c.DB.ConnMaxLifetimeS < 0 {
+		return fmt.Errorf("db.conn_max_lifetime_s must be >= 0")
+	}
+
+	if c.DB.SQLite.JournalMode == "" {
+		c.DB.SQLite.JournalMode = "WAL"
+	}
+	if c.DB.Postgres.SSLMode == "" {
+		c.DB.Postgres.SSLMode = "disable"
+	}
+	if c.DB.Postgres.Schema == "" {
+		c.DB.Postgres.Schema = "public"
+	}
+
+	return nil
 }

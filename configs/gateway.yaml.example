@@ -9,9 +9,17 @@ upstream:
   timeout_s: 30
 
 db:
-  path: "artifacts/data/gateway.db"
-  busy_timeout_ms: 5000
-  journal_mode: "WAL"
+  driver: "sqlite" # sqlite | postgres
+  dsn: "artifacts/data/gateway.db" # sqlite file path or postgres DSN
+  max_open_conns: 10
+  max_idle_conns: 5
+  conn_max_lifetime_s: 300
+  sqlite:
+    journal_mode: "WAL"
+    busy_timeout_ms: 5000
+  postgres:
+    ssl_mode: "disable"
+    schema: "public"
 
 auth:
   enabled: false

@@ -179,11 +179,29 @@ powershell -ExecutionPolicy Bypass -File scripts/desktop.ps1
 
 - `server`：网关监听地址与读写超时
 - `upstream.base_url`：上游 FastAPI 地址（默认 `http://127.0.0.1:8000`）
-- `db`：SQLite 持久化配置（`path`、`busy_timeout_ms`、`journal_mode`）
+- `db.driver`：数据库驱动（`sqlite` 或 `postgres`）
+- `db.dsn`：连接串（sqlite 文件路径或 postgres DSN）
+- `db.max_open_conns` / `db.max_idle_conns` / `db.conn_max_lifetime_s`：连接池参数
+- `db.sqlite`：SQLite 参数（`journal_mode`、`busy_timeout_ms`）
+- `db.postgres`：PostgreSQL 参数（`ssl_mode`、`schema`）
 - `auth`：API Key 开关与密钥列表
 - `rate_limit`：限流参数
 - `cors`：跨域策略
 - `logging`：日志级别与格式
+
+PostgreSQL 配置示例：
+
+```yaml
+db:
+  driver: "postgres"
+  dsn: "postgres://postgres:postgres@127.0.0.1:5432/lychee_ripe?sslmode=disable"
+  max_open_conns: 10
+  max_idle_conns: 5
+  conn_max_lifetime_s: 300
+  postgres:
+    ssl_mode: "disable"
+    schema: "public"
+```
 
 ### 环境变量入口
 

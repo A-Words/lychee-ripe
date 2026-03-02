@@ -1,25 +1,30 @@
-package sqlite
+package gorm
 
 import (
 	"context"
 	"database/sql"
 	"errors"
+	"fmt"
+	"os"
 	"path/filepath"
+	"strings"
 	"testing"
 	"time"
 
 	"github.com/lychee-ripe/gateway/internal/config"
-	gatewaydb "github.com/lychee-ripe/gateway/internal/db"
 	"github.com/lychee-ripe/gateway/internal/domain"
 	"github.com/lychee-ripe/gateway/internal/repository"
+	gormpostgres "gorm.io/driver/postgres"
+	gormsqlite "gorm.io/driver/sqlite"
+	"gorm.io/gorm"
+	_ "modernc.org/sqlite"
 )
 
-func TestCreateBatchConflictOnUniqueKeys(t *testing.T) {
+func TestCreateBatchConflictOnUniqueKeysSQLite(t *testing.T) {
 	t.Parallel()
-
 	ctx := context.Background()
-	repo, conn := mustNewRepo(t, filepath.Join(t.TempDir(), "gateway.db"))
-	defer conn.Close()
+	repo, sqlDB := mustNewSQLiteRepo(t)
+	defer sqlDB.Close()
 
 	base := sampleCreateBatchParams("batch-1", "trace-1")
 	if _, err := repo.CreateBatch(ctx, base); err != nil {
@@ -37,12 +42,11 @@ func TestCreateBatchConflictOnUniqueKeys(t *testing.T) {
 	}
 }
 
-func TestBatchCRUDAndStatusFlow(t *testing.T) {
+func TestBatchCRUDAndStatusFlowSQLite(t *testing.T) {
 	t.Parallel()
-
 	ctx := context.Background()
-	repo, conn := mustNewRepo(t, filepath.Join(t.TempDir(), "gateway.db"))
-	defer conn.Close()
+	repo, sqlDB := mustNewSQLiteRepo(t)
+	defer sqlDB.Close()
 
 	create := sampleCreateBatchParams("batch-2", "trace-2")
 	create.Status = domain.BatchStatusPendingAnchor
@@ -107,11 +111,18 @@ func TestBatchCRUDAndStatusFlow(t *testing.T) {
 	}
 }
 
-func TestListPendingBatchesAndPersistenceAfterRestart(t *testing.T) {
+func TestListPendingBatchesAndPersistenceAfterRestartSQLite(t *testing.T) {
 	ctx := context.Background()
 	dbPath := filepath.Join(t.TempDir(), "gateway.db")
 
-	repo, conn := mustNewRepo(t, dbPath)
+	repo, sqlDB := mustNewRepoWithConfig(t, config.DBConfig{
+		Driver:           "sqlite",
+		DSN:              dbPath,
+		MaxOpenConns:     10,
+		MaxIdleConns:     5,
+		ConnMaxLifetimeS: 300,
+		SQLite:           config.SQLiteDBConfig{JournalMode: "WAL", BusyTimeoutMS: 5000},
+	})
 	_, err := repo.CreateBatch(ctx, sampleCreateBatchParams("batch-3", "trace-3"))
 	if err != nil {
 		t.Fatalf("create batch-3: %v", err)
@@ -131,12 +142,19 @@ func TestListPendingBatchesAndPersistenceAfterRestart(t *testing.T) {
 		t.Fatalf("pending batches = %+v, want only batch-3", pending)
 	}
 
-	if err := conn.Close(); err != nil {
+	if err := sqlDB.Close(); err != nil {
 		t.Fatalf("close db: %v", err)
 	}
 
-	reopenedRepo, reopenedConn := mustNewRepo(t, dbPath)
-	defer reopenedConn.Close()
+	reopenedRepo, reopenedSQLDB := mustNewRepoWithConfig(t, config.DBConfig{
+		Driver:           "sqlite",
+		DSN:              dbPath,
+		MaxOpenConns:     10,
+		MaxIdleConns:     5,
+		ConnMaxLifetimeS: 300,
+		SQLite:           config.SQLiteDBConfig{JournalMode: "WAL", BusyTimeoutMS: 5000},
+	})
+	defer reopenedSQLDB.Close()
 	reopened, err := reopenedRepo.GetBatchByID(ctx, "batch-3")
 	if err != nil {
 		t.Fatalf("get batch after reopen: %v", err)
@@ -146,12 +164,11 @@ func TestListPendingBatchesAndPersistenceAfterRestart(t *testing.T) {
 	}
 }
 
-func TestDashboardAggregations(t *testing.T) {
+func TestDashboardAggregationsSQLite(t *testing.T) {
 	t.Parallel()
-
 	ctx := context.Background()
-	repo, conn := mustNewRepo(t, filepath.Join(t.TempDir(), "gateway.db"))
-	defer conn.Close()
+	repo, sqlDB := mustNewSQLiteRepo(t)
+	defer sqlDB.Close()
 
 	first := sampleCreateBatchParams("batch-5", "trace-5")
 	first.Status = domain.BatchStatusPendingAnchor
@@ -236,12 +253,11 @@ func TestDashboardAggregations(t *testing.T) {
 	}
 }
 
-func TestReconcileAndAudit(t *testing.T) {
+func TestReconcileAndAuditSQLite(t *testing.T) {
 	t.Parallel()
-
 	ctx := context.Background()
-	repo, conn := mustNewRepo(t, filepath.Join(t.TempDir(), "gateway.db"))
-	defer conn.Close()
+	repo, sqlDB := mustNewSQLiteRepo(t)
+	defer sqlDB.Close()
 
 	pending := sampleCreateBatchParams("batch-8", "trace-8")
 	pending.Status = domain.BatchStatusPendingAnchor
@@ -304,8 +320,8 @@ func TestReconcileAndAudit(t *testing.T) {
 		t.Fatalf("append audit log: %v", err)
 	}
 
-	var auditCount int
-	if err := conn.QueryRowContext(ctx, "SELECT COUNT(1) FROM audit_logs WHERE event_type = ?", "batch_created").Scan(&auditCount); err != nil {
+	var auditCount int64
+	if err := repo.db.WithContext(ctx).Model(&AuditLogModel{}).Where("event_type = ?", "batch_created").Count(&auditCount).Error; err != nil {
 		t.Fatalf("query audit_logs: %v", err)
 	}
 	if auditCount != 1 {
@@ -313,21 +329,121 @@ func TestReconcileAndAudit(t *testing.T) {
 	}
 }
 
-func mustNewRepo(t *testing.T, path string) (*Repository, *sql.DB) {
+func TestPostgresOptionalBasicFlow(t *testing.T) {
+	pgDSN := strings.TrimSpace(os.Getenv("LYCHEE_GATEWAY_TEST_PG_DSN"))
+	if pgDSN == "" {
+		t.Skip("LYCHEE_GATEWAY_TEST_PG_DSN not set, skip postgres integration test")
+	}
+
+	ctx := context.Background()
+	cfg := config.DBConfig{
+		Driver:           "postgres",
+		DSN:              pgDSN,
+		MaxOpenConns:     10,
+		MaxIdleConns:     5,
+		ConnMaxLifetimeS: 300,
+		Postgres: config.PostgresDBConfig{
+			SSLMode: "disable",
+			Schema:  "public",
+		},
+	}
+
+	repo, sqlDB := mustNewRepoWithConfig(t, cfg)
+	defer sqlDB.Close()
+
+	_ = repo.db.WithContext(ctx).Exec("DELETE FROM audit_logs")
+	_ = repo.db.WithContext(ctx).Exec("DELETE FROM reconcile_job_items")
+	_ = repo.db.WithContext(ctx).Exec("DELETE FROM reconcile_jobs")
+	_ = repo.db.WithContext(ctx).Exec("DELETE FROM anchor_proofs")
+	_ = repo.db.WithContext(ctx).Exec("DELETE FROM batches")
+
+	first := sampleCreateBatchParams("pg-batch-1", "pg-trace-1")
+	if _, err := repo.CreateBatch(ctx, first); err != nil {
+		t.Fatalf("create postgres batch: %v", err)
+	}
+	if _, err := repo.CreateBatch(ctx, sampleCreateBatchParams("pg-batch-1", "pg-trace-2")); !errors.Is(err, repository.ErrConflict) {
+		t.Fatalf("duplicate postgres batch should return ErrConflict, got %v", err)
+	}
+	loaded, err := repo.GetBatchByID(ctx, "pg-batch-1")
+	if err != nil {
+		t.Fatalf("get postgres batch: %v", err)
+	}
+	if loaded.TraceCode != "pg-trace-1" {
+		t.Fatalf("trace_code = %q, want pg-trace-1", loaded.TraceCode)
+	}
+}
+
+func mustNewSQLiteRepo(t *testing.T) (*Repository, *sql.DB) {
+	t.Helper()
+	cfg := config.DBConfig{
+		Driver:           "sqlite",
+		DSN:              filepath.Join(t.TempDir(), "gateway.db"),
+		MaxOpenConns:     10,
+		MaxIdleConns:     5,
+		ConnMaxLifetimeS: 300,
+		SQLite: config.SQLiteDBConfig{
+			JournalMode:   "WAL",
+			BusyTimeoutMS: 5000,
+		},
+	}
+	return mustNewRepoWithConfig(t, cfg)
+}
+
+func mustNewRepoWithConfig(t *testing.T, cfg config.DBConfig) (*Repository, *sql.DB) {
 	t.Helper()
 	ctx := context.Background()
-	conn, err := gatewaydb.Open(ctx, config.DBConfig{
-		Path:          path,
-		BusyTimeoutMS: 5000,
-		JournalMode:   "WAL",
-	})
+	gdb, err := openGormForTest(cfg)
 	if err != nil {
-		t.Fatalf("open sqlite: %v", err)
+		t.Fatalf("open gorm db: %v", err)
 	}
-	if err := gatewaydb.Migrate(ctx, conn); err != nil {
-		t.Fatalf("migrate sqlite: %v", err)
+	if err := gdb.WithContext(ctx).AutoMigrate(
+		&BatchModel{},
+		&AnchorProofModel{},
+		&ReconcileJobModel{},
+		&ReconcileJobItemModel{},
+		&AuditLogModel{},
+	); err != nil {
+		t.Fatalf("auto migrate: %v", err)
 	}
-	return New(conn), conn
+	sqlDB, err := gdb.DB()
+	if err != nil {
+		t.Fatalf("get sql db: %v", err)
+	}
+	return New(gdb), sqlDB
+}
+
+func openGormForTest(cfg config.DBConfig) (*gorm.DB, error) {
+	driver := strings.ToLower(strings.TrimSpace(cfg.Driver))
+	switch driver {
+	case "sqlite":
+		dsn := strings.TrimSpace(cfg.DSN)
+		if dsn == "" {
+			return nil, errors.New("sqlite dsn required")
+		}
+		if dsn != ":memory:" && !strings.HasPrefix(dsn, "file:") {
+			if err := os.MkdirAll(filepath.Dir(dsn), 0o755); err != nil {
+				return nil, err
+			}
+			dsn = "file:" + filepath.ToSlash(dsn)
+		}
+		sep := "?"
+		if strings.Contains(dsn, "?") {
+			sep = "&"
+		}
+		dsn = fmt.Sprintf("%s%s_foreign_keys=on", dsn, sep)
+		return gorm.Open(gormsqlite.New(gormsqlite.Config{
+			DriverName: "sqlite",
+			DSN:        dsn,
+		}), &gorm.Config{
+			NowFunc: func() time.Time { return time.Now().UTC() },
+		})
+	case "postgres":
+		return gorm.Open(gormpostgres.Open(strings.TrimSpace(cfg.DSN)), &gorm.Config{
+			NowFunc: func() time.Time { return time.Now().UTC() },
+		})
+	default:
+		return nil, fmt.Errorf("unsupported driver %q", cfg.Driver)
+	}
 }
 
 func sampleCreateBatchParams(batchID, traceCode string) domain.CreateBatchParams {

@@ -50,20 +50,25 @@ func main() {
 	}
 	logger := slog.New(logHandler)
 
-	// Initialize SQLite and run schema migrations before serving traffic.
-	dbConn, err := gatewaydb.Open(context.Background(), cfg.DB)
+	// Initialize DB and run schema migrations before serving traffic.
+	gdb, err := gatewaydb.OpenGORM(context.Background(), cfg.DB)
 	if err != nil {
-		logger.Error("failed to open sqlite", "path", cfg.DB.Path, "error", err)
+		logger.Error("failed to open database", "driver", cfg.DB.Driver, "error", err)
+		os.Exit(1)
+	}
+	dbConn, err := gdb.DB()
+	if err != nil {
+		logger.Error("failed to get sql db handle", "error", err)
 		os.Exit(1)
 	}
 	defer func() {
 		if err := dbConn.Close(); err != nil {
-			logger.Error("failed to close sqlite", "error", err)
+			logger.Error("failed to close database", "error", err)
 		}
 	}()
 
-	if err := gatewaydb.Migrate(context.Background(), dbConn); err != nil {
-		logger.Error("failed to migrate sqlite schema", "error", err)
+	if err := gatewaydb.AutoMigrate(context.Background(), gdb); err != nil {
+		logger.Error("failed to auto migrate schema", "error", err)
 		os.Exit(1)
 	}
 
@@ -103,7 +108,8 @@ func main() {
 		logger.Info("gateway listening",
 			"addr", cfg.Addr(),
 			"upstream", cfg.Upstream.BaseURL,
-			"db_path", cfg.DB.Path,
+			"db_driver", cfg.DB.Driver,
+			"db_dsn", gatewaydb.SanitizeDSN(cfg.DB.Driver, cfg.DB.DSN),
 			"auth", cfg.Auth.Enabled,
 			"rate_limit", cfg.RateLimit.Enabled,
 		)
