@@ -34,3 +34,39 @@ body {
   border: 1px solid var(--lr-border);
   backdrop-filter: blur(6px);
 }
+
+.lr-nav {
+  position: sticky;
+  top: 0;
+  z-index: 20;
+  border-bottom: 1px solid var(--lr-border);
+  background: #f7f3e8cc;
+  backdrop-filter: blur(10px);
+}
+
+.lr-nav-links {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0.5rem;
+  padding: 0.75rem 0;
+}
+
+.lr-nav-link {
+  border: 1px solid var(--lr-border);
+  border-radius: 9999px;
+  padding: 0.35rem 0.8rem;
+  color: #304436;
+  text-decoration: none;
+  font-weight: 600;
+  transition: all 0.2s ease;
+}
+
+.lr-nav-link:hover {
+  background: #ecf4ec;
+}
+
+.lr-nav-link-active {
+  background: #304436;
+  border-color: #304436;
+  color: #ffffff;
+}
