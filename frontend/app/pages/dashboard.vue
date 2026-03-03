@@ -1,56 +1,56 @@
 <script setup lang="ts">
-import { computed, ref } from 'vue'
+import { computed, onMounted, ref, watch } from 'vue'
+import { useDashboardOverview } from '../composables/useDashboardOverview'
 
-const refreshedAt = ref(new Date())
+const DASHBOARD_API_KEY_STORAGE_KEY = 'lychee-ripe.dashboard.apiKey'
 
-const totals = {
-  batchTotal: 186,
-}
+const dashboardQuery = useDashboardOverview()
+const dashboardApiKey = ref('')
+const refreshedAt = ref<Date | null>(null)
 
-const statusDistribution = {
-  anchored: 142,
-  pendingAnchor: 31,
-  anchorFailed: 13,
-}
+const overview = computed(() => dashboardQuery.data.value)
+const fetchStatus = computed(() => dashboardQuery.status.value)
+const fetchError = computed(() => dashboardQuery.lastError.value)
 
-const ripenessDistribution = {
-  green: 328,
-  half: 497,
-  red: 1206,
-  young: 211,
-}
+const refreshedAtText = computed(() => {
+  if (!refreshedAt.value) {
+    return '--'
+  }
+  return formatDateTime(refreshedAt.value.toISOString())
+})
 
-const unripeMetrics = {
-  unripeBatchCount: 39,
-  unripeBatchRatio: 0.2097,
-  threshold: 0.15,
-  unripeHandling: 'sorted_out',
-}
-
-const recentAnchors = [
-  {
-    batchId: 'batch_01J3NQ2JAYPH1M8QZ0QDZBY8BK',
-    traceCode: 'TRC-9A7X-11QF',
-    txHash: '0x8a9b4f2e713f11a2ce8f51a4d13b27505849621d2df612f7396db7d2e498cb78',
-    anchoredAt: '2026-03-02T09:30:12Z',
+watch(
+  () => dashboardApiKey.value,
+  (nextKey) => {
+    if (!import.meta.client) {
+      return
+    }
+    localStorage.setItem(DASHBOARD_API_KEY_STORAGE_KEY, nextKey.trim())
   },
-  {
-    batchId: 'batch_01J3NQ5G5F0M5MBR9V8XW4NQ6M',
-    traceCode: 'TRC-7K2N-3MPL',
-    txHash: '0x9d3a01f15a42a5111d59c5adf6b40b6bd8824fdb8235e48d83d52b25f0c36ceb',
-    anchoredAt: '2026-03-02T09:17:08Z',
-  },
-]
+)
 
-const reconcileStats = {
-  pendingCount: 31,
-  retriedTotal: 58,
-  failedTotal: 13,
-  lastReconcileAt: '2026-03-02T09:35:00Z',
+onMounted(() => {
+  if (import.meta.client) {
+    dashboardApiKey.value = localStorage.getItem(DASHBOARD_API_KEY_STORAGE_KEY) ?? ''
+  }
+  void refreshOverview()
+})
+
+async function refreshOverview() {
+  try {
+    await dashboardQuery.fetchOverview({ apiKey: dashboardApiKey.value })
+    refreshedAt.value = new Date()
+  } catch {
+    // rendered by fetchError alert
+  }
 }
 
-const refreshedAtText = computed(() =>
-  new Intl.DateTimeFormat('zh-CN', {
+function formatDateTime(value: string) {
+  const date = new Date(value)
+  if (Number.isNaN(date.getTime())) {
+    return value
+  }
+  return new Intl.DateTimeFormat('zh-CN', {
     hour12: false,
     year: 'numeric',
     month: '2-digit',
@@ -58,96 +58,148 @@ const refreshedAtText = computed(() =>
     hour: '2-digit',
     minute: '2-digit',
     second: '2-digit',
-  }).format(refreshedAt.value),
-)
-
-function refreshStaticBoard() {
-  refreshedAt.value = new Date()
+  }).format(date)
 }
 </script>
 
 <template>
   <div class="lr-shell space-y-4">
     <UCard class="lr-panel">
-      <div class="flex flex-wrap items-center justify-between gap-2">
+      <div class="flex flex-col gap-3 lg:flex-row lg:items-end lg:justify-between">
         <div class="space-y-1">
-          <h1 class="text-xl font-semibold">数据看板（静态示例）</h1>
+          <h1 class="text-xl font-semibold">数据看板</h1>
           <p class="text-sm text-neutral-600">
             最近刷新：{{ refreshedAtText }}
           </p>
         </div>
-        <UButton icon="i-lucide-refresh-cw" @click="refreshStaticBoard">
-          刷新示例
-        </UButton>
+        <div class="flex w-full flex-col gap-2 sm:w-auto sm:flex-row">
+          <UInput
+            v-model="dashboardApiKey"
+            type="password"
+            placeholder="X-API-Key（如已启用鉴权）"
+            class="sm:min-w-72"
+          />
+          <UButton
+            icon="i-lucide-refresh-cw"
+            :loading="fetchStatus === 'loading'"
+            @click="refreshOverview"
+          >
+            刷新
+          </UButton>
+        </div>
       </div>
     </UCard>
 
-    <div class="grid gap-4 lg:grid-cols-2">
-      <UCard class="lr-panel">
-        <template #header>
-          <h2 class="text-base font-semibold">批次总览</h2>
-        </template>
-        <div class="space-y-2">
-          <p>batch_total: <strong>{{ totals.batchTotal }}</strong></p>
-          <p>anchored: <strong>{{ statusDistribution.anchored }}</strong></p>
-          <p>pending_anchor: <strong>{{ statusDistribution.pendingAnchor }}</strong></p>
-          <p>anchor_failed: <strong>{{ statusDistribution.anchorFailed }}</strong></p>
-        </div>
-      </UCard>
+    <UAlert
+      v-if="fetchStatus === 'loading'"
+      color="neutral"
+      variant="soft"
+      title="看板加载中"
+      description="正在请求 /v1/dashboard/overview ..."
+    />
+
+    <UAlert
+      v-else-if="fetchError"
+      :color="fetchError.status === 401 ? 'warning' : 'error'"
+      variant="soft"
+      :title="fetchError.status === 401 ? '鉴权失败' : '看板请求失败'"
+      :description="fetchError.message"
+    />
+
+    <template v-else-if="overview">
+      <div class="grid gap-4 lg:grid-cols-2">
+        <UCard class="lr-panel">
+          <template #header>
+            <h2 class="text-base font-semibold">批次总览</h2>
+          </template>
+          <div class="space-y-2">
+            <p>batch_total: <strong>{{ overview.totals.batch_total }}</strong></p>
+            <p>anchored: <strong>{{ overview.status_distribution.anchored }}</strong></p>
+            <p>pending_anchor: <strong>{{ overview.status_distribution.pending_anchor }}</strong></p>
+            <p>anchor_failed: <strong>{{ overview.status_distribution.anchor_failed }}</strong></p>
+          </div>
+        </UCard>
+
+        <UCard class="lr-panel">
+          <template #header>
+            <h2 class="text-base font-semibold">成熟度分布</h2>
+          </template>
+          <div class="space-y-2">
+            <p>green: <strong>{{ overview.ripeness_distribution.green }}</strong></p>
+            <p>half: <strong>{{ overview.ripeness_distribution.half }}</strong></p>
+            <p>red: <strong>{{ overview.ripeness_distribution.red }}</strong></p>
+            <p>young: <strong>{{ overview.ripeness_distribution.young }}</strong></p>
+          </div>
+        </UCard>
+
+        <UCard class="lr-panel">
+          <template #header>
+            <h2 class="text-base font-semibold">未成熟指标</h2>
+          </template>
+          <div class="space-y-2">
+            <p>unripe_batch_count: <strong>{{ overview.unripe_metrics.unripe_batch_count }}</strong></p>
+            <p>unripe_batch_ratio: <strong>{{ overview.unripe_metrics.unripe_batch_ratio }}</strong></p>
+            <p>threshold: <strong>{{ overview.unripe_metrics.threshold }}</strong></p>
+            <p>unripe_handling: <strong>{{ overview.unripe_metrics.unripe_handling }}</strong></p>
+          </div>
+        </UCard>
+
+        <UCard class="lr-panel">
+          <template #header>
+            <h2 class="text-base font-semibold">补链统计</h2>
+          </template>
+          <div class="space-y-2">
+            <p>pending_count: <strong>{{ overview.reconcile_stats.pending_count }}</strong></p>
+            <p>retried_total: <strong>{{ overview.reconcile_stats.retried_total }}</strong></p>
+            <p>failed_total: <strong>{{ overview.reconcile_stats.failed_total }}</strong></p>
+            <p>
+              last_reconcile_at:
+              <strong>
+                {{
+                  overview.reconcile_stats.last_reconcile_at
+                    ? formatDateTime(overview.reconcile_stats.last_reconcile_at)
+                    : '-'
+                }}
+              </strong>
+            </p>
+          </div>
+        </UCard>
+      </div>
 
       <UCard class="lr-panel">
         <template #header>
-          <h2 class="text-base font-semibold">成熟度分布</h2>
+          <h2 class="text-base font-semibold">最近上链记录</h2>
         </template>
-        <div class="space-y-2">
-          <p>green: <strong>{{ ripenessDistribution.green }}</strong></p>
-          <p>half: <strong>{{ ripenessDistribution.half }}</strong></p>
-          <p>red: <strong>{{ ripenessDistribution.red }}</strong></p>
-          <p>young: <strong>{{ ripenessDistribution.young }}</strong></p>
-        </div>
-      </UCard>
-
-      <UCard class="lr-panel">
-        <template #header>
-          <h2 class="text-base font-semibold">未成熟拦截指标</h2>
-        </template>
-        <div class="space-y-2">
-          <p>unripe_batch_count: <strong>{{ unripeMetrics.unripeBatchCount }}</strong></p>
-          <p>unripe_batch_ratio: <strong>{{ unripeMetrics.unripeBatchRatio }}</strong></p>
-          <p>threshold: <strong>{{ unripeMetrics.threshold }}</strong></p>
-          <p>unripe_handling: <strong>{{ unripeMetrics.unripeHandling }}</strong></p>
-        </div>
-      </UCard>
-
-      <UCard class="lr-panel">
-        <template #header>
-          <h2 class="text-base font-semibold">补链统计</h2>
-        </template>
-        <div class="space-y-2">
-          <p>pending_count: <strong>{{ reconcileStats.pendingCount }}</strong></p>
-          <p>retried_total: <strong>{{ reconcileStats.retriedTotal }}</strong></p>
-          <p>failed_total: <strong>{{ reconcileStats.failedTotal }}</strong></p>
-          <p>last_reconcile_at: <strong>{{ reconcileStats.lastReconcileAt }}</strong></p>
-        </div>
-      </UCard>
-    </div>
-
-    <UCard class="lr-panel">
-      <template #header>
-        <h2 class="text-base font-semibold">最近上链记录（静态示例）</h2>
-      </template>
-      <div class="space-y-3">
         <div
-          v-for="anchor in recentAnchors"
-          :key="anchor.batchId"
-          class="rounded-md border border-neutral-200 p-3"
+          v-if="overview.recent_anchors.length === 0"
+          class="text-sm text-neutral-500"
         >
-          <p class="text-sm">batch_id: <strong>{{ anchor.batchId }}</strong></p>
-          <p class="text-sm">trace_code: <strong>{{ anchor.traceCode }}</strong></p>
-          <p class="text-sm break-all">tx_hash: <strong>{{ anchor.txHash }}</strong></p>
-          <p class="text-sm">anchored_at: <strong>{{ anchor.anchoredAt }}</strong></p>
+          暂无最近上链记录。
         </div>
-      </div>
-    </UCard>
+        <div
+          v-else
+          class="space-y-3"
+        >
+          <div
+            v-for="anchor in overview.recent_anchors"
+            :key="anchor.batch_id"
+            class="rounded-md border border-neutral-200 p-3"
+          >
+            <p class="text-sm">batch_id: <strong>{{ anchor.batch_id }}</strong></p>
+            <p class="text-sm">trace_code: <strong>{{ anchor.trace_code }}</strong></p>
+            <p class="text-sm">status: <strong>{{ anchor.status }}</strong></p>
+            <p class="text-sm break-all">tx_hash: <strong>{{ anchor.tx_hash ?? '-' }}</strong></p>
+            <p class="text-sm">
+              anchored_at:
+              <strong>{{ anchor.anchored_at ? formatDateTime(anchor.anchored_at) : '-' }}</strong>
+            </p>
+            <p class="text-sm">
+              created_at:
+              <strong>{{ formatDateTime(anchor.created_at) }}</strong>
+            </p>
+          </div>
+        </div>
+      </UCard>
+    </template>
   </div>
 </template>
