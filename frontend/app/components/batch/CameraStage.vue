@@ -1,9 +1,7 @@
 <script setup lang="ts">
-import type { Ref } from 'vue'
 import type { CameraOption } from '~/composables/useCamera'
 
 const props = defineProps<{
-  videoRef: Ref<HTMLVideoElement | null>
   devices: CameraOption[]
   selectedDeviceId: string
   isRecognizing: boolean
@@ -13,6 +11,7 @@ const props = defineProps<{
 }>()
 
 const emit = defineEmits<{
+  (event: 'update:videoElement', value: HTMLVideoElement | null): void
   (event: 'update:selectedDeviceId', value: string): void
   (event: 'start'): void
   (event: 'stop'): void
@@ -22,13 +21,11 @@ const emit = defineEmits<{
 const localVideo = ref<HTMLVideoElement | null>(null)
 
 watch(localVideo, (video) => {
-  props.videoRef.value = video
+  emit('update:videoElement', video)
 }, { immediate: true })
 
 onBeforeUnmount(() => {
-  if (props.videoRef.value === localVideo.value) {
-    props.videoRef.value = null
-  }
+  emit('update:videoElement', null)
 })
 
 const hasDevices = computed(() => props.devices.length > 0)

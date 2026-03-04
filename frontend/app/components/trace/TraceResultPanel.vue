@@ -136,7 +136,7 @@ async function copyTraceCode() {
         </div>
       </template>
 
-      <RipenessSummaryCards :summary="trace.batch.summary" />
+      <TraceRipenessSummaryCards :summary="trace.batch.summary" />
     </UCard>
   </div>
 </template>

@@ -63,7 +63,7 @@ function ratioText(value: number): string {
         </template>
       </UAlert>
 
-      <RipenessSummaryCards :summary="batchLikeSummary" />
+      <TraceRipenessSummaryCards :summary="batchLikeSummary" />
 
       <UCard
         v-if="currentFrame"

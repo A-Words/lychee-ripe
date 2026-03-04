@@ -67,6 +67,10 @@ async function handleSwitchDevice(deviceId: string) {
   await camera.switchCamera(deviceId)
 }
 
+function handleVideoElementChange(video: HTMLVideoElement | null) {
+  videoElement.value = video
+}
+
 async function handleCreateBatch(formInput: BatchCreateFormInput) {
   submitError.value = null
 
@@ -129,21 +133,21 @@ onBeforeUnmount(() => {
 
       <div class="grid grid-cols-1 gap-6 xl:grid-cols-[1.15fr_1fr]">
         <div class="space-y-6">
-          <CameraStage
-            :video-ref="videoElement"
-            :devices="camera.options"
-            :selected-device-id="camera.selectedDeviceId"
+          <BatchCameraStage
+            :devices="camera.options.value"
+            :selected-device-id="camera.selectedDeviceId.value"
             :is-recognizing="isStreaming"
-            :camera-loading="camera.isCameraLoading"
-            :camera-error="camera.cameraError"
+            :camera-loading="camera.isCameraLoading.value"
+            :camera-error="camera.cameraError.value"
             :stream-error="streamError"
+            @update:video-element="handleVideoElementChange"
             @update:selected-device-id="handleSwitchDevice"
             @start="handleStartRecognition"
             @stop="handleStopRecognition"
             @refresh="handleRefreshDevices"
           />
 
-          <LiveSummaryPanel
+          <BatchLiveSummaryPanel
             :summary="aggregateSummary"
             :current-frame="lastFrame"
             :server-summary="serverSummary"
