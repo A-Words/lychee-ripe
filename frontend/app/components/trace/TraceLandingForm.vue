@@ -1,9 +1,11 @@
 <script setup lang="ts">
-import { buildTracePath, normalizeTraceCode } from '~/utils/trace-route'
+import { buildTraceDetailPathFromQuery } from '~/utils/trace-from'
+import { normalizeTraceCode } from '~/utils/trace-route'
 
 const inputCode = ref('')
 const errorMessage = ref('')
 const pending = ref(false)
+const route = useRoute()
 
 async function submit() {
   const normalized = normalizeTraceCode(inputCode.value)
@@ -15,7 +17,7 @@ async function submit() {
   pending.value = true
   errorMessage.value = ''
   try {
-    await navigateTo(buildTracePath(normalized))
+    await navigateTo(buildTraceDetailPathFromQuery(normalized, route.query.from as string | string[] | undefined))
   } finally {
     pending.value = false
   }

@@ -231,9 +231,10 @@ chain:
 
 - 手动输入页：`/trace`
 - 二维码落地页：`/trace/{trace_code}`
+- 公众模式：直接访问 `/trace` 或 `/trace/{trace_code}` 时不显示管理顶栏
 - 识别建批页：`/batch/create`（管理员使用，默认依赖网关 `auth=false` 联调）
 - 数据看板页：`/dashboard`（管理员使用，默认依赖网关 `auth=false` 联调）
-- 内部来源返回：从看板或建批页跳转溯源详情时会携带 `from`（如 `/trace/{trace_code}?from=dashboard`），用于在详情页一键返回来源页面
+- 内部来源返回：管理员入口（含顶栏“溯源查询”）会携带 `from`（如 `/trace?from=index`、`/trace/{trace_code}?from=dashboard`），用于保留顶栏并在详情页一键返回来源页面
 
 ---
 

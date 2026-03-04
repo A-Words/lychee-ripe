@@ -1,6 +1,7 @@
 import { buildTracePath } from '~/utils/trace-route'
 
 export type TraceFromSource = 'dashboard' | 'batch_create' | 'index' | 'unknown'
+export type InternalTraceFrom = Exclude<TraceFromSource, 'unknown'>
 
 type TraceBackTarget = {
   to: string
@@ -9,10 +10,14 @@ type TraceBackTarget = {
 
 export function buildTracePathWithFrom(
   traceCode: string,
-  from: Exclude<TraceFromSource, 'unknown'>
+  from: InternalTraceFrom
 ): string {
   const path = buildTracePath(traceCode)
   return `${path}?from=${encodeURIComponent(from)}`
+}
+
+export function buildTraceLandingPathWithFrom(from: InternalTraceFrom): string {
+  return `/trace?from=${encodeURIComponent(from)}`
 }
 
 export function getTraceFromQuery(value: string | string[] | null | undefined): TraceFromSource {
@@ -32,6 +37,21 @@ export function getTraceFromQuery(value: string | string[] | null | undefined): 
     return 'index'
   }
   return 'unknown'
+}
+
+export function isInternalTraceFrom(from: TraceFromSource): from is InternalTraceFrom {
+  return from !== 'unknown'
+}
+
+export function buildTraceDetailPathFromQuery(
+  traceCode: string,
+  queryFrom: string | string[] | null | undefined
+): string {
+  const from = getTraceFromQuery(queryFrom)
+  if (!isInternalTraceFrom(from)) {
+    return buildTracePath(traceCode)
+  }
+  return buildTracePathWithFrom(traceCode, from)
 }
 
 export function getTraceBackTarget(from: TraceFromSource): TraceBackTarget | null {
