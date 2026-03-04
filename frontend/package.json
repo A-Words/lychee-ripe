@@ -16,9 +16,11 @@
   "dependencies": {
     "@nuxt/ui": "4.5.1",
     "@tauri-apps/api": "2.10.1",
+    "echarts": "^6.0.0",
     "nuxt": "4.3.1",
     "tailwindcss": "^4.2.1",
     "vue": "^3.5.29",
+    "vue-echarts": "^8.0.1",
     "vue-router": "^4.6.4"
   },
   "devDependencies": {

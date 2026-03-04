@@ -10,7 +10,7 @@
         </h1>
       </section>
 
-      <div class="grid grid-cols-1 gap-4 lg:grid-cols-2">
+      <div class="grid grid-cols-1 gap-4 lg:grid-cols-3">
         <UCard variant="outline" :ui="{ body: 'p-6 sm:p-8' }">
           <div class="space-y-3">
             <h2 class="text-xl font-semibold text-highlighted">
@@ -21,6 +21,20 @@
             </p>
             <div class="pt-2">
               <UButton to="/batch/create" icon="i-lucide-camera" label="进入识别建批页" />
+            </div>
+          </div>
+        </UCard>
+
+        <UCard variant="outline" :ui="{ body: 'p-6 sm:p-8' }">
+          <div class="space-y-3">
+            <h2 class="text-xl font-semibold text-highlighted">
+              数据看板
+            </h2>
+            <p class="text-sm text-toned sm:text-base">
+              聚合查看批次状态、成熟度分布与补链统计。
+            </p>
+            <div class="pt-2">
+              <UButton to="/dashboard" icon="i-lucide-chart-pie" label="进入数据看板" />
             </div>
           </div>
         </UCard>

@@ -148,6 +148,7 @@ flowchart TD
 1. 展示批次数量、状态分布（`anchored/pending_anchor/anchor_failed`）。
 2. 展示成熟度分布（`green/half/red/young`）。
 3. 展示最近上链记录与失败重试统计。
+4. 前端路由落位 `/dashboard`，用于管理员查看聚合指标。
 
 ### 6.3.2 交互要求
 

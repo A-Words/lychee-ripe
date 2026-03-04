@@ -232,6 +232,7 @@ chain:
 - 手动输入页：`/trace`
 - 二维码落地页：`/trace/{trace_code}`
 - 识别建批页：`/batch/create`（管理员使用，默认依赖网关 `auth=false` 联调）
+- 数据看板页：`/dashboard`（管理员使用，默认依赖网关 `auth=false` 联调）
 
 ---
 
