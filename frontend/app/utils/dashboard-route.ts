@@ -1,5 +1,5 @@
-import { buildTracePath } from '~/utils/trace-route'
+import { buildTracePathWithFrom } from '~/utils/trace-from'
 
 export function buildDashboardTracePath(traceCode: string): string {
-  return buildTracePath(traceCode)
+  return buildTracePathWithFrom(traceCode, 'dashboard')
 }

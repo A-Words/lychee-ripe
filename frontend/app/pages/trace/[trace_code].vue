@@ -1,5 +1,6 @@
 <script setup lang="ts">
 import type { TraceApiError, TraceResponse, TraceViewState } from '~/types/trace'
+import { getTraceBackTarget, getTraceFromQuery } from '~/utils/trace-from'
 import { getTraceCodeFromRouteParam } from '~/utils/trace-route'
 
 useSeoMeta({
@@ -11,6 +12,8 @@ const route = useRoute()
 const { getPublicTrace, parseTraceError } = useTraceApi()
 
 const traceCode = computed(() => getTraceCodeFromRouteParam(route.params.trace_code as string | string[] | undefined))
+const traceFrom = computed(() => getTraceFromQuery(route.query.from as string | string[] | undefined))
+const backTarget = computed(() => getTraceBackTarget(traceFrom.value))
 
 const viewState = ref<TraceViewState>('loading')
 const traceData = ref<TraceResponse | null>(null)
@@ -87,6 +90,14 @@ watch(traceCode, () => {
             </div>
           </div>
           <div class="flex flex-wrap items-center gap-2">
+            <UButton
+              v-if="backTarget"
+              :to="backTarget.to"
+              color="neutral"
+              variant="outline"
+              icon="i-lucide-arrow-left"
+              :label="backTarget.label"
+            />
             <UButton
               color="neutral"
               variant="soft"

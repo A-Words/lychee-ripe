@@ -1,6 +1,7 @@
 <script setup lang="ts">
 import type { Batch } from '~/types/batch'
 import type { BatchStatus } from '~/types/trace'
+import { buildTracePathWithFrom } from '~/utils/trace-from'
 
 const props = defineProps<{
   batch: Batch
@@ -14,7 +15,7 @@ const emit = defineEmits<{
 const copied = ref(false)
 
 const statusMeta = computed(() => getStatusMeta(props.batch.status))
-const tracePath = computed(() => `/trace/${encodeURIComponent(props.batch.trace_code)}`)
+const tracePath = computed(() => buildTracePathWithFrom(props.batch.trace_code, 'batch_create'))
 const traceUrl = computed(() => {
   if (!import.meta.client) {
     return tracePath.value

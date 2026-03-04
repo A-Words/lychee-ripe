@@ -233,6 +233,7 @@ chain:
 - 二维码落地页：`/trace/{trace_code}`
 - 识别建批页：`/batch/create`（管理员使用，默认依赖网关 `auth=false` 联调）
 - 数据看板页：`/dashboard`（管理员使用，默认依赖网关 `auth=false` 联调）
+- 内部来源返回：从看板或建批页跳转溯源详情时会携带 `from`（如 `/trace/{trace_code}?from=dashboard`），用于在详情页一键返回来源页面
 
 ---
 
