@@ -227,6 +227,11 @@ chain:
 
 前端网关地址默认在 `frontend/nuxt.config.ts` 中为 `http://127.0.0.1:9000`，可通过 Nuxt 公共运行时配置覆盖（例如 `NUXT_PUBLIC_GATEWAY_BASE`）。
 
+公众溯源查询页路由：
+
+- 手动输入页：`/trace`
+- 二维码落地页：`/trace/{trace_code}`
+
 ---
 
 ## 5. 训练与评估

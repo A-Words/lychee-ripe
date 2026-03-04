@@ -1,18 +1,17 @@
-import type { RipenessLabel } from '../types/infer'
+import type { RipenessLabel } from '~/types/trace'
 
-// Keep this mapping aligned with shared/constants/ripeness.json.
-export const RIPENESS_CLASSES: RipenessLabel[] = ['green', 'half', 'red', 'young']
+export const RIPENESS_CLASSES = ['green', 'half', 'red', 'young'] as const satisfies readonly RipenessLabel[]
 
 export const RIPENESS_COLOR_MAP: Record<RipenessLabel, string> = {
   green: '#3D8D40',
   half: '#F5A623',
   red: '#D64545',
-  young: '#6AAED6',
+  young: '#6AAED6'
 }
 
 export const RIPENESS_LABEL_MAP: Record<RipenessLabel, string> = {
-  green: 'Green',
-  half: 'Half',
-  red: 'Red',
-  young: 'Young',
+  green: '青果',
+  half: '半熟',
+  red: '红果',
+  young: '嫩果'
 }
