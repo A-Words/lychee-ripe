@@ -1,20 +1,44 @@
 <template>
   <UContainer class="py-10 sm:py-16">
-    <UCard variant="outline" :ui="{ body: 'p-6 sm:p-8' }">
-      <div class="space-y-3">
+    <div class="space-y-4">
+      <section class="space-y-2">
         <p class="text-xs uppercase tracking-widest text-muted">
           Lychee Ripe
         </p>
         <h1 class="text-2xl font-semibold text-highlighted sm:text-3xl">
-          公众溯源查询
+          区块链荔枝溯源与识别系统
         </h1>
-        <p class="text-sm text-toned sm:text-base">
-          通过溯源码查询荔枝批次摘要与链上验签结论。
-        </p>
-        <div class="pt-2">
-          <UButton to="/trace" icon="i-lucide-arrow-right" label="进入查询页" />
-        </div>
+      </section>
+
+      <div class="grid grid-cols-1 gap-4 lg:grid-cols-2">
+        <UCard variant="outline" :ui="{ body: 'p-6 sm:p-8' }">
+          <div class="space-y-3">
+            <h2 class="text-xl font-semibold text-highlighted">
+              识别建批
+            </h2>
+            <p class="text-sm text-toned sm:text-base">
+              调用实时识别流，形成会话汇总并提交采摘批次。
+            </p>
+            <div class="pt-2">
+              <UButton to="/batch/create" icon="i-lucide-camera" label="进入识别建批页" />
+            </div>
+          </div>
+        </UCard>
+
+        <UCard variant="outline" :ui="{ body: 'p-6 sm:p-8' }">
+          <div class="space-y-3">
+            <h2 class="text-xl font-semibold text-highlighted">
+              公众溯源查询
+            </h2>
+            <p class="text-sm text-toned sm:text-base">
+              通过溯源码查询荔枝批次摘要与链上验签结论。
+            </p>
+            <div class="pt-2">
+              <UButton to="/trace" icon="i-lucide-arrow-right" label="进入查询页" />
+            </div>
+          </div>
+        </UCard>
       </div>
-    </UCard>
+    </div>
   </UContainer>
 </template>
