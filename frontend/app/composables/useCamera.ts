@@ -32,7 +32,7 @@ export function useCamera(videoElement: Ref<HTMLVideoElement | null>) {
 
     try {
       const all = await navigator.mediaDevices.enumerateDevices()
-      devices.value = all.filter((device) => device.kind === 'videoinput')
+      devices.value = all.filter((device) => device.kind === 'videoinput' && Boolean(device.deviceId))
       cameraError.value = ''
     } catch {
       cameraError.value = '摄像头设备枚举失败，请检查浏览器权限后重试。'

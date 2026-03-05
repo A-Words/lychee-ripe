@@ -122,4 +122,25 @@ describe('camera flow', () => {
     expect(camera.cameraError.value).toBe('摄像头设备枚举失败，请检查浏览器权限后重试。')
     expect(camera.options.value).toEqual([])
   })
+
+  it('hides devices without deviceId before permission is granted', async () => {
+    vi.spyOn(console, 'warn').mockImplementation(() => {})
+    vi.stubGlobal('localStorage', createMemoryStorage())
+    const enumerateDevices = vi
+      .fn<MediaDevices['enumerateDevices']>()
+      .mockResolvedValue([{ kind: 'videoinput', deviceId: '', label: '' } as MediaDeviceInfo])
+
+    setMediaDevicesMock({
+      enumerateDevices,
+      getUserMedia: vi.fn(),
+      addEventListener: vi.fn(),
+      removeEventListener: vi.fn()
+    })
+
+    const camera = createCamera()
+    await camera.refreshDevices()
+
+    expect(camera.options.value).toEqual([])
+    expect(camera.hasDevices.value).toBe(false)
+  })
 })
