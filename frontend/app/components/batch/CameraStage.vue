@@ -76,7 +76,7 @@ const hasDevices = computed(() => props.devices.length > 0)
           color="primary"
           icon="i-lucide-play"
           :loading="cameraLoading"
-          :disabled="!hasDevices"
+          :disabled="cameraLoading"
           label="开始识别"
           @click="emit('start')"
         />
@@ -96,7 +96,7 @@ const hasDevices = computed(() => props.devices.length > 0)
         variant="subtle"
         icon="i-lucide-camera-off"
         title="未检测到摄像头"
-        description="请连接摄像头后刷新设备列表。"
+        description="可先点击开始识别触发授权，再刷新设备列表。"
       />
 
       <UAlert

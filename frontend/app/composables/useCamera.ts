@@ -1,4 +1,4 @@
-import type { Ref } from 'vue'
+import { computed, onBeforeUnmount, onMounted, ref, watch, type Ref } from 'vue'
 
 const LAST_CAMERA_KEY = 'lychee-ripe.last-camera-device'
 
@@ -24,14 +24,21 @@ export function useCamera(videoElement: Ref<HTMLVideoElement | null>) {
   )
 
   async function refreshDevices() {
-    if (!import.meta.client || !navigator.mediaDevices?.enumerateDevices) {
+    if (!canEnumerateDevices()) {
       cameraError.value = '当前环境不支持摄像头设备枚举。'
       devices.value = []
       return
     }
 
-    const all = await navigator.mediaDevices.enumerateDevices()
-    devices.value = all.filter((device) => device.kind === 'videoinput')
+    try {
+      const all = await navigator.mediaDevices.enumerateDevices()
+      devices.value = all.filter((device) => device.kind === 'videoinput')
+      cameraError.value = ''
+    } catch {
+      cameraError.value = '摄像头设备枚举失败，请检查浏览器权限后重试。'
+      devices.value = []
+      return
+    }
 
     if (!devices.value.length) {
       selectedDeviceId.value = ''
@@ -47,7 +54,7 @@ export function useCamera(videoElement: Ref<HTMLVideoElement | null>) {
   }
 
   async function startCamera(deviceId?: string) {
-    if (!import.meta.client || !navigator.mediaDevices?.getUserMedia) {
+    if (!canAccessCamera()) {
       cameraError.value = '当前环境不支持摄像头访问。'
       return
     }
@@ -166,14 +173,14 @@ export function useCamera(videoElement: Ref<HTMLVideoElement | null>) {
   }
 
   function getSavedDeviceId(): string {
-    if (!import.meta.client) {
+    if (!canUseStorage()) {
       return ''
     }
     return localStorage.getItem(LAST_CAMERA_KEY) || ''
   }
 
   function saveDeviceId(deviceId: string) {
-    if (!import.meta.client || !deviceId) {
+    if (!canUseStorage() || !deviceId) {
       return
     }
     localStorage.setItem(LAST_CAMERA_KEY, deviceId)
@@ -225,4 +232,16 @@ function getCameraErrorMessage(error: unknown): string {
     return '选定摄像头不可用，请切换设备后重试。'
   }
   return '摄像头初始化失败，请稍后重试。'
+}
+
+function canEnumerateDevices(): boolean {
+  return typeof navigator !== 'undefined' && typeof navigator.mediaDevices?.enumerateDevices === 'function'
+}
+
+function canAccessCamera(): boolean {
+  return typeof navigator !== 'undefined' && typeof navigator.mediaDevices?.getUserMedia === 'function'
+}
+
+function canUseStorage(): boolean {
+  return typeof localStorage !== 'undefined'
 }

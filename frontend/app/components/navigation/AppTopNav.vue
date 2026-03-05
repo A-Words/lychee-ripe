@@ -10,6 +10,7 @@ const navItems = computed(() => buildTopNavItems(route.path))
   <UHeader
     title="Lychee Ripe"
     to="/"
+    mode="slideover"
     :toggle="{ color: 'neutral', variant: 'ghost' }"
   >
     <UNavigationMenu
