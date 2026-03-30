@@ -1,25 +1,27 @@
 services:
-  lychee-ripe:
+  inference-api:
     build:
       context: .
-      dockerfile: docker/Dockerfile
+      dockerfile: tooling/docker/Dockerfile.inference-api
     ports:
       - "8000:8000"
     environment:
-      - LYCHEE_MODEL_CONFIG=configs/model.yaml
-      - LYCHEE_SERVICE_CONFIG=configs/service.yaml
+      - LYCHEE_MODEL_CONFIG=tooling/configs/model.yaml
+      - LYCHEE_SERVICE_CONFIG=tooling/configs/service.yaml
     volumes:
-      - ./weights:/app/weights
+      - ./tooling/configs:/workspace/tooling/configs:ro
+      - ./mlops:/workspace/mlops
 
   gateway:
     build:
       context: .
-      dockerfile: docker/Dockerfile.gateway
+      dockerfile: tooling/docker/Dockerfile.gateway
     ports:
       - "9000:9000"
     environment:
       - LYCHEE_GATEWAY_CONFIG=/etc/gateway/gateway.yaml
     volumes:
-      - ./configs:/etc/gateway:ro
+      - ./tooling/configs:/etc/gateway:ro
+      - ./mlops/artifacts:/app/mlops/artifacts
     depends_on:
-      - lychee-ripe
+      - inference-api

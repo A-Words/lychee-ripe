@@ -1,0 +1,12 @@
+[build-system]
+requires = ["setuptools>=68", "wheel"]
+build-backend = "setuptools.build_meta"
+
+[project]
+name = "lychee-common"
+version = "0.1.0"
+description = "Shared Python helpers for lychee-ripe services and mlops workflows"
+requires-python = ">=3.11"
+
+[tool.setuptools.packages.find]
+where = ["."]

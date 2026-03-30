@@ -1,0 +1,9 @@
+{
+  "name": "@lychee-ripe/training",
+  "private": true,
+  "scripts": {
+    "train": "uv run --project ../../services/inference-api python train.py --model ../pretrained/yolo26n.pt --project ../artifacts/models",
+    "eval": "uv run --project ../../services/inference-api python eval.py --output ../artifacts/metrics/eval_metrics.json",
+    "verify": "bun -e \"process.exit(0)\""
+  }
+}
