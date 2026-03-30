@@ -9,6 +9,10 @@ param(
 
 Set-StrictMode -Version Latest
 $ErrorActionPreference = "Stop"
+$RepoRoot = (Resolve-Path (Join-Path $PSScriptRoot "..\\..")).Path
+$AppWorkingDirectory = Join-Path $RepoRoot "services/inference-api"
+$GatewayWorkingDirectory = Join-Path $RepoRoot "services/gateway"
+$FrontendWorkingDirectory = Join-Path $RepoRoot "clients/orchard-console"
 
 $appProc = $null
 $gatewayProc = $null
@@ -16,18 +20,18 @@ $frontendProc = $null
 
 try {
     $appArgs = @(
-        "run", "--project", "services/inference-api", "python", "-m", "uvicorn", "app.main:app",
+        "run", "python", "-m", "uvicorn", "app.main:app",
         "--reload",
         "--host", $AppHost,
         "--port", "$AppPort"
     )
-    $appProc = Start-Process -FilePath "uv" -ArgumentList $appArgs -PassThru
+    $appProc = Start-Process -FilePath "uv" -ArgumentList $appArgs -WorkingDirectory $AppWorkingDirectory -PassThru
 
-    $gatewayArgs = @("run", "./services/gateway/cmd/gateway", "--config", $GatewayConfig)
-    $gatewayProc = Start-Process -FilePath "go" -ArgumentList $gatewayArgs -PassThru
+    $gatewayArgs = @("run", "./cmd/gateway", "--config", $GatewayConfig)
+    $gatewayProc = Start-Process -FilePath "go" -ArgumentList $gatewayArgs -WorkingDirectory $GatewayWorkingDirectory -PassThru
 
     $frontendArgs = @("run", "dev", "--", "--host", $FrontendHost, "--port", "$FrontendPort")
-    $frontendProc = Start-Process -FilePath "bun" -ArgumentList $frontendArgs -WorkingDirectory "clients/orchard-console" -PassThru
+    $frontendProc = Start-Process -FilePath "bun" -ArgumentList $frontendArgs -WorkingDirectory $FrontendWorkingDirectory -PassThru
 
     Write-Host "[stack] inference-api pid=$($appProc.Id), gateway pid=$($gatewayProc.Id), orchard-console pid=$($frontendProc.Id)"
 

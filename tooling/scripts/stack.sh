@@ -1,6 +1,7 @@
 #!/usr/bin/env sh
 set -eu
 
+ROOT_DIR="$(CDPATH= cd -- "$(dirname -- "$0")/../.." && pwd)"
 APP_HOST="${APP_HOST:-127.0.0.1}"
 APP_PORT="${APP_PORT:-8000}"
 GATEWAY_CONFIG="${GATEWAY_CONFIG:-tooling/configs/gateway.yaml}"
@@ -63,11 +64,11 @@ cleanup() {
 
 trap cleanup INT TERM EXIT
 
-uv run --project services/inference-api python -m uvicorn app.main:app --reload --host "$APP_HOST" --port "$APP_PORT" &
+(cd "$ROOT_DIR/services/inference-api" && uv run python -m uvicorn app.main:app --reload --host "$APP_HOST" --port "$APP_PORT") &
 APP_PID="$!"
-go run ./services/gateway/cmd/gateway --config "$GATEWAY_CONFIG" &
+(cd "$ROOT_DIR/services/gateway" && go run ./cmd/gateway --config "$GATEWAY_CONFIG") &
 GW_PID="$!"
-(cd clients/orchard-console && bun run dev -- --host "$FRONTEND_HOST" --port "$FRONTEND_PORT") &
+(cd "$ROOT_DIR/clients/orchard-console" && bun run dev -- --host "$FRONTEND_HOST" --port "$FRONTEND_PORT") &
 FE_PID="$!"
 
 echo "[stack] inference-api pid=$APP_PID, gateway pid=$GW_PID, orchard-console pid=$FE_PID"

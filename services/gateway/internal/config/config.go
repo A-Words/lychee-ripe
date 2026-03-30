@@ -125,6 +125,22 @@ func resolveWorkspacePath(path string) string {
 	return path
 }
 
+func normalizeSQLiteDSN(configPath, dsn string) string {
+	dsn = strings.TrimSpace(dsn)
+	if dsn == "" || filepath.IsAbs(dsn) {
+		return dsn
+	}
+	if dsn == ":memory:" || strings.HasPrefix(dsn, "file:") || strings.Contains(dsn, "?") {
+		return dsn
+	}
+
+	if dsn == "." || dsn == ".." || strings.HasPrefix(dsn, "./") || strings.HasPrefix(dsn, ".\\") || strings.HasPrefix(dsn, "../") || strings.HasPrefix(dsn, "..\\") {
+		return filepath.Clean(filepath.Join(filepath.Dir(configPath), dsn))
+	}
+
+	return resolveWorkspacePath(dsn)
+}
+
 // Defaults returns a Config with sensible defaults.
 func Defaults() Config {
 	return Config{
@@ -205,6 +221,9 @@ func Load(path string) (Config, error) {
 	decoder.KnownFields(true)
 	if err := decoder.Decode(&cfg); err != nil {
 		return Config{}, fmt.Errorf("parse gateway config %s: %w", path, err)
+	}
+	if strings.EqualFold(strings.TrimSpace(cfg.DB.Driver), "sqlite") {
+		cfg.DB.DSN = normalizeSQLiteDSN(path, cfg.DB.DSN)
 	}
 	if err := cfg.Validate(); err != nil {
 		return Config{}, fmt.Errorf("validate gateway config %s: %w", path, err)

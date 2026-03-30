@@ -10,7 +10,7 @@ upstream:
 
 db:
   driver: "sqlite" # sqlite | postgres
-  dsn: "mlops/artifacts/data/gateway.db" # sqlite file path or postgres DSN
+  dsn: "mlops/artifacts/data/gateway.db" # repo-root-relative sqlite file path or postgres DSN
   max_open_conns: 10
   max_idle_conns: 5
   conn_max_lifetime_s: 300
