@@ -20,6 +20,7 @@ mlops/data/
 tooling/configs/*.yaml
 !tooling/configs/*.yaml.example
 services/inference-api/.venv/
+services/gateway/gateway.exe
 clients/orchard-console/node_modules/
 clients/orchard-console/.nuxt/
 clients/orchard-console/.output/

@@ -100,26 +100,47 @@ type LoggingConfig struct {
 	Format string `yaml:"format"`
 }
 
+func isExplicitRelativePath(path string) bool {
+	path = filepath.ToSlash(strings.TrimSpace(path))
+	return path == "." || path == ".." || strings.HasPrefix(path, "./") || strings.HasPrefix(path, "../")
+}
+
+func isWorkspaceRelativePath(path string) bool {
+	if isExplicitRelativePath(path) {
+		return false
+	}
+
+	path = filepath.ToSlash(filepath.Clean(path))
+	head := path
+	if idx := strings.Index(path, "/"); idx >= 0 {
+		head = path[:idx]
+	}
+
+	switch head {
+	case "clients", "services", "shared", "mlops", "tooling", "tests", "docs":
+		return true
+	default:
+		return false
+	}
+}
+
 func resolveWorkspacePath(path string) string {
 	if filepath.IsAbs(path) {
 		return path
 	}
 
-	candidates := []string{
-		path,
-		filepath.Join("..", "..", path),
+	path = filepath.Clean(path)
+	if isExplicitRelativePath(path) || !isWorkspaceRelativePath(path) {
+		return path
 	}
 
-	for _, candidate := range candidates {
-		if _, err := os.Stat(candidate); err == nil {
-			return candidate
-		}
+	wd, err := os.Getwd()
+	if err != nil {
+		return path
 	}
 
-	for _, candidate := range candidates {
-		if _, err := os.Stat(filepath.Dir(candidate)); err == nil {
-			return candidate
-		}
+	if strings.HasSuffix(filepath.ToSlash(filepath.Clean(wd)), "/services/gateway") {
+		return filepath.Join("..", "..", path)
 	}
 
 	return path
@@ -134,7 +155,7 @@ func normalizeSQLiteDSN(configPath, dsn string) string {
 		return dsn
 	}
 
-	if dsn == "." || dsn == ".." || strings.HasPrefix(dsn, "./") || strings.HasPrefix(dsn, ".\\") || strings.HasPrefix(dsn, "../") || strings.HasPrefix(dsn, "..\\") {
+	if isExplicitRelativePath(dsn) {
 		return filepath.Clean(filepath.Join(filepath.Dir(configPath), dsn))
 	}
 

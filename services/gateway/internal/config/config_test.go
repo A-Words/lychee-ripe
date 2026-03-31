@@ -261,14 +261,10 @@ func TestLoadRebasesRelativeSQLiteDSNFromWorkspace(t *testing.T) {
 	workspaceDir := filepath.Join(dir, "workspace")
 	configDir := filepath.Join(workspaceDir, "tooling", "configs")
 	serviceDir := filepath.Join(workspaceDir, "services", "gateway")
-	dataDir := filepath.Join(workspaceDir, "mlops", "artifacts", "data")
 	if err := os.MkdirAll(configDir, 0o755); err != nil {
 		t.Fatal(err)
 	}
 	if err := os.MkdirAll(serviceDir, 0o755); err != nil {
-		t.Fatal(err)
-	}
-	if err := os.MkdirAll(dataDir, 0o755); err != nil {
 		t.Fatal(err)
 	}
 
@@ -298,6 +294,31 @@ db:
 		t.Fatalf("Load failed: %v", err)
 	}
 
+	want := filepath.Join("..", "..", "mlops", "artifacts", "data", "gateway.db")
+	if cfg.DB.DSN != want {
+		t.Fatalf("db.dsn = %q, want %q", cfg.DB.DSN, want)
+	}
+}
+
+func TestDefaultsRebaseWorkspaceDSNWithoutExistingArtifacts(t *testing.T) {
+	dir := t.TempDir()
+	serviceDir := filepath.Join(dir, "workspace", "services", "gateway")
+	if err := os.MkdirAll(serviceDir, 0o755); err != nil {
+		t.Fatal(err)
+	}
+
+	prevWD, err := os.Getwd()
+	if err != nil {
+		t.Fatal(err)
+	}
+	t.Cleanup(func() {
+		_ = os.Chdir(prevWD)
+	})
+	if err := os.Chdir(serviceDir); err != nil {
+		t.Fatal(err)
+	}
+
+	cfg := Defaults()
 	want := filepath.Join("..", "..", "mlops", "artifacts", "data", "gateway.db")
 	if cfg.DB.DSN != want {
 		t.Fatalf("db.dsn = %q, want %q", cfg.DB.DSN, want)

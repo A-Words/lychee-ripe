@@ -106,6 +106,22 @@ sh tooling/scripts/stack.sh --app-host 127.0.0.1 --app-port 8000 --gateway-confi
 
 ## Training And Eval
 
+workspace 便捷入口：
+
+```sh
+bun run --filter @lychee-ripe/training train
+bun run --filter @lychee-ripe/training eval
+```
+
+这两个命令默认使用 `mlops/data/lichi/data.yaml` 和 `lychee_v1` 产物；如需覆盖，继续通过 `--` 追加参数，例如：
+
+```sh
+bun run --filter @lychee-ripe/training train -- --data mlops/data/lichi/data.yaml --name custom_run
+bun run --filter @lychee-ripe/training eval -- --model mlops/artifacts/models/custom_run/weights/best.pt --data mlops/data/lichi/data.yaml --output mlops/artifacts/metrics/custom_run.json
+```
+
+workspace 默认参数和输出目录都按 repo-root 相对路径解释；即使 fresh clone 时 `mlops/artifacts/` 还不存在，产物也会创建在仓库内。
+
 直接运行：
 
 ```sh

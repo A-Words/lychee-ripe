@@ -10,7 +10,11 @@ MLOPS_DIR = SCRIPT_DIR.parent
 REPO_ROOT = MLOPS_DIR.parent
 
 
-def resolve_cli_path(raw_path: str) -> Path:
+def is_explicit_relative_path(raw_path: str) -> bool:
+    return raw_path in {'.', '..'} or raw_path.startswith('./') or raw_path.startswith('../') or raw_path.startswith('.\\') or raw_path.startswith('..\\')
+
+
+def resolve_input_path(raw_path: str) -> Path:
     path = Path(raw_path)
     if path.is_absolute():
         return path
@@ -24,7 +28,20 @@ def resolve_cli_path(raw_path: str) -> Path:
     for candidate in candidates:
         if candidate.exists():
             return candidate
-    return REPO_ROOT / path
+
+    if is_explicit_relative_path(raw_path):
+        return (Path.cwd() / path).resolve()
+    return (REPO_ROOT / path).resolve()
+
+
+def resolve_output_path(raw_path: str) -> Path:
+    path = Path(raw_path)
+    if path.is_absolute():
+        return path
+
+    if is_explicit_relative_path(raw_path):
+        return (Path.cwd() / path).resolve()
+    return (REPO_ROOT / path).resolve()
 
 
 def parse_args() -> argparse.Namespace:
@@ -49,9 +66,9 @@ def main() -> None:
 
     from ultralytics import YOLO
 
-    data_path = resolve_cli_path(args.data)
-    model_path = resolve_cli_path(args.model)
-    project_path = resolve_cli_path(args.project)
+    data_path = resolve_input_path(args.data)
+    model_path = resolve_input_path(args.model)
+    project_path = resolve_output_path(args.project)
 
     model = YOLO(str(model_path))
     results = model.train(

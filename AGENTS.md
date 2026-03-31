@@ -77,6 +77,11 @@
 
 ### 3.3 训练与评估
 
+- Workspace 便捷入口：
+  - `bun run --filter @lychee-ripe/training train`
+  - `bun run --filter @lychee-ripe/training eval`
+  - 以上默认使用 `mlops/data/lichi/data.yaml` 与 `lychee_v1` 相关产物；需要覆盖时，用 `--` 继续追加参数
+  - workspace 默认路径按 repo-root 相对解释；fresh clone 下即使 `mlops/artifacts/` 尚不存在，输出也必须落在仓库内
 - 训练：
   - `uv run --project services/inference-api python mlops/training/train.py --data mlops/data/lichi/data.yaml --model mlops/pretrained/yolo26n.pt --project mlops/artifacts/models --name lychee_v1`
 - 评估：
