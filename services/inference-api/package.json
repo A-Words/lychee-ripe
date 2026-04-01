@@ -1,0 +1,9 @@
+{
+  "name": "@lychee-ripe/inference-api",
+  "private": true,
+  "scripts": {
+    "dev": "uv run python -m uvicorn app.main:app --reload --host 127.0.0.1 --port 8000",
+    "test": "uv run python -m pytest -q",
+    "verify": "uv run python -m pytest -q"
+  }
+}

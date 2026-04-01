@@ -1,0 +1,28 @@
+@import "tailwindcss";
+@import "@nuxt/ui";
+
+@theme {
+  --font-sans:
+    "Source Han Sans SC",
+    "PingFang SC",
+    "Microsoft YaHei",
+    "Segoe UI",
+    sans-serif;
+}
+
+:root {
+  --ui-radius: 0.5rem;
+  --ui-primary: var(--ui-color-primary-500);
+  --ui-success: #3d8d40;
+  --ui-warning: #f5a623;
+  --ui-error: #d64545;
+  --ui-info: #6aaed6;
+}
+
+body {
+  min-height: 100vh;
+  background:
+    radial-gradient(1200px 500px at 0% -10%, rgb(56 189 248 / 12%), transparent),
+    radial-gradient(900px 400px at 100% 0%, rgb(16 185 129 / 12%), transparent),
+    var(--ui-bg);
+}

@@ -1,0 +1,26 @@
+{
+  "name": "lychee-ripe",
+  "private": true,
+  "packageManager": "bun@1.2.23",
+  "workspaces": [
+    "clients/*",
+    "services/*",
+    "mlops/*",
+    "shared/contracts"
+  ],
+  "scripts": {
+    "dev": "turbo run dev --parallel --filter=@lychee-ripe/inference-api --filter=@lychee-ripe/gateway --filter=@lychee-ripe/orchard-console",
+    "dev:inference-api": "turbo run dev --filter=@lychee-ripe/inference-api",
+    "dev:gateway": "turbo run dev --filter=@lychee-ripe/gateway",
+    "dev:orchard-console": "turbo run dev --filter=@lychee-ripe/orchard-console",
+    "build": "turbo run build",
+    "test": "turbo run test",
+    "test:stack": "bun tests/stack/smoke-stack.mjs",
+    "typecheck": "turbo run typecheck",
+    "generate": "turbo run generate",
+    "verify": "turbo run verify"
+  },
+  "devDependencies": {
+    "turbo": "^2.5.6"
+  }
+}
