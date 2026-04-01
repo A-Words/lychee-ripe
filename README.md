@@ -175,6 +175,8 @@ bun run test:stack
 - 网关配置：`tooling/configs/gateway.yaml`
 
 默认模型路径、网关默认配置与本地 sqlite 路径都已改成 repo-root 相对解析，直接从仓库根或各服务目录运行都可以。
+`tooling/configs/gateway.yaml.example` 默认面向本地直启，`upstream.base_url` 使用 `http://127.0.0.1:8000`。
+Docker Compose 使用仓库自带的 `tooling/configs/gateway.compose.yaml`，其中容器内上游地址为 `http://inference-api:8000`。
 
 ## Docker
 
@@ -188,6 +190,8 @@ bun run test:stack
 ```sh
 docker compose up --build
 ```
+
+Compose 默认会让 gateway 读取 `tooling/configs/gateway.compose.yaml`；本地 `go run`、`bun run dev:gateway` 与 `tooling/scripts/stack.*` 继续使用 `tooling/configs/gateway.yaml`。
 
 ## Notes
 

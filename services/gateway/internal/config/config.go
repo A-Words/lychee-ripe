@@ -151,15 +151,31 @@ func normalizeSQLiteDSN(configPath, dsn string) string {
 	if dsn == "" || filepath.IsAbs(dsn) {
 		return dsn
 	}
-	if dsn == ":memory:" || strings.HasPrefix(dsn, "file:") || strings.Contains(dsn, "?") {
+	if dsn == ":memory:" {
 		return dsn
 	}
 
-	if isExplicitRelativePath(dsn) {
-		return filepath.Clean(filepath.Join(filepath.Dir(configPath), dsn))
+	prefix := ""
+	if strings.HasPrefix(dsn, "file:") {
+		prefix = "file:"
+		dsn = strings.TrimPrefix(dsn, prefix)
 	}
 
-	return resolveWorkspacePath(dsn)
+	query := ""
+	if idx := strings.Index(dsn, "?"); idx >= 0 {
+		query = dsn[idx:]
+		dsn = dsn[:idx]
+	}
+
+	if dsn == "" {
+		return prefix + query
+	}
+
+	if isExplicitRelativePath(dsn) {
+		return prefix + filepath.Clean(filepath.Join(filepath.Dir(configPath), dsn)) + query
+	}
+
+	return prefix + resolveWorkspacePath(dsn) + query
 }
 
 // Defaults returns a Config with sensible defaults.

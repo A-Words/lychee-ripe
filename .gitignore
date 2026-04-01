@@ -19,6 +19,7 @@ node_modules/
 mlops/data/
 tooling/configs/*.yaml
 !tooling/configs/*.yaml.example
+!tooling/configs/gateway.compose.yaml
 services/inference-api/.venv/
 services/gateway/gateway.exe
 clients/orchard-console/node_modules/

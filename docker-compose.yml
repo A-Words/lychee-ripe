@@ -19,7 +19,7 @@ services:
     ports:
       - "9000:9000"
     environment:
-      - LYCHEE_GATEWAY_CONFIG=/etc/gateway/gateway.yaml
+      - LYCHEE_GATEWAY_CONFIG=/etc/gateway/gateway.compose.yaml
     volumes:
       - ./tooling/configs:/etc/gateway:ro
       - ./mlops/artifacts:/app/mlops/artifacts

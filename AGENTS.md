@@ -131,6 +131,8 @@
 - 新增共享字段时，优先在 `shared/contracts/` 定义，再同步 `services/inference-api`、`services/gateway`、`clients/orchard-console`
 - 前端禁止直连 `services/inference-api`，默认必须走 `services/gateway`
 - 任何行为改动，至少运行一次相关测试；若未执行，必须说明原因和风险
+- `tooling/configs/gateway.yaml.example` 应保持本地直启可用，默认 `upstream.base_url` 指向 `http://127.0.0.1:8000`
+- Docker Compose 应使用独立的 `tooling/configs/gateway.compose.yaml`，其中 `upstream.base_url` 指向容器服务名 `http://inference-api:8000`
 
 ## 5. 提交前检查
 

@@ -1,0 +1,61 @@
+server:
+  host: "0.0.0.0"
+  port: 9000
+  read_timeout_s: 30
+  write_timeout_s: 60
+
+upstream:
+  base_url: "http://inference-api:8000"
+  timeout_s: 30
+
+db:
+  driver: "sqlite" # sqlite | postgres
+  dsn: "mlops/artifacts/data/gateway.db" # repo-root-relative sqlite file path or postgres DSN
+  max_open_conns: 10
+  max_idle_conns: 5
+  conn_max_lifetime_s: 300
+  sqlite:
+    journal_mode: "WAL"
+    busy_timeout_ms: 5000
+  postgres:
+    ssl_mode: "disable"
+    schema: "public"
+
+chain:
+  enabled: false
+  rpc_url: "http://127.0.0.1:8545"
+  chain_id: "31337"
+  contract_address: "0x1234567890abcdef1234567890abcdef12345678"
+  private_key: "0123456789abcdef0123456789abcdef0123456789abcdef0123456789abcdef" # local dev only
+  tx_timeout_s: 30
+  receipt_poll_interval_ms: 500
+
+auth:
+  enabled: false
+  api_keys:
+    - "changeme"
+
+rate_limit:
+  enabled: true
+  requests_per_second: 20
+  burst: 40
+  exclude_paths:
+    - "/healthz"
+
+cors:
+  enabled: true
+  allowed_origins:
+    - "*"
+  allowed_methods:
+    - "GET"
+    - "POST"
+    - "OPTIONS"
+  allowed_headers:
+    - "Content-Type"
+    - "Authorization"
+    - "X-API-Key"
+  max_age_s: 3600
+
+logging:
+  level: "info"
+  format: "json"

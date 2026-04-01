@@ -393,8 +393,9 @@ db:
 		t.Fatalf("Load failed: %v", err)
 	}
 
-	if cfg.DB.DSN != "file:gateway.db?cache=shared" {
-		t.Fatalf("db.dsn = %q", cfg.DB.DSN)
+	want := "file:gateway.db?cache=shared"
+	if cfg.DB.DSN != want {
+		t.Fatalf("db.dsn = %q, want %q", cfg.DB.DSN, want)
 	}
 }
 
@@ -437,6 +438,138 @@ db:
 	}
 
 	want := filepath.Join("mlops", "artifacts", "data", "gateway.db")
+	if filepath.ToSlash(cfg.DB.DSN) != filepath.ToSlash(want) {
+		t.Fatalf("db.dsn = %q, want %q", cfg.DB.DSN, filepath.ToSlash(want))
+	}
+}
+
+func TestLoadRebasesWorkspaceRelativeSQLiteDSNWithQuery(t *testing.T) {
+	dir := t.TempDir()
+	workspaceDir := filepath.Join(dir, "workspace")
+	configDir := filepath.Join(workspaceDir, "tooling", "configs")
+	serviceDir := filepath.Join(workspaceDir, "services", "gateway")
+	if err := os.MkdirAll(configDir, 0o755); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.MkdirAll(serviceDir, 0o755); err != nil {
+		t.Fatal(err)
+	}
+
+	cfgPath := filepath.Join(configDir, "gateway.yaml")
+	content := `
+db:
+  driver: "sqlite"
+  dsn: "mlops/artifacts/data/gateway.db?cache=shared"
+`
+	if err := os.WriteFile(cfgPath, []byte(content), 0o644); err != nil {
+		t.Fatal(err)
+	}
+
+	prevWD, err := os.Getwd()
+	if err != nil {
+		t.Fatal(err)
+	}
+	t.Cleanup(func() {
+		_ = os.Chdir(prevWD)
+	})
+	if err := os.Chdir(serviceDir); err != nil {
+		t.Fatal(err)
+	}
+
+	cfg, err := Load(cfgPath)
+	if err != nil {
+		t.Fatalf("Load failed: %v", err)
+	}
+
+	want := filepath.Join("..", "..", "mlops", "artifacts", "data", "gateway.db") + "?cache=shared"
+	if filepath.ToSlash(cfg.DB.DSN) != filepath.ToSlash(want) {
+		t.Fatalf("db.dsn = %q, want %q", cfg.DB.DSN, filepath.ToSlash(want))
+	}
+}
+
+func TestLoadRebasesFileSQLiteDSNWithQuery(t *testing.T) {
+	dir := t.TempDir()
+	workspaceDir := filepath.Join(dir, "workspace")
+	configDir := filepath.Join(workspaceDir, "tooling", "configs")
+	serviceDir := filepath.Join(workspaceDir, "services", "gateway")
+	if err := os.MkdirAll(configDir, 0o755); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.MkdirAll(serviceDir, 0o755); err != nil {
+		t.Fatal(err)
+	}
+
+	cfgPath := filepath.Join(configDir, "gateway.yaml")
+	content := `
+db:
+  driver: "sqlite"
+  dsn: "file:mlops/artifacts/data/gateway.db?cache=shared"
+`
+	if err := os.WriteFile(cfgPath, []byte(content), 0o644); err != nil {
+		t.Fatal(err)
+	}
+
+	prevWD, err := os.Getwd()
+	if err != nil {
+		t.Fatal(err)
+	}
+	t.Cleanup(func() {
+		_ = os.Chdir(prevWD)
+	})
+	if err := os.Chdir(serviceDir); err != nil {
+		t.Fatal(err)
+	}
+
+	cfg, err := Load(cfgPath)
+	if err != nil {
+		t.Fatalf("Load failed: %v", err)
+	}
+
+	want := "file:" + filepath.Join("..", "..", "mlops", "artifacts", "data", "gateway.db") + "?cache=shared"
+	if filepath.ToSlash(cfg.DB.DSN) != filepath.ToSlash(want) {
+		t.Fatalf("db.dsn = %q, want %q", cfg.DB.DSN, filepath.ToSlash(want))
+	}
+}
+
+func TestLoadKeepsWorkspaceRelativeSQLiteDSNWithQueryIndependentOfConfigMount(t *testing.T) {
+	dir := t.TempDir()
+	appDir := filepath.Join(dir, "app")
+	configDir := filepath.Join(dir, "etc", "gateway")
+	dataDir := filepath.Join(appDir, "mlops", "artifacts", "data")
+	if err := os.MkdirAll(configDir, 0o755); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.MkdirAll(dataDir, 0o755); err != nil {
+		t.Fatal(err)
+	}
+
+	cfgPath := filepath.Join(configDir, "gateway.yaml")
+	content := `
+db:
+  driver: "sqlite"
+  dsn: "file:mlops/artifacts/data/gateway.db?cache=shared"
+`
+	if err := os.WriteFile(cfgPath, []byte(content), 0o644); err != nil {
+		t.Fatal(err)
+	}
+
+	prevWD, err := os.Getwd()
+	if err != nil {
+		t.Fatal(err)
+	}
+	t.Cleanup(func() {
+		_ = os.Chdir(prevWD)
+	})
+	if err := os.Chdir(appDir); err != nil {
+		t.Fatal(err)
+	}
+
+	cfg, err := Load(cfgPath)
+	if err != nil {
+		t.Fatalf("Load failed: %v", err)
+	}
+
+	want := "file:" + filepath.Join("mlops", "artifacts", "data", "gateway.db") + "?cache=shared"
 	if filepath.ToSlash(cfg.DB.DSN) != filepath.ToSlash(want) {
 		t.Fatalf("db.dsn = %q, want %q", cfg.DB.DSN, filepath.ToSlash(want))
 	}
