@@ -1,7 +1,13 @@
 <script setup lang="ts">
 import type { CameraOption } from '~/composables/useCamera'
 import type { FrameResult } from '~/types/infer'
-import { mapDetectionsToOverlayBoxes } from '~/utils/camera-overlay'
+import {
+  formatDetectionConfidence,
+  getOverlayInfoCardPosition,
+  mapDetectionsToOverlayBoxes,
+  reconcileOverlayBoxIdentities,
+  type DetectionOverlayBox
+} from '~/utils/camera-overlay'
 
 const props = defineProps<{
   devices: CameraOption[]
@@ -31,6 +37,13 @@ const videoSize = reactive({
   width: 0,
   height: 0
 })
+const previewDetectionId = ref<string | null>(null)
+const previewRenderKey = ref<string | null>(null)
+const selectedDetectionId = ref<string | null>(null)
+const selectedRenderKey = ref<string | null>(null)
+const overlayBoxes = ref<DetectionOverlayBox[]>([])
+let previousOverlayBoxes: DetectionOverlayBox[] = []
+let nextUntrackedOverlayId = 0
 let resizeObserver: ResizeObserver | null = null
 
 watch(localVideo, (video) => {
@@ -64,7 +77,7 @@ onBeforeUnmount(() => {
 
 const hasDevices = computed(() => props.devices.length > 0)
 const showOverlay = computed(() => props.isRecognizing && !props.streamError && Boolean(props.currentFrame))
-const overlayBoxes = computed(() => {
+const mappedOverlayBoxes = computed(() => {
   if (!props.currentFrame) {
     return []
   }
@@ -75,6 +88,82 @@ const overlayBoxes = computed(() => {
     containerWidth: viewportSize.width,
     containerHeight: viewportSize.height
   })
+})
+const activeBox = computed(() => {
+  if (!showOverlay.value) {
+    return null
+  }
+
+  if (selectedDetectionId.value) {
+    return overlayBoxes.value.find((box) => box.hoverId === selectedDetectionId.value) ?? null
+  }
+
+  if (selectedRenderKey.value) {
+    return overlayBoxes.value.find((box) => box.renderKey === selectedRenderKey.value) ?? null
+  }
+
+  if (previewDetectionId.value) {
+    return overlayBoxes.value.find((box) => box.hoverId === previewDetectionId.value) ?? null
+  }
+
+  if (previewRenderKey.value) {
+    return overlayBoxes.value.find((box) => box.renderKey === previewRenderKey.value) ?? null
+  }
+
+  return null
+})
+
+watch(showOverlay, (visible) => {
+  if (!visible) {
+    previewDetectionId.value = null
+    previewRenderKey.value = null
+    selectedDetectionId.value = null
+    selectedRenderKey.value = null
+    overlayBoxes.value = []
+    previousOverlayBoxes = []
+    nextUntrackedOverlayId = 0
+  }
+})
+
+watch([mappedOverlayBoxes, showOverlay], ([boxes, visible]) => {
+  if (!visible) {
+    return
+  }
+
+  const reconciled = reconcileOverlayBoxIdentities(previousOverlayBoxes, boxes, nextUntrackedOverlayId)
+  overlayBoxes.value = reconciled.boxes
+  previousOverlayBoxes = reconciled.boxes
+  nextUntrackedOverlayId = reconciled.nextUntrackedId
+}, { immediate: true })
+
+watch(overlayBoxes, (boxes) => {
+  if (selectedDetectionId.value) {
+    const stillExists = boxes.some((box) => box.hoverId === selectedDetectionId.value)
+    if (!stillExists) {
+      selectedDetectionId.value = null
+    }
+  }
+
+  if (selectedRenderKey.value) {
+    const stillExists = boxes.some((box) => box.renderKey === selectedRenderKey.value)
+    if (!stillExists) {
+      selectedRenderKey.value = null
+    }
+  }
+
+  if (previewDetectionId.value) {
+    const stillExists = boxes.some((box) => box.hoverId === previewDetectionId.value)
+    if (!stillExists) {
+      previewDetectionId.value = null
+    }
+  }
+
+  if (previewRenderKey.value) {
+    const stillExists = boxes.some((box) => box.renderKey === previewRenderKey.value)
+    if (!stillExists) {
+      previewRenderKey.value = null
+    }
+  }
 })
 
 onMounted(() => {
@@ -128,6 +217,63 @@ function overlayStyle(box: { left: number, top: number, width: number, height: n
     borderColor: box.color,
     boxShadow: `inset 0 0 0 1px ${box.color}40`
   }
+}
+
+function overlayInfoCardStyle(box: DetectionOverlayBox) {
+  const position = getOverlayInfoCardPosition(box, {
+    containerWidth: viewportSize.width,
+    containerHeight: viewportSize.height
+  })
+
+  return {
+    left: `${position.left}px`,
+    top: `${position.top}px`
+  }
+}
+
+function handleBoxEnter(box: DetectionOverlayBox) {
+  previewDetectionId.value = box.hoverId
+  previewRenderKey.value = box.renderKey
+}
+
+function handleBoxFocus(box: DetectionOverlayBox) {
+  handleBoxEnter(box)
+}
+
+function handleBoxLeave(box: DetectionOverlayBox) {
+  if (box.hoverId && previewDetectionId.value === box.hoverId) {
+    previewDetectionId.value = null
+  }
+
+  if (previewRenderKey.value === box.renderKey) {
+    previewRenderKey.value = null
+  }
+}
+
+function handleBoxBlur(box: DetectionOverlayBox) {
+  handleBoxLeave(box)
+}
+
+function handleBoxClick(box: DetectionOverlayBox) {
+  const isSameTrackedBox = box.hoverId && selectedDetectionId.value === box.hoverId
+  const isSameFallbackBox = !box.hoverId && selectedRenderKey.value === box.renderKey
+
+  if (isSameTrackedBox || isSameFallbackBox) {
+    if (box.hoverId && previewDetectionId.value === box.hoverId) {
+      previewDetectionId.value = null
+    }
+
+    if (previewRenderKey.value === box.renderKey) {
+      previewRenderKey.value = null
+    }
+
+    selectedDetectionId.value = null
+    selectedRenderKey.value = null
+    return
+  }
+
+  selectedDetectionId.value = box.hoverId
+  selectedRenderKey.value = box.renderKey
 }
 </script>
 
@@ -251,12 +397,33 @@ function overlayStyle(box: { left: number, top: number, width: number, height: n
           data-testid="camera-overlay"
           class="pointer-events-none absolute inset-0"
         >
-          <div
+          <button
             v-for="box in overlayBoxes"
-            :key="box.key"
-            class="absolute rounded-md border-2"
+            :key="box.renderKey"
+            type="button"
+            class="pointer-events-auto absolute rounded-md border-2 bg-transparent cursor-help focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-white"
             :style="overlayStyle(box)"
+            :aria-label="`${box.label}，置信度 ${formatDetectionConfidence(box.confidence)}`"
+            @mouseenter="handleBoxEnter(box)"
+            @mouseleave="handleBoxLeave(box)"
+            @focus="handleBoxFocus(box)"
+            @blur="handleBoxBlur(box)"
+            @click="handleBoxClick(box)"
           />
+
+          <div
+            v-if="activeBox"
+            data-testid="camera-overlay-card"
+            class="pointer-events-none absolute w-28 rounded-md border border-default bg-default/92 px-2 py-1.5 text-xs text-highlighted shadow-lg backdrop-blur-sm"
+            :style="overlayInfoCardStyle(activeBox)"
+          >
+            <p class="font-medium leading-tight">
+              成熟度：{{ activeBox.label }}
+            </p>
+            <p class="mt-1 leading-tight text-toned">
+              置信度：{{ formatDetectionConfidence(activeBox.confidence) }}
+            </p>
+          </div>
         </div>
       </div>
     </div>
