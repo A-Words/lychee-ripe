@@ -1,4 +1,6 @@
-export type RipenessLabel = 'green' | 'half' | 'red' | 'young'
+import type { RipenessLabel } from '~/types/trace'
+
+export type HarvestSuggestion = 'not_ready' | 'partially_ready' | 'ready' | 'overripe_risk'
 
 export interface Detection {
   bbox: [number, number, number, number]
@@ -33,7 +35,7 @@ export interface RipenessRatio {
 export interface SessionSummary {
   total_detected: number
   ripeness_ratio: RipenessRatio
-  harvest_suggestion: 'not_ready' | 'partially_ready' | 'ready' | 'overripe_risk'
+  harvest_suggestion: HarvestSuggestion
 }
 
 export interface StreamFrameEnvelope {

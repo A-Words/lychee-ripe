@@ -1,193 +1,138 @@
-import { ref } from 'vue'
+import type { FetchError } from 'ofetch'
 import type {
+  Batch,
+  BatchCreateApiError,
+  BatchCreateFormInput,
   BatchCreateRequest,
-  BatchResponse,
+  BatchCreateResult,
   BatchSummaryInput,
-  BatchStatus,
-  ErrorResponse,
-} from '../types/batch'
+  ErrorResponse
+} from '~/types/batch'
 
-export const DEFAULT_UNRIPE_THRESHOLD = 0.15
-
-export type BatchCreateStatus = 'idle' | 'submitting' | 'success' | 'error'
-
-export interface BatchCreateResult {
-  statusCode: 201 | 202
-  batch: BatchResponse
+const defaultCreateError: BatchCreateApiError = {
+  statusCode: 0,
+  error: 'unknown_error',
+  message: '建批请求失败，请稍后重试。'
 }
 
-export interface BatchCreateError extends Error {
-  status?: number
-  code?: string
-  requestId?: string
-}
+export function useBatchCreate() {
+  const gatewayBase = useGatewayBase()
 
-interface UseBatchCreateOptions {
-  gatewayBase?: string
-  apiKey?: string
-  fetchImpl?: typeof fetch
-}
+  const createBatch = async (payload: BatchCreateRequest): Promise<BatchCreateResult> => {
+    const response = await $fetch.raw<Batch>('/v1/batches', {
+      method: 'POST',
+      baseURL: gatewayBase.value,
+      body: payload
+    })
+    if (!response._data) {
+      throw new Error('empty response payload')
+    }
 
-function resolveGatewayBase(provided?: string): string {
-  if (provided) {
-    return provided
-  }
-
-  try {
-    return useRuntimeConfig().public.gatewayBase as string
-  } catch {
-    return 'http://127.0.0.1:9000'
-  }
-}
-
-function toBatchCreateURL(gatewayBase: string): string {
-  const url = new URL(gatewayBase)
-  url.pathname = '/v1/batches'
-  url.search = ''
-  url.hash = ''
-  return url.toString()
-}
-
-function isRecord(value: unknown): value is Record<string, unknown> {
-  return typeof value === 'object' && value !== null
-}
-
-function asErrorPayload(payload: unknown): ErrorResponse | null {
-  if (!isRecord(payload)) {
-    return null
-  }
-  if (typeof payload.error !== 'string' || typeof payload.message !== 'string') {
-    return null
-  }
-  return payload as unknown as ErrorResponse
-}
-
-function asBatchPayload(payload: unknown): BatchResponse | null {
-  if (!isRecord(payload)) {
-    return null
-  }
-  if (typeof payload.batch_id !== 'string' || typeof payload.trace_code !== 'string') {
-    return null
-  }
-  if (typeof payload.status !== 'string') {
-    return null
-  }
-  return payload as unknown as BatchResponse
-}
-
-export function computeUnripeMetrics(summary: BatchSummaryInput) {
-  const total = Math.max(0, summary.total)
-  const unripeCount = Math.max(0, summary.green) + Math.max(0, summary.young)
-  const unripeRatio = total > 0 ? unripeCount / total : 0
-  return {
-    unripeCount,
-    unripeRatio,
-  }
-}
-
-export function needsUnripeConfirm(summary: BatchSummaryInput, threshold = DEFAULT_UNRIPE_THRESHOLD): boolean {
-  return computeUnripeMetrics(summary).unripeRatio > threshold
-}
-
-export function getBatchStatusNotice(status: BatchStatus): { title: string; description: string; color: 'success' | 'warning' | 'error' } {
-  if (status === 'anchored') {
     return {
-      title: '批次已锚定',
-      description: '摘要已写入链上，可直接用于公开溯源。',
-      color: 'success',
+      statusCode: response.status,
+      data: response._data
     }
   }
-  if (status === 'pending_anchor') {
+
+  const parseCreateError = (error: unknown): BatchCreateApiError => {
+    const fetchError = error as FetchError<ErrorResponse>
+    if (!fetchError || typeof fetchError !== 'object') {
+      return { ...defaultCreateError }
+    }
+
+    const statusCode = fetchError.statusCode || fetchError.response?.status || 0
+    const payload = fetchError.data
+    const responseMessage = payload?.message || fetchError.message || defaultCreateError.message
+    const mapped = mapBatchErrorMessage(statusCode, responseMessage)
+
     return {
-      title: '批次已保存，待补链',
-      description: '链路暂不可用，系统会在后续自动/手动补链。',
-      color: 'warning',
-    }
-  }
-  return {
-    title: '批次锚定失败',
-    description: '该批次处于 anchor_failed 状态，需后续人工处理。',
-    color: 'error',
-  }
-}
-
-export function useBatchCreate(options: UseBatchCreateOptions = {}) {
-  const status = ref<BatchCreateStatus>('idle')
-  const lastError = ref<BatchCreateError | null>(null)
-  const lastResult = ref<BatchCreateResult | null>(null)
-
-  const gatewayBase = resolveGatewayBase(options.gatewayBase)
-  const fetchImpl = options.fetchImpl ?? fetch
-
-  async function createBatch(input: BatchCreateRequest): Promise<BatchCreateResult> {
-    status.value = 'submitting'
-    lastError.value = null
-
-    const headers: Record<string, string> = {
-      'Content-Type': 'application/json',
-    }
-    const apiKey = options.apiKey?.trim()
-    if (apiKey) {
-      headers['X-API-Key'] = apiKey
-    }
-
-    let response: Response
-    try {
-      response = await fetchImpl(toBatchCreateURL(gatewayBase), {
-        method: 'POST',
-        headers,
-        body: JSON.stringify(input),
-      })
-    } catch (err) {
-      const error = new Error(err instanceof Error ? err.message : 'network error') as BatchCreateError
-      error.code = 'network_error'
-      status.value = 'error'
-      lastError.value = error
-      throw error
-    }
-
-    let payload: unknown = null
-    try {
-      payload = await response.json()
-    } catch {
-      payload = null
-    }
-
-    if (!response.ok) {
-      const errPayload = asErrorPayload(payload)
-      const error = new Error(errPayload?.message ?? `request failed: ${response.status}`) as BatchCreateError
-      error.status = response.status
-      error.code = errPayload?.error
-      error.requestId = errPayload?.request_id
-      status.value = 'error'
-      lastError.value = error
-      throw error
-    }
-
-    const batch = asBatchPayload(payload)
-    if (!batch) {
-      const error = new Error('invalid batch response payload') as BatchCreateError
-      error.status = response.status
-      error.code = 'invalid_response'
-      status.value = 'error'
-      lastError.value = error
-      throw error
-    }
-
-    const statusCode = response.status === 202 ? 202 : 201
-    const result: BatchCreateResult = {
       statusCode,
-      batch,
+      error: payload?.error || defaultCreateError.error,
+      message: mapped,
+      requestId: payload?.request_id
     }
-    status.value = 'success'
-    lastResult.value = result
-    return result
   }
 
   return {
-    status,
-    lastError,
-    lastResult,
+    gatewayBase,
     createBatch,
+    parseCreateError
   }
+}
+
+export function buildBatchCreateRequest(
+  formInput: BatchCreateFormInput,
+  summary: BatchSummaryInput
+): BatchCreateRequest {
+  const payload: BatchCreateRequest = {
+    orchard_id: formInput.orchard_id.trim(),
+    orchard_name: formInput.orchard_name.trim(),
+    plot_id: formInput.plot_id.trim(),
+    harvested_at: formInput.harvested_at,
+    summary,
+    confirm_unripe: formInput.confirm_unripe
+  }
+
+  const plotName = formInput.plot_name?.trim()
+  if (plotName) {
+    payload.plot_name = plotName
+  }
+
+  const note = formInput.note?.trim()
+  if (note) {
+    payload.note = note
+  }
+
+  return payload
+}
+
+export function validateBatchSummaryInput(summary: BatchSummaryInput): string | null {
+  const values = [summary.green, summary.half, summary.red, summary.young, summary.total]
+  if (values.some((value) => !Number.isFinite(value) || !Number.isInteger(value))) {
+    return '识别汇总存在非整数计数，请重新识别后提交。'
+  }
+
+  if (summary.total <= 0) {
+    return '当前会话无有效识别结果，无法建批。'
+  }
+
+  if (summary.green < 0 || summary.half < 0 || summary.red < 0 || summary.young < 0) {
+    return '识别汇总存在负数计数，请重试。'
+  }
+
+  const partsSum = summary.green + summary.half + summary.red + summary.young
+  if (partsSum !== summary.total) {
+    return '识别汇总与总数不一致，请重新识别。'
+  }
+
+  return null
+}
+
+export function toRFC3339FromLocal(localValue: string): string | null {
+  const value = localValue.trim()
+  if (!value) {
+    return null
+  }
+
+  const date = new Date(value)
+  if (Number.isNaN(date.getTime())) {
+    return null
+  }
+  return date.toISOString()
+}
+
+export function mapBatchErrorMessage(statusCode: number, fallbackMessage: string): string {
+  if (statusCode === 400) {
+    return fallbackMessage || '请求参数非法，请检查采摘信息与汇总结果。'
+  }
+  if (statusCode === 401 || statusCode === 403) {
+    return '网关已开启鉴权，本期建批页未传 API Key。请先关闭鉴权或切换联调配置。'
+  }
+  if (statusCode === 409) {
+    return fallbackMessage || '批次冲突，请重新发起建批。'
+  }
+  if (statusCode === 503) {
+    return fallbackMessage || '服务暂不可用，请稍后重试。'
+  }
+  return fallbackMessage || defaultCreateError.message
 }
