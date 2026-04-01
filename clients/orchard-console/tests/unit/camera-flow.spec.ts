@@ -59,6 +59,21 @@ describe('camera flow', () => {
     expect(source).not.toContain(':disabled="!hasDevices"')
   })
 
+  it('renders a dedicated overlay layer for realtime detection boxes', () => {
+    const source = readFileSync(new URL('../../app/components/batch/CameraStage.vue', import.meta.url), 'utf8')
+    expect(source).toContain('data-testid="camera-overlay"')
+    expect(source).toContain('v-if="showOverlay"')
+    expect(source).not.toContain('overlayLabelStyle')
+    expect(source).not.toContain('box.label')
+    expect(source).not.toContain('text-[11px]')
+    expect(source).not.toContain('rounded-br-md')
+  })
+
+  it('passes the latest frame into the camera stage from the batch page', () => {
+    const source = readFileSync(new URL('../../app/pages/batch/create.vue', import.meta.url), 'utf8')
+    expect(source).toContain(':current-frame="lastFrame"')
+  })
+
   it('starts camera and refreshes selected device after first permission grant', async () => {
     vi.spyOn(console, 'warn').mockImplementation(() => {})
     vi.stubGlobal('localStorage', createMemoryStorage())

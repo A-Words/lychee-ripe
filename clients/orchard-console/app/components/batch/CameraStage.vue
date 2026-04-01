@@ -1,9 +1,12 @@
 <script setup lang="ts">
 import type { CameraOption } from '~/composables/useCamera'
+import type { FrameResult } from '~/types/infer'
+import { mapDetectionsToOverlayBoxes } from '~/utils/camera-overlay'
 
 const props = defineProps<{
   devices: CameraOption[]
   selectedDeviceId: string
+  currentFrame: FrameResult | null
   isRecognizing: boolean
   cameraLoading: boolean
   cameraError?: string
@@ -19,16 +22,113 @@ const emit = defineEmits<{
 }>()
 
 const localVideo = ref<HTMLVideoElement | null>(null)
+const stageViewport = ref<HTMLElement | null>(null)
+const viewportSize = reactive({
+  width: 0,
+  height: 0
+})
+const videoSize = reactive({
+  width: 0,
+  height: 0
+})
+let resizeObserver: ResizeObserver | null = null
 
 watch(localVideo, (video) => {
   emit('update:videoElement', video)
 }, { immediate: true })
 
+watch(localVideo, (video, previousVideo) => {
+  previousVideo?.removeEventListener('loadedmetadata', syncVideoSize)
+  video?.addEventListener('loadedmetadata', syncVideoSize)
+  syncVideoSize()
+}, { immediate: true })
+
+watch(stageViewport, (element, previousElement) => {
+  if (resizeObserver && previousElement) {
+    resizeObserver.unobserve(previousElement)
+  }
+
+  if (resizeObserver && element) {
+    resizeObserver.observe(element)
+  }
+
+  syncViewportSize()
+}, { immediate: true })
+
 onBeforeUnmount(() => {
+  localVideo.value?.removeEventListener('loadedmetadata', syncVideoSize)
+  resizeObserver?.disconnect()
+  resizeObserver = null
   emit('update:videoElement', null)
 })
 
 const hasDevices = computed(() => props.devices.length > 0)
+const showOverlay = computed(() => props.isRecognizing && !props.streamError && Boolean(props.currentFrame))
+const overlayBoxes = computed(() => {
+  if (!props.currentFrame) {
+    return []
+  }
+
+  return mapDetectionsToOverlayBoxes(props.currentFrame.detections, {
+    videoWidth: videoSize.width,
+    videoHeight: videoSize.height,
+    containerWidth: viewportSize.width,
+    containerHeight: viewportSize.height
+  })
+})
+
+onMounted(() => {
+  if (typeof ResizeObserver === 'undefined') {
+    syncViewportSize()
+    return
+  }
+
+  resizeObserver = new ResizeObserver(() => {
+    syncViewportSize()
+  })
+
+  if (stageViewport.value) {
+    resizeObserver.observe(stageViewport.value)
+  }
+
+  syncViewportSize()
+  syncVideoSize()
+})
+
+function syncViewportSize() {
+  const element = stageViewport.value
+  if (!element) {
+    viewportSize.width = 0
+    viewportSize.height = 0
+    return
+  }
+
+  viewportSize.width = element.clientWidth
+  viewportSize.height = element.clientHeight
+}
+
+function syncVideoSize() {
+  const video = localVideo.value
+  if (!video) {
+    videoSize.width = 0
+    videoSize.height = 0
+    return
+  }
+
+  videoSize.width = video.videoWidth || 0
+  videoSize.height = video.videoHeight || 0
+}
+
+function overlayStyle(box: { left: number, top: number, width: number, height: number, color: string }) {
+  return {
+    left: `${box.left}px`,
+    top: `${box.top}px`,
+    width: `${box.width}px`,
+    height: `${box.height}px`,
+    borderColor: box.color,
+    boxShadow: `inset 0 0 0 1px ${box.color}40`
+  }
+}
 </script>
 
 <template>
@@ -133,7 +233,11 @@ const hasDevices = computed(() => props.devices.length > 0)
         </template>
       </UAlert>
 
-      <div class="overflow-hidden rounded-lg border border-accented bg-black">
+      <div
+        ref="stageViewport"
+        data-testid="camera-stage-viewport"
+        class="relative overflow-hidden rounded-lg border border-accented bg-black"
+      >
         <video
           ref="localVideo"
           autoplay
@@ -141,6 +245,19 @@ const hasDevices = computed(() => props.devices.length > 0)
           playsinline
           class="aspect-video w-full object-cover"
         />
+
+        <div
+          v-if="showOverlay"
+          data-testid="camera-overlay"
+          class="pointer-events-none absolute inset-0"
+        >
+          <div
+            v-for="box in overlayBoxes"
+            :key="box.key"
+            class="absolute rounded-md border-2"
+            :style="overlayStyle(box)"
+          />
+        </div>
       </div>
     </div>
   </UCard>
