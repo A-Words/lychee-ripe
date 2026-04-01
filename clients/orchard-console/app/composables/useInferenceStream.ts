@@ -1,10 +1,11 @@
-import type { Ref } from 'vue'
+import { computed, onBeforeUnmount, ref, shallowRef, type Ref } from 'vue'
 import type { SessionSummary, StreamEnvelope, StreamFrameEnvelope } from '~/types/infer'
 import {
   applyDetectionsToSession,
   buildSessionAggregateSummary,
   createSessionAggregateState
 } from '~/utils/session-aggregator'
+import { useGatewayBase } from '~/composables/useGatewayBase'
 import { toWebSocketBase } from '~/utils/ws-url'
 
 export interface UseInferenceStreamOptions {
@@ -13,17 +14,23 @@ export interface UseInferenceStreamOptions {
   jpegQuality?: number
 }
 
+const STOP_TIMEOUT_MS = 1000
+
 export function useInferenceStream(options: UseInferenceStreamOptions) {
   const gatewayBase = useGatewayBase()
 
   const frameIntervalMs = options.frameIntervalMs ?? 300
   const jpegQuality = options.jpegQuality ?? 0.8
 
-  const websocket = ref<WebSocket | null>(null)
-  const canvas = ref<HTMLCanvasElement | null>(null)
+  const websocket = shallowRef<WebSocket | null>(null)
+  const canvas = shallowRef<HTMLCanvasElement | null>(null)
   const sendTimer = ref<number | null>(null)
   const isSendingFrame = ref(false)
   const manualStop = ref(false)
+  let stoppingSocket: WebSocket | null = null
+  let stopPromise: Promise<void> | null = null
+  let resolveStopPromise: (() => void) | null = null
+  let stopTimeout: number | null = null
 
   const connectionState = ref<'idle' | 'connecting' | 'streaming' | 'error'>('idle')
   const streamError = ref('')
@@ -35,7 +42,11 @@ export function useInferenceStream(options: UseInferenceStreamOptions) {
   const aggregateSummary = computed(() => buildSessionAggregateSummary(aggregateState.value))
 
   async function startStream() {
-    if (!import.meta.client || isStreaming.value || connectionState.value === 'connecting') {
+    if (typeof window === 'undefined' || typeof WebSocket === 'undefined') {
+      return
+    }
+
+    if (isStreaming.value || connectionState.value === 'connecting') {
       return
     }
 
@@ -48,19 +59,26 @@ export function useInferenceStream(options: UseInferenceStreamOptions) {
 
     connectionState.value = 'connecting'
     streamError.value = ''
-    manualStop.value = false
+    resetManualStop()
     resetSession()
 
     const wsUrl = `${toWebSocketBase(gatewayBase.value)}/v1/infer/stream`
     const socket = new WebSocket(wsUrl)
 
     socket.onopen = () => {
+      if (websocket.value !== socket) {
+        return
+      }
       connectionState.value = 'streaming'
       streamError.value = ''
       startFrameLoop()
     }
 
     socket.onmessage = (event) => {
+      if (!isTrackedSocket(socket)) {
+        return
+      }
+
       const payload = parseStreamEnvelope(event.data)
       if (!payload) {
         return
@@ -74,6 +92,9 @@ export function useInferenceStream(options: UseInferenceStreamOptions) {
 
       if (payload.type === 'summary') {
         serverSummary.value = payload.summary
+        if (manualStop.value && stoppingSocket === socket) {
+          requestSocketClose(socket)
+        }
         return
       }
 
@@ -83,18 +104,33 @@ export function useInferenceStream(options: UseInferenceStreamOptions) {
     }
 
     socket.onerror = () => {
+      if (!isTrackedSocket(socket)) {
+        return
+      }
+      if (manualStop.value && stoppingSocket === socket) {
+        return
+      }
       streamError.value = '识别流连接失败，请检查网关与模型服务状态。'
       connectionState.value = 'error'
       stopFrameLoop()
     }
 
     socket.onclose = () => {
-      stopFrameLoop()
-      websocket.value = null
-      if (manualStop.value) {
-        connectionState.value = 'idle'
+      if (!isTrackedSocket(socket)) {
         return
       }
+
+      stopFrameLoop()
+
+      if (manualStop.value && stoppingSocket === socket) {
+        finishManualStop(socket)
+        return
+      }
+
+      if (websocket.value === socket) {
+        websocket.value = null
+      }
+
       if (connectionState.value !== 'error') {
         streamError.value = '识别流连接中断，请重试。'
         connectionState.value = 'error'
@@ -109,26 +145,39 @@ export function useInferenceStream(options: UseInferenceStreamOptions) {
 
     const socket = websocket.value
     if (!socket) {
-      manualStop.value = false
+      resetManualStop()
       if (connectionState.value !== 'error') {
         connectionState.value = 'idle'
       }
       return
     }
 
+    if (stopPromise && stoppingSocket === socket) {
+      await stopPromise
+      return
+    }
+
     manualStop.value = true
+    stoppingSocket = socket
+    stopPromise = new Promise<void>((resolve) => {
+      resolveStopPromise = resolve
+    })
+    armStopTimeout(socket)
+
     try {
       if (socket.readyState === WebSocket.OPEN) {
         socket.send('stop')
+      } else if (socket.readyState === WebSocket.CLOSED) {
+        finishManualStop(socket)
+      } else if (socket.readyState === WebSocket.CONNECTING) {
+        requestSocketClose(socket)
       }
     } catch {
-      // Ignore send errors during shutdown.
-    } finally {
-      socket.close()
-      websocket.value = null
-      if (connectionState.value !== 'error') {
-        connectionState.value = 'idle'
-      }
+      requestSocketClose(socket)
+    }
+
+    if (stopPromise) {
+      await stopPromise
     }
   }
 
@@ -142,6 +191,63 @@ export function useInferenceStream(options: UseInferenceStreamOptions) {
     streamError.value = message
     connectionState.value = 'error'
     stopFrameLoop()
+  }
+
+  function isTrackedSocket(socket: WebSocket) {
+    return websocket.value === socket || stoppingSocket === socket
+  }
+
+  function armStopTimeout(socket: WebSocket) {
+    clearStopTimeout()
+    stopTimeout = window.setTimeout(() => {
+      if (stoppingSocket !== socket) {
+        return
+      }
+
+      requestSocketClose(socket)
+      finishManualStop(socket)
+    }, STOP_TIMEOUT_MS)
+  }
+
+  function clearStopTimeout() {
+    if (stopTimeout !== null) {
+      window.clearTimeout(stopTimeout)
+      stopTimeout = null
+    }
+  }
+
+  function requestSocketClose(socket: WebSocket) {
+    if (socket.readyState === WebSocket.CLOSED || socket.readyState === WebSocket.CLOSING) {
+      return
+    }
+
+    try {
+      socket.close()
+    } catch {
+      // Ignore close errors during shutdown.
+    }
+  }
+
+  function finishManualStop(socket: WebSocket) {
+    clearStopTimeout()
+    if (websocket.value === socket) {
+      websocket.value = null
+    }
+    resetManualStop()
+    if (connectionState.value !== 'error') {
+      connectionState.value = 'idle'
+    }
+  }
+
+  function resetManualStop() {
+    clearStopTimeout()
+    manualStop.value = false
+    stoppingSocket = null
+
+    const resolve = resolveStopPromise
+    stopPromise = null
+    resolveStopPromise = null
+    resolve?.()
   }
 
   function startFrameLoop() {
@@ -189,9 +295,29 @@ export function useInferenceStream(options: UseInferenceStreamOptions) {
         return
       }
 
+      if (manualStop.value && stoppingSocket === socket) {
+        return
+      }
+      if (websocket.value !== socket || socket.readyState !== WebSocket.OPEN) {
+        return
+      }
+
       const buffer = await blob.arrayBuffer()
+      if (manualStop.value && stoppingSocket === socket) {
+        return
+      }
+      if (websocket.value !== socket || socket.readyState !== WebSocket.OPEN) {
+        return
+      }
+
       socket.send(buffer)
     } catch {
+      if (manualStop.value && stoppingSocket === socket) {
+        return
+      }
+      if (websocket.value !== socket || socket.readyState !== WebSocket.OPEN) {
+        return
+      }
       setErrorState('推送视频帧失败，请重试识别。')
     } finally {
       isSendingFrame.value = false

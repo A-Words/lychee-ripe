@@ -1,3 +1,5 @@
+import { computed } from 'vue'
+
 export function useGatewayBase() {
   const config = useRuntimeConfig()
 
