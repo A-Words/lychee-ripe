@@ -85,6 +85,16 @@ bun run dev:gateway
 bun run dev:orchard-console
 ```
 
+这些根入口默认显式使用 `cpu`；如需切到 CUDA 12.8，可追加 `-- --target cu128`，例如：
+
+```sh
+bun run dev:inference-api -- --target cu128
+bun run test -- --target cu128
+bun run verify -- --target cpu
+```
+
+`LYCHEE_PY_TARGET` 只会进入 Python-backed Turbo task 的缓存键，CPU 和 CUDA 的 `test` / `verify` 结果不会混用；非 Python workspace 继续复用跨 target 缓存。
+
 分服务直接启动：
 
 ```sh
@@ -116,9 +126,11 @@ bun run --filter @lychee-ripe/training eval
 这两个命令默认使用 `mlops/data/lichi/data.yaml` 和 `lychee_v1` 产物；如需覆盖，继续通过 `--` 追加参数，例如：
 
 ```sh
-bun run --filter @lychee-ripe/training train -- --data mlops/data/lichi/data.yaml --name custom_run
-bun run --filter @lychee-ripe/training eval -- --model mlops/artifacts/models/custom_run/weights/best.pt --data mlops/data/lichi/data.yaml --output mlops/artifacts/metrics/custom_run.json
+bun run --filter @lychee-ripe/training train -- --target cpu --data mlops/data/lichi/data.yaml --name custom_run
+bun run --filter @lychee-ripe/training eval -- --target cu128 --model mlops/artifacts/models/custom_run/weights/best.pt --data mlops/data/lichi/data.yaml --output mlops/artifacts/metrics/custom_run.json
 ```
+
+training workspace 入口默认显式使用 `cpu`；如需切到 CUDA 12.8，统一通过 `-- --target cu128` 覆写。
 
 workspace 默认参数和输出目录都按 repo-root 相对路径解释；即使 fresh clone 时 `mlops/artifacts/` 还不存在，产物也会创建在仓库内。
 
@@ -147,6 +159,7 @@ sh tooling/scripts/eval.sh --target cpu --data mlops/data/lichi/data.yaml --exp 
 统一入口：
 
 ```sh
+bun run test
 bun run verify
 ```
 

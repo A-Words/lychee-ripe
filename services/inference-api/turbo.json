@@ -1,0 +1,14 @@
+{
+  "extends": ["//"],
+  "tasks": {
+    "dev": {
+      "env": ["LYCHEE_PY_TARGET"]
+    },
+    "test": {
+      "env": ["LYCHEE_PY_TARGET"]
+    },
+    "verify": {
+      "env": ["LYCHEE_PY_TARGET"]
+    }
+  }
+}

@@ -2,8 +2,8 @@
   "name": "@lychee-ripe/training",
   "private": true,
   "scripts": {
-    "train": "uv run --project ../../services/inference-api python train.py --data mlops/data/lichi/data.yaml --model mlops/pretrained/yolo26n.pt --project mlops/artifacts/models",
-    "eval": "uv run --project ../../services/inference-api python eval.py --model mlops/artifacts/models/lychee_v1/weights/best.pt --data mlops/data/lichi/data.yaml --output mlops/artifacts/metrics/lychee_v1-eval_metrics.json",
+    "train": "bun ../../services/inference-api/scripts/uv-task.mjs train",
+    "eval": "bun ../../services/inference-api/scripts/uv-task.mjs eval",
     "verify": "bun -e \"process.exit(0)\""
   }
 }

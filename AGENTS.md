@@ -63,6 +63,7 @@
   - `bun run dev:inference-api`
   - `bun run dev:gateway`
   - `bun run dev:orchard-console`
+  - Python 相关根入口默认显式使用 `cpu`；如需切到 CUDA 12.8，统一追加 `-- --target cu128`
 - 分服务直启：
   - Inference API：`cd services/inference-api && uv run --extra cpu python -m uvicorn app.main:app --reload --host 127.0.0.1 --port 8000`
   - Gateway：`go run ./services/gateway/cmd/gateway --config tooling/configs/gateway.yaml`
@@ -81,6 +82,7 @@
   - `bun run --filter @lychee-ripe/training train`
   - `bun run --filter @lychee-ripe/training eval`
   - 以上默认使用 `mlops/data/lichi/data.yaml` 与 `lychee_v1` 相关产物；需要覆盖时，用 `--` 继续追加参数
+  - 如需切换 Python 后端，统一使用 `bun run --filter @lychee-ripe/training <train|eval> -- --target cpu|cu128 ...`
   - workspace 默认路径按 repo-root 相对解释；fresh clone 下即使 `mlops/artifacts/` 尚不存在，输出也必须落在仓库内
 - 训练：
   - `uv run --project services/inference-api --extra cpu python mlops/training/train.py --data mlops/data/lichi/data.yaml --model mlops/pretrained/yolo26n.pt --project mlops/artifacts/models --name lychee_v1`
@@ -100,7 +102,9 @@
   - `bun run --filter @lychee-ripe/orchard-console generate`
 - 根入口：
   - `bun run verify`
+  - `bun run test`
   - `bun run test:stack`
+  - `LYCHEE_PY_TARGET` 仅参与 Python-backed Turbo task 的缓存键；`cpu` 与 `cu128` 的 `test` / `verify` 结果不得混用，非 Python workspace 继续复用跨 target 缓存
 
 ### 3.5 容器
 
