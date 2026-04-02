@@ -8,6 +8,10 @@ const pending = ref(false)
 const route = useRoute()
 
 async function submit() {
+  if (pending.value) {
+    return
+  }
+
   const normalized = normalizeTraceCode(inputCode.value)
   if (!normalized) {
     errorMessage.value = '请输入溯源码。'
@@ -56,6 +60,7 @@ async function submit() {
       <div class="flex flex-wrap items-center gap-3">
         <UButton
           type="submit"
+          :disabled="pending"
           :loading="pending"
           size="lg"
           icon="i-lucide-search"

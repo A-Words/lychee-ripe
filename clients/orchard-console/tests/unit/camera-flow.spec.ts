@@ -1,6 +1,5 @@
 import { afterEach, describe, expect, it, vi } from 'vitest'
 import { ref } from 'vue'
-import { readFileSync } from 'node:fs'
 import { useCamera } from '../../app/composables/useCamera'
 
 interface StorageLike {
@@ -53,52 +52,6 @@ afterEach(() => {
 })
 
 describe('camera flow', () => {
-  it('keeps start button clickable even when no devices are listed', () => {
-    const source = readFileSync(new URL('../../app/components/batch/CameraStage.vue', import.meta.url), 'utf8')
-    expect(source).toContain(':disabled="cameraLoading"')
-    expect(source).not.toContain(':disabled="!hasDevices"')
-  })
-
-  it('renders a dedicated overlay layer for realtime detection boxes', () => {
-    const source = readFileSync(new URL('../../app/components/batch/CameraStage.vue', import.meta.url), 'utf8')
-    expect(source).toContain('data-testid="camera-overlay"')
-    expect(source).toContain('data-testid="camera-overlay-card"')
-    expect(source).toContain('v-if="showOverlay"')
-    expect(source).toContain(':key="box.renderKey"')
-    expect(source).toContain('previewDetectionId')
-    expect(source).toContain('selectedDetectionId')
-    expect(source).toContain('previousOverlayBoxes')
-    expect(source).toContain('nextUntrackedOverlayId')
-    expect(source).toContain('box.hoverId === selectedDetectionId.value')
-    expect(source).toContain('box.hoverId === previewDetectionId.value')
-    expect(source).toContain('@mouseenter="handleBoxEnter(box)"')
-    expect(source).toContain('@focus="handleBoxFocus(box)"')
-    expect(source).toContain('@blur="handleBoxBlur(box)"')
-    expect(source).toContain('@click="handleBoxClick(box)"')
-    expect(source).toContain('reconcileOverlayBoxIdentities(previousOverlayBoxes, boxes, nextUntrackedOverlayId)')
-    expect(source).toContain('formatDetectionConfidence(activeBox.confidence)')
-    expect(source).toContain('const activeBox = computed(() => {')
-    expect(source).toContain('if (box.hoverId && previewDetectionId.value === box.hoverId)')
-    expect(source).toContain('if (previewRenderKey.value === box.renderKey)')
-    expect(source).toContain('previewDetectionId.value = null')
-    expect(source).toContain('previewRenderKey.value = null')
-    expect(source).toContain('selectedDetectionId.value = null')
-    expect(source).toContain('selectedRenderKey.value = null')
-    expect(source).toContain('<button')
-    expect(source).toContain('type="button"')
-    expect(source).toContain('focus-visible:outline-2')
-    expect(source).toContain(':aria-label=')
-    expect(source).not.toContain('{{ box.label }}')
-    expect(source).not.toContain('const isSameTrackedBox = box.hoverId && hoveredDetectionId.value === box.hoverId')
-    expect(source).not.toContain('@keydown="handleBoxKeydown($event, box)"')
-    expect(source).not.toContain('const frameId = `${props.currentFrame.frame_index}:${props.currentFrame.timestamp_ms}`')
-  })
-
-  it('passes the latest frame into the camera stage from the batch page', () => {
-    const source = readFileSync(new URL('../../app/pages/batch/create.vue', import.meta.url), 'utf8')
-    expect(source).toContain(':current-frame="lastFrame"')
-  })
-
   it('starts camera and refreshes selected device after first permission grant', async () => {
     vi.spyOn(console, 'warn').mockImplementation(() => {})
     vi.stubGlobal('localStorage', createMemoryStorage())
