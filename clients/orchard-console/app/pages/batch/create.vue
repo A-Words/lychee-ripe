@@ -136,6 +136,7 @@ onBeforeUnmount(() => {
           <BatchCameraStage
             :devices="camera.options.value"
             :selected-device-id="camera.selectedDeviceId.value"
+            :current-frame="lastFrame"
             :is-recognizing="isStreaming"
             :camera-loading="camera.isCameraLoading.value"
             :camera-error="camera.cameraError.value"
