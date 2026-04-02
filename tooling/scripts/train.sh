@@ -8,6 +8,7 @@ IMGSZ="640"
 BATCH="16"
 DEVICE="cpu"
 NAME="lychee_v1"
+TARGET="cpu"
 EXPORT_ONNX="0"
 
 while [ "$#" -gt 0 ]; do
@@ -40,6 +41,10 @@ while [ "$#" -gt 0 ]; do
       NAME="$2"
       shift 2
       ;;
+    --target)
+      TARGET="$2"
+      shift 2
+      ;;
     --export-onnx)
       EXPORT_ONNX="1"
       shift 1
@@ -56,8 +61,17 @@ if [ -z "$DATA" ]; then
   exit 1
 fi
 
+case "$TARGET" in
+  cpu|cu128)
+    ;;
+  *)
+    echo "Invalid --target '$TARGET'. Expected cpu|cu128." >&2
+    exit 1
+    ;;
+esac
+
 if [ "$EXPORT_ONNX" = "1" ]; then
-  uv run --project services/inference-api python mlops/training/train.py \
+  uv run --project services/inference-api --extra "$TARGET" python mlops/training/train.py \
     --data "$DATA" \
     --model "$MODEL" \
     --epochs "$EPOCHS" \
@@ -68,7 +82,7 @@ if [ "$EXPORT_ONNX" = "1" ]; then
     --name "$NAME" \
     --export-onnx
 else
-  uv run --project services/inference-api python mlops/training/train.py \
+  uv run --project services/inference-api --extra "$TARGET" python mlops/training/train.py \
     --data "$DATA" \
     --model "$MODEL" \
     --epochs "$EPOCHS" \

@@ -5,6 +5,8 @@ param(
     [string]$Exp = "lychee_v1",
     [int]$Imgsz = 640,
     [string]$Device = "cpu",
+    [ValidateSet("cpu", "cu128")]
+    [string]$Target = "cpu",
     [string]$Output = ""
 )
 
@@ -20,4 +22,4 @@ if ([string]::IsNullOrWhiteSpace($Output)) {
     $Output = Join-Path "mlops/artifacts/metrics" "${Exp}-eval_metrics.json"
 }
 
-uv run --project services/inference-api python mlops/training/eval.py --model $modelPath --data $Data --imgsz $Imgsz --device $Device --output $Output
+uv run --project services/inference-api --extra $Target python mlops/training/eval.py --model $modelPath --data $Data --imgsz $Imgsz --device $Device --output $Output

@@ -4,6 +4,7 @@ set -eu
 ROOT_DIR="$(CDPATH= cd -- "$(dirname -- "$0")/../.." && pwd)"
 APP_HOST="${APP_HOST:-127.0.0.1}"
 APP_PORT="${APP_PORT:-8000}"
+TARGET="${TARGET:-cpu}"
 GATEWAY_CONFIG="${GATEWAY_CONFIG:-tooling/configs/gateway.yaml}"
 FRONTEND_HOST="${FRONTEND_HOST:-127.0.0.1}"
 FRONTEND_PORT="${FRONTEND_PORT:-3000}"
@@ -16,6 +17,10 @@ while [ "$#" -gt 0 ]; do
       ;;
     --app-port)
       APP_PORT="$2"
+      shift 2
+      ;;
+    --target)
+      TARGET="$2"
       shift 2
       ;;
     --gateway-config)
@@ -36,6 +41,15 @@ while [ "$#" -gt 0 ]; do
       ;;
   esac
 done
+
+case "$TARGET" in
+  cpu|cu128)
+    ;;
+  *)
+    echo "Invalid --target '$TARGET'. Expected cpu|cu128." >&2
+    exit 1
+    ;;
+esac
 
 APP_PID=""
 GW_PID=""
@@ -64,7 +78,7 @@ cleanup() {
 
 trap cleanup INT TERM EXIT
 
-(cd "$ROOT_DIR/services/inference-api" && uv run python -m uvicorn app.main:app --reload --host "$APP_HOST" --port "$APP_PORT") &
+(cd "$ROOT_DIR/services/inference-api" && uv run --extra "$TARGET" python -m uvicorn app.main:app --reload --host "$APP_HOST" --port "$APP_PORT") &
 APP_PID="$!"
 (cd "$ROOT_DIR/services/gateway" && go run ./cmd/gateway --config "$GATEWAY_CONFIG") &
 GW_PID="$!"
