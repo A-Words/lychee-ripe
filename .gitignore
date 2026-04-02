@@ -26,3 +26,4 @@ clients/orchard-console/node_modules/
 clients/orchard-console/.nuxt/
 clients/orchard-console/.output/
 clients/orchard-console/dist/
+clients/orchard-console/.nuxtrc
