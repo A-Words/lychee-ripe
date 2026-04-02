@@ -5,6 +5,7 @@ DATA=""
 EXP="lychee_v1"
 IMGSZ="640"
 DEVICE="cpu"
+TARGET="cpu"
 OUTPUT=""
 
 while [ "$#" -gt 0 ]; do
@@ -25,6 +26,10 @@ while [ "$#" -gt 0 ]; do
       DEVICE="$2"
       shift 2
       ;;
+    --target)
+      TARGET="$2"
+      shift 2
+      ;;
     --output)
       OUTPUT="$2"
       shift 2
@@ -41,6 +46,15 @@ if [ -z "$DATA" ]; then
   exit 1
 fi
 
+case "$TARGET" in
+  cpu|cu128)
+    ;;
+  *)
+    echo "Invalid --target '$TARGET'. Expected cpu|cu128." >&2
+    exit 1
+    ;;
+esac
+
 MODEL_PATH="mlops/artifacts/models/$EXP/weights/best.pt"
 if [ ! -f "$MODEL_PATH" ]; then
   echo "Model checkpoint not found: $MODEL_PATH" >&2
@@ -51,7 +65,7 @@ if [ -z "$OUTPUT" ]; then
   OUTPUT="mlops/artifacts/metrics/${EXP}-eval_metrics.json"
 fi
 
-uv run --project services/inference-api python mlops/training/eval.py \
+uv run --project services/inference-api --extra "$TARGET" python mlops/training/eval.py \
   --model "$MODEL_PATH" \
   --data "$DATA" \
   --imgsz "$IMGSZ" \

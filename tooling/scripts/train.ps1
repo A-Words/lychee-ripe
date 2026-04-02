@@ -8,6 +8,8 @@ param(
     [int]$Batch = 16,
     [string]$Device = "cpu",
     [string]$Name = "lychee_v1",
+    [ValidateSet("cpu", "cu128")]
+    [string]$Target = "cpu",
     [switch]$ExportOnnx
 )
 
@@ -15,7 +17,7 @@ Set-StrictMode -Version Latest
 $ErrorActionPreference = "Stop"
 
 $trainArgs = @(
-    "run", "--project", "services/inference-api", "python", "mlops/training/train.py",
+    "run", "--project", "services/inference-api", "--extra", $Target, "python", "mlops/training/train.py",
     "--data", $Data,
     "--model", $Model,
     "--epochs", $Epochs,

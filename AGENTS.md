@@ -47,14 +47,14 @@
 ### 3.1 依赖与配置准备
 
 - 安装 JS 依赖：`bun install`
-- 安装 Python 依赖：`cd services/inference-api && uv sync`
+- 安装 Python 依赖：`cd services/inference-api && uv sync --extra cpu`
 - 准备本地配置：
   - `tooling/configs/model.yaml.example -> tooling/configs/model.yaml`
   - `tooling/configs/service.yaml.example -> tooling/configs/service.yaml`
   - `tooling/configs/gateway.yaml.example -> tooling/configs/gateway.yaml`
-- 锁切换：
-  - `sh tooling/scripts/switch-lock.sh --target cpu|cu128|auto`
-  - `powershell -ExecutionPolicy Bypass -File tooling/scripts/switch-lock.ps1 -Target cpu|cu128|auto`
+- Python 加速后端选择：
+  - CPU：`cd services/inference-api && uv sync --extra cpu`
+  - CUDA 12.8：`cd services/inference-api && uv sync --extra cu128`
 
 ### 3.2 服务启动
 
@@ -63,8 +63,9 @@
   - `bun run dev:inference-api`
   - `bun run dev:gateway`
   - `bun run dev:orchard-console`
+  - Python 相关根入口默认显式使用 `cpu`；如需切到 CUDA 12.8，统一追加 `-- --target cu128`
 - 分服务直启：
-  - Inference API：`cd services/inference-api && uv run python -m uvicorn app.main:app --reload --host 127.0.0.1 --port 8000`
+  - Inference API：`cd services/inference-api && uv run --extra cpu python -m uvicorn app.main:app --reload --host 127.0.0.1 --port 8000`
   - Gateway：`go run ./services/gateway/cmd/gateway --config tooling/configs/gateway.yaml`
   - Orchard Console Web：`cd clients/orchard-console && bun run dev -- --host 127.0.0.1 --port 3000`
   - Orchard Console Desktop：`cd clients/orchard-console && bun run tauri:dev`
@@ -81,18 +82,19 @@
   - `bun run --filter @lychee-ripe/training train`
   - `bun run --filter @lychee-ripe/training eval`
   - 以上默认使用 `mlops/data/lichi/data.yaml` 与 `lychee_v1` 相关产物；需要覆盖时，用 `--` 继续追加参数
+  - 如需切换 Python 后端，统一使用 `bun run --filter @lychee-ripe/training <train|eval> -- --target cpu|cu128 ...`
   - workspace 默认路径按 repo-root 相对解释；fresh clone 下即使 `mlops/artifacts/` 尚不存在，输出也必须落在仓库内
 - 训练：
-  - `uv run --project services/inference-api python mlops/training/train.py --data mlops/data/lichi/data.yaml --model mlops/pretrained/yolo26n.pt --project mlops/artifacts/models --name lychee_v1`
+  - `uv run --project services/inference-api --extra cpu python mlops/training/train.py --data mlops/data/lichi/data.yaml --model mlops/pretrained/yolo26n.pt --project mlops/artifacts/models --name lychee_v1`
 - 评估：
-  - `uv run --project services/inference-api python mlops/training/eval.py --model mlops/artifacts/models/lychee_v1/weights/best.pt --data mlops/data/lichi/data.yaml --output mlops/artifacts/metrics/lychee_v1-eval_metrics.json`
+  - `uv run --project services/inference-api --extra cpu python mlops/training/eval.py --model mlops/artifacts/models/lychee_v1/weights/best.pt --data mlops/data/lichi/data.yaml --output mlops/artifacts/metrics/lychee_v1-eval_metrics.json`
 - 脚本入口：
   - `tooling/scripts/train.*`
   - `tooling/scripts/eval.*`
 
 ### 3.4 校验与测试
 
-- Python：`cd services/inference-api && uv run python -m pytest -q`
+- Python：`cd services/inference-api && uv run --extra cpu python -m pytest -q`
 - Go：`go test ./services/gateway/...`
 - Frontend：
   - `bun run --filter @lychee-ripe/orchard-console typecheck`
@@ -100,7 +102,9 @@
   - `bun run --filter @lychee-ripe/orchard-console generate`
 - 根入口：
   - `bun run verify`
+  - `bun run test`
   - `bun run test:stack`
+  - `LYCHEE_PY_TARGET` 仅参与 Python-backed Turbo task 的缓存键；`cpu` 与 `cu128` 的 `test` / `verify` 结果不得混用，非 Python workspace 继续复用跨 target 缓存
 
 ### 3.5 容器
 
@@ -126,8 +130,9 @@
   - `tooling/scripts/*`
   - `docker-compose.yml` 与 `tooling/docker/*`
 - 改 Python 依赖时：
-  - 同步更新 `services/inference-api/uv.lock.cpu` 与 `services/inference-api/uv.lock.cu128`
-  - 提交前恢复 `services/inference-api/uv.lock` 为 CPU 基线
+  - 仅维护 `services/inference-api/uv.lock`
+  - `torch` / `torchvision` 的 CPU/CUDA 选择通过 `project.optional-dependencies` 与 `tool.uv.sources` 管理
+  - 变更后至少验证 `uv sync --extra cpu --frozen`；涉及 CUDA 依赖时，再补 `uv sync --extra cu128 --frozen`
 - 新增共享字段时，优先在 `shared/contracts/` 定义，再同步 `services/inference-api`、`services/gateway`、`clients/orchard-console`
 - 前端禁止直连 `services/inference-api`，默认必须走 `services/gateway`
 - 任何行为改动，至少运行一次相关测试；若未执行，必须说明原因和风险

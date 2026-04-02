@@ -1,5 +1,8 @@
 [CmdletBinding()]
-param()
+param(
+    [ValidateSet("cpu", "cu128")]
+    [string]$Target = "cpu"
+)
 
 Set-StrictMode -Version Latest
 $ErrorActionPreference = "Stop"
@@ -7,7 +10,7 @@ $ErrorActionPreference = "Stop"
 Write-Host "[check] Running tests..."
 Push-Location "services/inference-api"
 try {
-    uv run python -m pytest -q
+    uv run --extra $Target python -m pytest -q
 }
 finally {
     Pop-Location

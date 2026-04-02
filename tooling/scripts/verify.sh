@@ -1,8 +1,32 @@
 #!/usr/bin/env sh
 set -eu
 
+TARGET="${TARGET:-cpu}"
+
+while [ "$#" -gt 0 ]; do
+  case "$1" in
+    --target)
+      TARGET="$2"
+      shift 2
+      ;;
+    *)
+      echo "Unknown argument: $1" >&2
+      exit 1
+      ;;
+  esac
+done
+
+case "$TARGET" in
+  cpu|cu128)
+    ;;
+  *)
+    echo "Invalid --target '$TARGET'. Expected cpu|cu128." >&2
+    exit 1
+    ;;
+esac
+
 echo "[check] Running tests..."
-(cd services/inference-api && uv run python -m pytest -q)
+(cd services/inference-api && uv run --extra "$TARGET" python -m pytest -q)
 go test ./services/gateway/...
 bun run --filter @lychee-ripe/orchard-console typecheck
 bun run --filter @lychee-ripe/orchard-console test

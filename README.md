@@ -13,7 +13,7 @@
 - `mlops/data`：数据集与标注
 - `mlops/artifacts`：模型、指标、日志与网关本地数据库
 - `tooling/configs`：配置模板与本地配置
-- `tooling/scripts`：启动、训练、评估、校验、锁切换脚本
+- `tooling/scripts`：启动、训练、评估、校验脚本
 - `tooling/docker`：镜像构建文件
 - `tests/stack`：跨服务 smoke 测试
 
@@ -45,7 +45,7 @@
 
 ```sh
 bun install
-cd services/inference-api && uv sync
+cd services/inference-api && uv sync --extra cpu
 ```
 
 准备本地配置：
@@ -64,14 +64,14 @@ Copy-Item tooling/configs/service.yaml.example tooling/configs/service.yaml
 Copy-Item tooling/configs/gateway.yaml.example tooling/configs/gateway.yaml
 ```
 
-如需切换 Python 锁文件：
+Python 加速后端通过 `uv` extra 选择：
 
 ```sh
-sh tooling/scripts/switch-lock.sh --target cpu|cu128|auto
+cd services/inference-api && uv sync --extra cpu
 ```
 
 ```powershell
-powershell -ExecutionPolicy Bypass -File tooling/scripts/switch-lock.ps1 -Target cpu|cu128|auto
+cd services/inference-api; uv sync --extra cu128
 ```
 
 ## Run
@@ -85,10 +85,20 @@ bun run dev:gateway
 bun run dev:orchard-console
 ```
 
+这些根入口默认显式使用 `cpu`；如需切到 CUDA 12.8，可追加 `-- --target cu128`，例如：
+
+```sh
+bun run dev:inference-api -- --target cu128
+bun run test -- --target cu128
+bun run verify -- --target cpu
+```
+
+`LYCHEE_PY_TARGET` 只会进入 Python-backed Turbo task 的缓存键，CPU 和 CUDA 的 `test` / `verify` 结果不会混用；非 Python workspace 继续复用跨 target 缓存。
+
 分服务直接启动：
 
 ```sh
-cd services/inference-api && uv run python -m uvicorn app.main:app --reload --host 127.0.0.1 --port 8000
+cd services/inference-api && uv run --extra cpu python -m uvicorn app.main:app --reload --host 127.0.0.1 --port 8000
 go run ./services/gateway/cmd/gateway --config tooling/configs/gateway.yaml
 cd clients/orchard-console && bun run dev -- --host 127.0.0.1 --port 3000
 cd clients/orchard-console && bun run tauri:dev
@@ -97,11 +107,11 @@ cd clients/orchard-console && bun run tauri:dev
 脚本入口：
 
 ```sh
-sh tooling/scripts/inference-api.sh --host 127.0.0.1 --port 8000
+sh tooling/scripts/inference-api.sh --target cpu --host 127.0.0.1 --port 8000
 sh tooling/scripts/gateway.sh --config tooling/configs/gateway.yaml
 sh tooling/scripts/orchard-console.sh --host 127.0.0.1 --port 3000
 sh tooling/scripts/desktop.sh
-sh tooling/scripts/stack.sh --app-host 127.0.0.1 --app-port 8000 --gateway-config tooling/configs/gateway.yaml --frontend-host 127.0.0.1 --frontend-port 3000
+sh tooling/scripts/stack.sh --target cpu --app-host 127.0.0.1 --app-port 8000 --gateway-config tooling/configs/gateway.yaml --frontend-host 127.0.0.1 --frontend-port 3000
 ```
 
 ## Training And Eval
@@ -116,24 +126,26 @@ bun run --filter @lychee-ripe/training eval
 这两个命令默认使用 `mlops/data/lichi/data.yaml` 和 `lychee_v1` 产物；如需覆盖，继续通过 `--` 追加参数，例如：
 
 ```sh
-bun run --filter @lychee-ripe/training train -- --data mlops/data/lichi/data.yaml --name custom_run
-bun run --filter @lychee-ripe/training eval -- --model mlops/artifacts/models/custom_run/weights/best.pt --data mlops/data/lichi/data.yaml --output mlops/artifacts/metrics/custom_run.json
+bun run --filter @lychee-ripe/training train -- --target cpu --data mlops/data/lichi/data.yaml --name custom_run
+bun run --filter @lychee-ripe/training eval -- --target cu128 --model mlops/artifacts/models/custom_run/weights/best.pt --data mlops/data/lichi/data.yaml --output mlops/artifacts/metrics/custom_run.json
 ```
+
+training workspace 入口默认显式使用 `cpu`；如需切到 CUDA 12.8，统一通过 `-- --target cu128` 覆写。
 
 workspace 默认参数和输出目录都按 repo-root 相对路径解释；即使 fresh clone 时 `mlops/artifacts/` 还不存在，产物也会创建在仓库内。
 
 直接运行：
 
 ```sh
-uv run --project services/inference-api python mlops/training/train.py --data mlops/data/lichi/data.yaml --model mlops/pretrained/yolo26n.pt --project mlops/artifacts/models --name lychee_v1
-uv run --project services/inference-api python mlops/training/eval.py --model mlops/artifacts/models/lychee_v1/weights/best.pt --data mlops/data/lichi/data.yaml --output mlops/artifacts/metrics/lychee_v1-eval_metrics.json
+uv run --project services/inference-api --extra cpu python mlops/training/train.py --data mlops/data/lichi/data.yaml --model mlops/pretrained/yolo26n.pt --project mlops/artifacts/models --name lychee_v1
+uv run --project services/inference-api --extra cpu python mlops/training/eval.py --model mlops/artifacts/models/lychee_v1/weights/best.pt --data mlops/data/lichi/data.yaml --output mlops/artifacts/metrics/lychee_v1-eval_metrics.json
 ```
 
 脚本入口：
 
 ```sh
-sh tooling/scripts/train.sh --data mlops/data/lichi/data.yaml --name lychee_v1
-sh tooling/scripts/eval.sh --data mlops/data/lichi/data.yaml --exp lychee_v1
+sh tooling/scripts/train.sh --target cpu --data mlops/data/lichi/data.yaml --name lychee_v1
+sh tooling/scripts/eval.sh --target cpu --data mlops/data/lichi/data.yaml --exp lychee_v1
 ```
 
 默认产物位置：
@@ -147,13 +159,14 @@ sh tooling/scripts/eval.sh --data mlops/data/lichi/data.yaml --exp lychee_v1
 统一入口：
 
 ```sh
+bun run test
 bun run verify
 ```
 
 单独执行：
 
 ```sh
-cd services/inference-api && uv run python -m pytest -q
+cd services/inference-api && uv run --extra cpu python -m pytest -q
 go test ./services/gateway/...
 bun run --filter @lychee-ripe/orchard-console typecheck
 bun run --filter @lychee-ripe/orchard-console test

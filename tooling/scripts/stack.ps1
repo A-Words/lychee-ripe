@@ -2,6 +2,8 @@
 param(
     [string]$AppHost = "127.0.0.1",
     [int]$AppPort = 8000,
+    [ValidateSet("cpu", "cu128")]
+    [string]$Target = "cpu",
     [string]$GatewayConfig = "tooling/configs/gateway.yaml",
     [string]$FrontendHost = "127.0.0.1",
     [int]$FrontendPort = 3000
@@ -20,7 +22,7 @@ $frontendProc = $null
 
 try {
     $appArgs = @(
-        "run", "python", "-m", "uvicorn", "app.main:app",
+        "run", "--extra", $Target, "python", "-m", "uvicorn", "app.main:app",
         "--reload",
         "--host", $AppHost,
         "--port", "$AppPort"
