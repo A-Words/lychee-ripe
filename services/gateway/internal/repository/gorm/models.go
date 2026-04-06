@@ -7,7 +7,7 @@ type BatchModel struct {
 	BatchID        string            `gorm:"column:batch_id;type:text;not null;uniqueIndex"`
 	TraceCode      string            `gorm:"column:trace_code;type:text;not null;uniqueIndex"`
 	TraceMode      string            `gorm:"column:trace_mode;type:text;not null;default:blockchain;index:idx_batches_trace_mode_status_created_at,priority:1"`
-	Status         string            `gorm:"column:status;type:text;not null;index:idx_batches_status_created_at,priority:1"`
+	Status         string            `gorm:"column:status;type:text;not null;index:idx_batches_status_created_at,priority:1;index:idx_batches_trace_mode_status_created_at,priority:2"`
 	OrchardID      string            `gorm:"column:orchard_id;type:text;not null"`
 	OrchardName    string            `gorm:"column:orchard_name;type:text;not null"`
 	PlotID         string            `gorm:"column:plot_id;type:text;not null"`
