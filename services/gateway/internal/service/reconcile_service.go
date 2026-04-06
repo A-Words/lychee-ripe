@@ -255,7 +255,7 @@ func (s *ReconcileService) selectManualTargets(
 		}
 		seen[batchID] = struct{}{}
 
-		record, err := s.batchRepo.GetBatchByID(ctx, batchID)
+		record, err := s.batchRepo.GetBatchByID(ctx, batchID, domain.TraceModeBlockchain)
 		if err != nil {
 			if errors.Is(err, repository.ErrNotFound) {
 				skippedCount++

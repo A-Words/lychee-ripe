@@ -53,27 +53,27 @@ func NewDashboardService(
 }
 
 func (s *DashboardService) GetOverview(ctx context.Context) (DashboardOverviewResult, error) {
-	total, err := s.queryRepo.CountBatches(ctx)
+	total, err := s.queryRepo.CountBatches(ctx, s.traceMode)
 	if err != nil {
 		return DashboardOverviewResult{}, fmt.Errorf("%w: count batches: %v", ErrServiceUnavailable, err)
 	}
 
-	status, err := s.queryRepo.CountByStatus(ctx)
+	status, err := s.queryRepo.CountByStatus(ctx, s.traceMode)
 	if err != nil {
 		return DashboardOverviewResult{}, fmt.Errorf("%w: count status distribution: %v", ErrServiceUnavailable, err)
 	}
 
-	ripeness, err := s.queryRepo.SumRipeness(ctx)
+	ripeness, err := s.queryRepo.SumRipeness(ctx, s.traceMode)
 	if err != nil {
 		return DashboardOverviewResult{}, fmt.Errorf("%w: sum ripeness distribution: %v", ErrServiceUnavailable, err)
 	}
 
-	unripeCount, unripeRatio, err := s.queryRepo.CountUnripeBatches(ctx, dashboardUnripeThreshold)
+	unripeCount, unripeRatio, err := s.queryRepo.CountUnripeBatches(ctx, s.traceMode, dashboardUnripeThreshold)
 	if err != nil {
 		return DashboardOverviewResult{}, fmt.Errorf("%w: count unripe batches: %v", ErrServiceUnavailable, err)
 	}
 
-	recent, err := s.queryRepo.ListRecentAnchors(ctx, dashboardRecentLimit)
+	recent, err := s.queryRepo.ListRecentAnchors(ctx, s.traceMode, dashboardRecentLimit)
 	if err != nil {
 		return DashboardOverviewResult{}, fmt.Errorf("%w: list recent anchors: %v", ErrServiceUnavailable, err)
 	}

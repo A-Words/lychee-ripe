@@ -254,6 +254,42 @@ func TestGetBatchByIDSuccess(t *testing.T) {
 	}
 }
 
+func TestGetBatchByIDReturnsNotFoundWhenTraceModeMismatches(t *testing.T) {
+	t.Parallel()
+
+	repo := newFakeBatchRepository()
+	record := domain.BatchRecord{
+		BatchID:     "batch_hidden",
+		TraceCode:   "TRC-HIDE-0001",
+		TraceMode:   domain.TraceModeBlockchain,
+		Status:      domain.BatchStatusAnchored,
+		OrchardID:   "orchard-1",
+		OrchardName: "orchard",
+		PlotID:      "plot-1",
+		HarvestedAt: time.Date(2026, 3, 2, 10, 30, 0, 0, time.UTC),
+		Summary: domain.BatchSummary{
+			Total:          10,
+			Green:          1,
+			Half:           3,
+			Red:            6,
+			Young:          0,
+			UnripeCount:    1,
+			UnripeRatio:    0.1,
+			UnripeHandling: domain.UnripeHandlingSortedOut,
+		},
+		CreatedAt: time.Date(2026, 3, 2, 10, 31, 0, 0, time.UTC),
+		UpdatedAt: time.Date(2026, 3, 2, 10, 31, 0, 0, time.UTC),
+	}
+	repo.batches[record.BatchID] = record
+	repo.traceIndex[record.TraceCode] = record.BatchID
+
+	svc := NewBatchCreateService(repo, nil, domain.TraceModeDatabase, nil)
+	_, err := svc.GetBatchByID(context.Background(), record.BatchID)
+	if !errors.Is(err, ErrNotFound) {
+		t.Fatalf("error = %v, want ErrNotFound", err)
+	}
+}
+
 func TestGetBatchByIDNotFound(t *testing.T) {
 	t.Parallel()
 
@@ -372,7 +408,7 @@ func (f *fakeBatchRepository) CreateBatch(_ context.Context, params domain.Creat
 	return record, nil
 }
 
-func (f *fakeBatchRepository) GetBatchByID(_ context.Context, batchID string) (domain.BatchRecord, error) {
+func (f *fakeBatchRepository) GetBatchByID(_ context.Context, batchID string, traceMode domain.TraceMode) (domain.BatchRecord, error) {
 	if f.getByIDErr != nil {
 		return domain.BatchRecord{}, f.getByIDErr
 	}
@@ -380,15 +416,22 @@ func (f *fakeBatchRepository) GetBatchByID(_ context.Context, batchID string) (d
 	if !ok {
 		return domain.BatchRecord{}, repository.ErrNotFound
 	}
+	if traceMode != "" && record.TraceMode != traceMode {
+		return domain.BatchRecord{}, repository.ErrNotFound
+	}
 	return record, nil
 }
 
-func (f *fakeBatchRepository) GetBatchByTraceCode(_ context.Context, traceCode string) (domain.BatchRecord, error) {
+func (f *fakeBatchRepository) GetBatchByTraceCode(_ context.Context, traceCode string, traceMode domain.TraceMode) (domain.BatchRecord, error) {
 	batchID, ok := f.traceIndex[traceCode]
 	if !ok {
 		return domain.BatchRecord{}, repository.ErrNotFound
 	}
-	return f.batches[batchID], nil
+	record := f.batches[batchID]
+	if traceMode != "" && record.TraceMode != traceMode {
+		return domain.BatchRecord{}, repository.ErrNotFound
+	}
+	return record, nil
 }
 
 func (f *fakeBatchRepository) UpdateBatchStatus(

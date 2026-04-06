@@ -222,7 +222,7 @@ paths:
   /v1/batches/{batch_id}:
     get:
       operationId: getBatch
-      summary: Get batch detail by batch id
+      summary: Get batch detail by batch id within the current trace mode
       tags: [batch]
       security:
         - ApiKeyAuth: []
@@ -230,7 +230,7 @@ paths:
         - $ref: "#/components/parameters/BatchID"
       responses:
         "200":
-          description: Batch detail
+          description: Batch detail visible in the current trace mode
           content:
             application/json:
               schema:
@@ -248,7 +248,7 @@ paths:
               schema:
                 $ref: "#/components/schemas/ErrorResponse"
         "404":
-          description: Batch not found
+          description: Batch not found or not visible in the current trace mode
           content:
             application/json:
               schema:
@@ -263,20 +263,20 @@ paths:
   /v1/trace/{trace_code}:
     get:
       operationId: getPublicTrace
-      summary: Public trace query and mode-aware verification result
+      summary: Public trace query for batches visible in the current trace mode
       tags: [trace]
       security: []
       parameters:
         - $ref: "#/components/parameters/TraceCode"
       responses:
         "200":
-          description: Public trace data
+          description: Public trace data for the current trace mode
           content:
             application/json:
               schema:
                 $ref: "#/components/schemas/TraceResponse"
         "404":
-          description: Trace code not found
+          description: Trace code not found or not visible in the current trace mode
           content:
             application/json:
               schema:
@@ -291,13 +291,13 @@ paths:
   /v1/dashboard/overview:
     get:
       operationId: getDashboardOverview
-      summary: Get dashboard aggregate metrics
+      summary: Get dashboard aggregate metrics filtered by the current trace mode
       tags: [dashboard]
       security:
         - ApiKeyAuth: []
       responses:
         "200":
-          description: Dashboard overview
+          description: Dashboard overview scoped to the current trace mode
           content:
             application/json:
               schema:

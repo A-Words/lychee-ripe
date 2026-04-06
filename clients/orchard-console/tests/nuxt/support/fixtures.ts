@@ -84,16 +84,25 @@ export function buildTraceResponse(overrides: Partial<TraceResponse> = {}): Trac
 }
 
 export function buildDashboardOverview(overrides: Partial<DashboardOverviewResponse> = {}): DashboardOverviewResponse {
+  const traceMode = overrides.trace_mode ?? 'blockchain'
+  const statusDistribution = traceMode === 'database'
+    ? {
+        stored: 8
+      }
+    : {
+        anchored: 5,
+        pending_anchor: 2,
+        anchor_failed: 1
+      }
+
   return {
-    trace_mode: overrides.trace_mode ?? 'blockchain',
+    trace_mode: traceMode,
     totals: {
       batch_total: 8,
       ...overrides.totals
     },
     status_distribution: {
-      anchored: 5,
-      pending_anchor: 2,
-      anchor_failed: 1,
+      ...statusDistribution,
       ...overrides.status_distribution
     },
     ripeness_distribution: {
@@ -110,17 +119,21 @@ export function buildDashboardOverview(overrides: Partial<DashboardOverviewRespo
       unripe_handling: 'sorted_out',
       ...overrides.unripe_metrics
     },
-    recent_anchors: overrides.recent_anchors ?? [
-      {
-        batch_id: 'batch-001',
-        trace_code: 'TRC-9A7X-11QF',
-        status: 'anchored',
-        tx_hash: '0x1234567890abcdef1234567890abcdef1234567890abcdef1234567890abcdef',
-        anchored_at: '2026-03-30T09:05:00.000Z',
-        created_at: '2026-03-30T09:00:00.000Z'
-      }
-    ],
-    reconcile_stats: overrides.reconcile_stats === null
+    recent_anchors: overrides.recent_anchors ?? (
+      traceMode === 'database'
+        ? []
+        : [
+            {
+              batch_id: 'batch-001',
+              trace_code: 'TRC-9A7X-11QF',
+              status: 'anchored',
+              tx_hash: '0x1234567890abcdef1234567890abcdef1234567890abcdef1234567890abcdef',
+              anchored_at: '2026-03-30T09:05:00.000Z',
+              created_at: '2026-03-30T09:00:00.000Z'
+            }
+          ]
+    ),
+    reconcile_stats: overrides.reconcile_stats === null || traceMode === 'database'
       ? null
       : {
           pending_count: 2,

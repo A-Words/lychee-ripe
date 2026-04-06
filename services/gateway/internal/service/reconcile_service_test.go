@@ -244,7 +244,7 @@ func (f *fakeReconcileBatchRepo) CreateBatch(_ context.Context, _ domain.CreateB
 	return domain.BatchRecord{}, repository.ErrDBUnavailable
 }
 
-func (f *fakeReconcileBatchRepo) GetBatchByID(_ context.Context, batchID string) (domain.BatchRecord, error) {
+func (f *fakeReconcileBatchRepo) GetBatchByID(_ context.Context, batchID string, traceMode domain.TraceMode) (domain.BatchRecord, error) {
 	if f.getByIDErr != nil {
 		return domain.BatchRecord{}, f.getByIDErr
 	}
@@ -252,10 +252,13 @@ func (f *fakeReconcileBatchRepo) GetBatchByID(_ context.Context, batchID string)
 	if !ok {
 		return domain.BatchRecord{}, repository.ErrNotFound
 	}
+	if traceMode != "" && record.TraceMode != traceMode {
+		return domain.BatchRecord{}, repository.ErrNotFound
+	}
 	return record, nil
 }
 
-func (f *fakeReconcileBatchRepo) GetBatchByTraceCode(_ context.Context, _ string) (domain.BatchRecord, error) {
+func (f *fakeReconcileBatchRepo) GetBatchByTraceCode(_ context.Context, _ string, _ domain.TraceMode) (domain.BatchRecord, error) {
 	return domain.BatchRecord{}, repository.ErrNotFound
 }
 

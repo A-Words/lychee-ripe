@@ -39,15 +39,15 @@ func (r *Repository) CreateBatch(ctx context.Context, params domain.CreateBatchP
 	if err := r.db.WithContext(ctx).Create(&record).Error; err != nil {
 		return domain.BatchRecord{}, mapGormErr(err)
 	}
-	return r.GetBatchByID(ctx, params.BatchID)
+	return r.GetBatchByID(ctx, params.BatchID, params.TraceMode)
 }
 
-func (r *Repository) GetBatchByID(ctx context.Context, batchID string) (domain.BatchRecord, error) {
-	return r.getBatchBy(ctx, "batch_id = ?", batchID)
+func (r *Repository) GetBatchByID(ctx context.Context, batchID string, traceMode domain.TraceMode) (domain.BatchRecord, error) {
+	return r.getBatchBy(ctx, "batch_id = ?", batchID, traceMode)
 }
 
-func (r *Repository) GetBatchByTraceCode(ctx context.Context, traceCode string) (domain.BatchRecord, error) {
-	return r.getBatchBy(ctx, "trace_code = ?", traceCode)
+func (r *Repository) GetBatchByTraceCode(ctx context.Context, traceCode string, traceMode domain.TraceMode) (domain.BatchRecord, error) {
+	return r.getBatchBy(ctx, "trace_code = ?", traceCode, traceMode)
 }
 
 func (r *Repository) UpdateBatchStatus(
@@ -300,15 +300,23 @@ func (r *Repository) AppendAuditLog(ctx context.Context, log domain.AuditLogReco
 	return nil
 }
 
-func (r *Repository) CountBatches(ctx context.Context) (int64, error) {
+func (r *Repository) CountBatches(ctx context.Context, traceMode domain.TraceMode) (int64, error) {
+	if !isValidTraceMode(traceMode) {
+		return 0, repository.ErrInvalidState
+	}
+
 	var count int64
-	if err := r.db.WithContext(ctx).Model(&BatchModel{}).Count(&count).Error; err != nil {
+	if err := r.db.WithContext(ctx).Model(&BatchModel{}).Where("trace_mode = ?", string(traceMode)).Count(&count).Error; err != nil {
 		return 0, mapGormErr(err)
 	}
 	return count, nil
 }
 
-func (r *Repository) CountByStatus(ctx context.Context) (domain.StatusDistribution, error) {
+func (r *Repository) CountByStatus(ctx context.Context, traceMode domain.TraceMode) (domain.StatusDistribution, error) {
+	if !isValidTraceMode(traceMode) {
+		return domain.StatusDistribution{}, repository.ErrInvalidState
+	}
+
 	type row struct {
 		Stored        int64 `gorm:"column:stored"`
 		Anchored      int64 `gorm:"column:anchored"`
@@ -322,7 +330,9 @@ func (r *Repository) CountByStatus(ctx context.Context) (domain.StatusDistributi
 			COALESCE(SUM(CASE WHEN status = 'anchored' THEN 1 ELSE 0 END), 0) AS anchored,
 			COALESCE(SUM(CASE WHEN status = 'pending_anchor' THEN 1 ELSE 0 END), 0) AS pending_anchor,
 			COALESCE(SUM(CASE WHEN status = 'anchor_failed' THEN 1 ELSE 0 END), 0) AS anchor_failed
-		FROM batches`,
+		FROM batches
+		WHERE trace_mode = ?`,
+		string(traceMode),
 	).Scan(&out).Error; err != nil {
 		return domain.StatusDistribution{}, mapGormErr(err)
 	}
@@ -334,7 +344,11 @@ func (r *Repository) CountByStatus(ctx context.Context) (domain.StatusDistributi
 	}, nil
 }
 
-func (r *Repository) SumRipeness(ctx context.Context) (domain.RipenessDistribution, error) {
+func (r *Repository) SumRipeness(ctx context.Context, traceMode domain.TraceMode) (domain.RipenessDistribution, error) {
+	if !isValidTraceMode(traceMode) {
+		return domain.RipenessDistribution{}, repository.ErrInvalidState
+	}
+
 	type row struct {
 		Green int64 `gorm:"column:green"`
 		Half  int64 `gorm:"column:half"`
@@ -348,7 +362,9 @@ func (r *Repository) SumRipeness(ctx context.Context) (domain.RipenessDistributi
 			COALESCE(SUM(half), 0) AS half,
 			COALESCE(SUM(red), 0) AS red,
 			COALESCE(SUM(young), 0) AS young
-		FROM batches`,
+		FROM batches
+		WHERE trace_mode = ?`,
+		string(traceMode),
 	).Scan(&out).Error; err != nil {
 		return domain.RipenessDistribution{}, mapGormErr(err)
 	}
@@ -360,7 +376,11 @@ func (r *Repository) SumRipeness(ctx context.Context) (domain.RipenessDistributi
 	}, nil
 }
 
-func (r *Repository) CountUnripeBatches(ctx context.Context, threshold float64) (int64, float64, error) {
+func (r *Repository) CountUnripeBatches(ctx context.Context, traceMode domain.TraceMode, threshold float64) (int64, float64, error) {
+	if !isValidTraceMode(traceMode) {
+		return 0, 0, repository.ErrInvalidState
+	}
+
 	type row struct {
 		Total int64 `gorm:"column:total"`
 		Cnt   int64 `gorm:"column:cnt"`
@@ -370,8 +390,10 @@ func (r *Repository) CountUnripeBatches(ctx context.Context, threshold float64) 
 		`SELECT
 			COUNT(1) AS total,
 			COALESCE(SUM(CASE WHEN unripe_ratio > ? THEN 1 ELSE 0 END), 0) AS cnt
-		FROM batches`,
+		FROM batches
+		WHERE trace_mode = ?`,
 		threshold,
+		string(traceMode),
 	).Scan(&out).Error; err != nil {
 		return 0, 0, mapGormErr(err)
 	}
@@ -381,7 +403,10 @@ func (r *Repository) CountUnripeBatches(ctx context.Context, threshold float64) 
 	return out.Cnt, float64(out.Cnt) / float64(out.Total), nil
 }
 
-func (r *Repository) ListRecentAnchors(ctx context.Context, limit int) ([]domain.RecentAnchorRecord, error) {
+func (r *Repository) ListRecentAnchors(ctx context.Context, traceMode domain.TraceMode, limit int) ([]domain.RecentAnchorRecord, error) {
+	if !isValidTraceMode(traceMode) {
+		return nil, repository.ErrInvalidState
+	}
 	if limit <= 0 {
 		limit = 20
 	}
@@ -401,9 +426,10 @@ func (r *Repository) ListRecentAnchors(ctx context.Context, limit int) ([]domain
 			b.batch_id, b.trace_code, b.trace_mode, b.status, ap.tx_hash, ap.anchored_at, b.created_at
 		FROM batches b
 		LEFT JOIN anchor_proofs ap ON ap.batch_id = b.batch_id
-		WHERE b.status = 'anchored'
+		WHERE b.trace_mode = ? AND b.status = 'anchored'
 		ORDER BY b.created_at DESC
 		LIMIT ?`,
+		string(traceMode),
 		limit,
 	).Scan(&rows).Error; err != nil {
 		return nil, mapGormErr(err)
@@ -424,11 +450,16 @@ func (r *Repository) ListRecentAnchors(ctx context.Context, limit int) ([]domain
 	return out, nil
 }
 
-func (r *Repository) getBatchBy(ctx context.Context, where string, value any) (domain.BatchRecord, error) {
+func (r *Repository) getBatchBy(ctx context.Context, where string, value any, traceMode domain.TraceMode) (domain.BatchRecord, error) {
+	if !isValidTraceMode(traceMode) {
+		return domain.BatchRecord{}, repository.ErrInvalidState
+	}
+
 	var model BatchModel
 	if err := r.db.WithContext(ctx).
 		Preload("AnchorProof").
 		Where(where, value).
+		Where("trace_mode = ?", string(traceMode)).
 		First(&model).Error; err != nil {
 		return domain.BatchRecord{}, mapGormErr(err)
 	}

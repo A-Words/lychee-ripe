@@ -25,9 +25,6 @@ const refreshTimer = ref<number | null>(null)
 const shouldStopAutoRefresh = computed(() => viewState.value === 'auth_blocked')
 const isReadyLike = computed(() => viewState.value === 'ready' || viewState.value === 'empty')
 const isEmpty = computed(() => viewState.value === 'empty')
-const showChainHistory = computed(() =>
-  Boolean(overview.value && (overview.value.trace_mode === 'blockchain' || overview.value.recent_anchors.length > 0))
-)
 
 const unavailableTitle = computed(() =>
   viewState.value === 'auth_blocked' ? '网关鉴权已开启' : '看板服务不可用'
@@ -198,7 +195,10 @@ watch(shouldStopAutoRefresh, () => {
           :reconcile-stats="overview.reconcile_stats"
         />
 
-        <DashboardRecentAnchorsTable v-if="showChainHistory" :records="overview.recent_anchors" />
+        <DashboardRecentAnchorsTable
+          v-if="overview.trace_mode === 'blockchain'"
+          :records="overview.recent_anchors"
+        />
       </div>
 
       <UCard v-else variant="outline" :ui="{ body: 'p-5 sm:p-6' }">

@@ -12,9 +12,9 @@ import (
 )
 
 const (
-	TraceVerifyStatusPass    = "pass"
-	TraceVerifyStatusFail    = "fail"
-	TraceVerifyStatusPending = "pending"
+	TraceVerifyStatusPass     = "pass"
+	TraceVerifyStatusFail     = "fail"
+	TraceVerifyStatusPending  = "pending"
 	TraceVerifyStatusRecorded = "recorded"
 
 	traceReasonPending          = "batch is not anchored yet"
@@ -55,7 +55,7 @@ func (s *TraceService) GetPublicTrace(ctx context.Context, traceCode string) (Tr
 		return TraceQueryResult{}, fmt.Errorf("%w: trace_code is required", ErrInvalidRequest)
 	}
 
-	record, err := s.repo.GetBatchByTraceCode(ctx, code)
+	record, err := s.repo.GetBatchByTraceCode(ctx, code, s.traceMode)
 	if err != nil {
 		if errors.Is(err, repository.ErrNotFound) {
 			return TraceQueryResult{}, fmt.Errorf("%w: trace not found", ErrNotFound)
@@ -63,7 +63,7 @@ func (s *TraceService) GetPublicTrace(ctx context.Context, traceCode string) (Tr
 		return TraceQueryResult{}, fmt.Errorf("%w: %v", ErrServiceUnavailable, err)
 	}
 
-	if s.traceMode == domain.TraceModeDatabase || record.TraceMode == domain.TraceModeDatabase {
+	if s.traceMode == domain.TraceModeDatabase {
 		return TraceQueryResult{
 			Batch:        record,
 			VerifyStatus: TraceVerifyStatusRecorded,

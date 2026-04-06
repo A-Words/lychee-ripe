@@ -91,7 +91,16 @@ describe('dashboard page', () => {
       status_distribution: {
         stored: 3
       },
-      recent_anchors: [],
+      recent_anchors: [
+        {
+          batch_id: 'batch-hidden',
+          trace_code: 'TRC-HIDE-0001',
+          status: 'anchored',
+          tx_hash: '0xdeadbeef',
+          anchored_at: '2026-03-30T09:05:00.000Z',
+          created_at: '2026-03-30T09:00:00.000Z'
+        }
+      ],
       reconcile_stats: null
     }))
 

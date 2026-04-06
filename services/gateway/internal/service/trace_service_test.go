@@ -104,6 +104,44 @@ func TestGetPublicTraceReturnsNotFound(t *testing.T) {
 	}
 }
 
+func TestGetPublicTraceReturnsRecordedForDatabaseBatch(t *testing.T) {
+	t.Parallel()
+
+	record := sampleAnchoredTraceBatch(t)
+	record.TraceMode = domain.TraceModeDatabase
+	record.Status = domain.BatchStatusStored
+	record.AnchorHash = nil
+	record.AnchorProof = nil
+
+	repo := newFakeBatchRepository()
+	repo.batches[record.BatchID] = record
+	repo.traceIndex[record.TraceCode] = record.BatchID
+
+	svc := NewTraceService(repo, nil, domain.TraceModeDatabase)
+	got, err := svc.GetPublicTrace(context.Background(), record.TraceCode)
+	if err != nil {
+		t.Fatalf("GetPublicTrace failed: %v", err)
+	}
+	if got.VerifyStatus != TraceVerifyStatusRecorded {
+		t.Fatalf("verify_status = %q, want recorded", got.VerifyStatus)
+	}
+}
+
+func TestGetPublicTraceReturnsNotFoundWhenTraceModeMismatches(t *testing.T) {
+	t.Parallel()
+
+	record := sampleAnchoredTraceBatch(t)
+	repo := newFakeBatchRepository()
+	repo.batches[record.BatchID] = record
+	repo.traceIndex[record.TraceCode] = record.BatchID
+
+	svc := NewTraceService(repo, nil, domain.TraceModeDatabase)
+	_, err := svc.GetPublicTrace(context.Background(), record.TraceCode)
+	if !errors.Is(err, ErrNotFound) {
+		t.Fatalf("error = %v, want ErrNotFound", err)
+	}
+}
+
 func TestGetPublicTraceReturnsServiceUnavailableWhenChainUnavailable(t *testing.T) {
 	t.Parallel()
 

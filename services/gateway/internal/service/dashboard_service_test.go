@@ -133,53 +133,70 @@ func TestDashboardServiceGetOverviewUsesFixedThresholdAndRecentLimit(t *testing.
 	if repo.lastRecentLimit != dashboardRecentLimit {
 		t.Fatalf("recent limit = %d, want %d", repo.lastRecentLimit, dashboardRecentLimit)
 	}
+	if repo.lastCountMode != domain.TraceModeDatabase ||
+		repo.lastStatusMode != domain.TraceModeDatabase ||
+		repo.lastRipenessMode != domain.TraceModeDatabase ||
+		repo.lastUnripeMode != domain.TraceModeDatabase ||
+		repo.lastRecentMode != domain.TraceModeDatabase {
+		t.Fatalf("dashboard query modes = count:%q status:%q ripeness:%q unripe:%q recent:%q, want all database",
+			repo.lastCountMode, repo.lastStatusMode, repo.lastRipenessMode, repo.lastUnripeMode, repo.lastRecentMode)
+	}
 }
 
 type fakeDashboardRepo struct {
 	countBatches    int64
 	countBatchesErr error
+	lastCountMode   domain.TraceMode
 
-	statusDist domain.StatusDistribution
-	statusErr  error
+	statusDist     domain.StatusDistribution
+	statusErr      error
+	lastStatusMode domain.TraceMode
 
-	ripenessDist domain.RipenessDistribution
-	ripenessErr  error
+	ripenessDist     domain.RipenessDistribution
+	ripenessErr      error
+	lastRipenessMode domain.TraceMode
 
-	unripeCount int64
-	unripeRatio float64
-	unripeErr   error
+	unripeCount    int64
+	unripeRatio    float64
+	unripeErr      error
+	lastUnripeMode domain.TraceMode
 
 	recentAnchors   []domain.RecentAnchorRecord
 	recentErr       error
 	lastThreshold   float64
 	lastRecentLimit int
+	lastRecentMode  domain.TraceMode
 
 	reconcileStats domain.ReconcileStats
 	reconcileErr   error
 }
 
-func (f *fakeDashboardRepo) CountBatches(_ context.Context) (int64, error) {
+func (f *fakeDashboardRepo) CountBatches(_ context.Context, traceMode domain.TraceMode) (int64, error) {
+	f.lastCountMode = traceMode
 	if f.countBatchesErr != nil {
 		return 0, f.countBatchesErr
 	}
 	return f.countBatches, nil
 }
 
-func (f *fakeDashboardRepo) CountByStatus(_ context.Context) (domain.StatusDistribution, error) {
+func (f *fakeDashboardRepo) CountByStatus(_ context.Context, traceMode domain.TraceMode) (domain.StatusDistribution, error) {
+	f.lastStatusMode = traceMode
 	if f.statusErr != nil {
 		return domain.StatusDistribution{}, f.statusErr
 	}
 	return f.statusDist, nil
 }
 
-func (f *fakeDashboardRepo) SumRipeness(_ context.Context) (domain.RipenessDistribution, error) {
+func (f *fakeDashboardRepo) SumRipeness(_ context.Context, traceMode domain.TraceMode) (domain.RipenessDistribution, error) {
+	f.lastRipenessMode = traceMode
 	if f.ripenessErr != nil {
 		return domain.RipenessDistribution{}, f.ripenessErr
 	}
 	return f.ripenessDist, nil
 }
 
-func (f *fakeDashboardRepo) CountUnripeBatches(_ context.Context, threshold float64) (int64, float64, error) {
+func (f *fakeDashboardRepo) CountUnripeBatches(_ context.Context, traceMode domain.TraceMode, threshold float64) (int64, float64, error) {
+	f.lastUnripeMode = traceMode
 	f.lastThreshold = threshold
 	if f.unripeErr != nil {
 		return 0, 0, f.unripeErr
@@ -187,7 +204,8 @@ func (f *fakeDashboardRepo) CountUnripeBatches(_ context.Context, threshold floa
 	return f.unripeCount, f.unripeRatio, nil
 }
 
-func (f *fakeDashboardRepo) ListRecentAnchors(_ context.Context, limit int) ([]domain.RecentAnchorRecord, error) {
+func (f *fakeDashboardRepo) ListRecentAnchors(_ context.Context, traceMode domain.TraceMode, limit int) ([]domain.RecentAnchorRecord, error) {
+	f.lastRecentMode = traceMode
 	f.lastRecentLimit = limit
 	if f.recentErr != nil {
 		return nil, f.recentErr

@@ -182,7 +182,7 @@ func (s *BatchCreateService) CreateBatch(ctx context.Context, input BatchCreateI
 			return CreateBatchResult{}, fmt.Errorf("%w: %v", ErrServiceUnavailable, err)
 		}
 
-		anchored, err := s.repo.GetBatchByID(ctx, created.BatchID)
+		anchored, err := s.repo.GetBatchByID(ctx, created.BatchID, traceMode)
 		if err != nil {
 			return CreateBatchResult{}, fmt.Errorf("%w: %v", ErrServiceUnavailable, err)
 		}
@@ -201,7 +201,7 @@ func (s *BatchCreateService) GetBatchByID(ctx context.Context, batchID string) (
 		return domain.BatchRecord{}, fmt.Errorf("%w: batch_id is required", ErrInvalidRequest)
 	}
 
-	record, err := s.repo.GetBatchByID(ctx, id)
+	record, err := s.repo.GetBatchByID(ctx, id, s.traceMode)
 	if err != nil {
 		if errors.Is(err, repository.ErrNotFound) {
 			return domain.BatchRecord{}, fmt.Errorf("%w: batch not found", ErrNotFound)
@@ -223,7 +223,7 @@ func (s *BatchCreateService) degradeBatch(
 		return CreateBatchResult{}, fmt.Errorf("%w: %v", ErrServiceUnavailable, err)
 	}
 
-	updated, err := s.repo.GetBatchByID(ctx, record.BatchID)
+	updated, err := s.repo.GetBatchByID(ctx, record.BatchID, s.traceMode)
 	if err == nil {
 		return CreateBatchResult{
 			Batch:      updated,
