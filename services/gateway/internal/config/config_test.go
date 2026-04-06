@@ -41,8 +41,8 @@ func TestDefaults(t *testing.T) {
 	if cfg.DB.Postgres.Schema != "public" {
 		t.Errorf("unexpected default postgres schema: %s", cfg.DB.Postgres.Schema)
 	}
-	if cfg.Chain.Enabled {
-		t.Error("unexpected default chain.enabled: true")
+	if cfg.Trace.Mode != "database" {
+		t.Errorf("unexpected default trace.mode: %s", cfg.Trace.Mode)
 	}
 	if cfg.Chain.TxTimeoutS != 30 {
 		t.Errorf("unexpected default chain.tx_timeout_s: %d", cfg.Chain.TxTimeoutS)
@@ -80,6 +80,8 @@ auth:
     - "test-key-1"
 rate_limit:
   enabled: false
+trace:
+  mode: "database"
 `
 	if err := os.WriteFile(cfgPath, []byte(content), 0o644); err != nil {
 		t.Fatal(err)
@@ -129,8 +131,8 @@ rate_limit:
 	if cfg.RateLimit.Enabled {
 		t.Error("rate_limit should be disabled")
 	}
-	if cfg.Chain.Enabled {
-		t.Error("chain should be disabled by default")
+	if cfg.Trace.Mode != "database" {
+		t.Errorf("trace.mode = %q, want database", cfg.Trace.Mode)
 	}
 	// Defaults should be preserved for unset fields.
 	if cfg.CORS.MaxAgeS != 3600 {
@@ -138,12 +140,13 @@ rate_limit:
 	}
 }
 
-func TestLoadChainEnabledValid(t *testing.T) {
+func TestLoadBlockchainModeValid(t *testing.T) {
 	dir := t.TempDir()
 	cfgPath := filepath.Join(dir, "gateway.yaml")
 	content := `
+trace:
+  mode: "blockchain"
 chain:
-  enabled: true
   rpc_url: "http://127.0.0.1:8545"
   chain_id: "31337"
   contract_address: "0x1234567890abcdef1234567890abcdef12345678"
@@ -159,8 +162,8 @@ chain:
 	if err != nil {
 		t.Fatalf("Load failed: %v", err)
 	}
-	if !cfg.Chain.Enabled {
-		t.Fatal("chain.enabled should be true")
+	if cfg.Trace.Mode != "blockchain" {
+		t.Fatalf("trace.mode = %q, want blockchain", cfg.Trace.Mode)
 	}
 	if cfg.Chain.ChainID != "31337" {
 		t.Fatalf("chain.chain_id = %q, want 31337", cfg.Chain.ChainID)
@@ -173,12 +176,13 @@ chain:
 	}
 }
 
-func TestLoadChainEnabledMissingField(t *testing.T) {
+func TestLoadBlockchainModeMissingField(t *testing.T) {
 	dir := t.TempDir()
 	cfgPath := filepath.Join(dir, "gateway.yaml")
 	content := `
+trace:
+  mode: "blockchain"
 chain:
-  enabled: true
   chain_id: "31337"
   contract_address: "0x1234567890abcdef1234567890abcdef12345678"
   private_key: "0123456789abcdef0123456789abcdef0123456789abcdef0123456789abcdef"
@@ -189,16 +193,17 @@ chain:
 
 	_, err := Load(cfgPath)
 	if err == nil {
-		t.Fatal("expected validation error when chain.rpc_url is missing")
+		t.Fatal("expected validation error when blockchain rpc_url is missing")
 	}
 }
 
-func TestLoadChainEnabledInvalidFormat(t *testing.T) {
+func TestLoadBlockchainModeInvalidFormat(t *testing.T) {
 	dir := t.TempDir()
 	cfgPath := filepath.Join(dir, "gateway.yaml")
 	content := `
+trace:
+  mode: "blockchain"
 chain:
-  enabled: true
   rpc_url: "http://127.0.0.1:8545"
   chain_id: "31337"
   contract_address: "0xinvalid"
@@ -211,6 +216,23 @@ chain:
 	_, err := Load(cfgPath)
 	if err == nil {
 		t.Fatal("expected validation error for invalid chain contract/key format")
+	}
+}
+
+func TestLoadInvalidTraceMode(t *testing.T) {
+	dir := t.TempDir()
+	cfgPath := filepath.Join(dir, "gateway.yaml")
+	content := `
+trace:
+  mode: "legacy"
+`
+	if err := os.WriteFile(cfgPath, []byte(content), 0o644); err != nil {
+		t.Fatal(err)
+	}
+
+	_, err := Load(cfgPath)
+	if err == nil {
+		t.Fatal("expected validation error for invalid trace.mode")
 	}
 }
 

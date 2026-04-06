@@ -2,9 +2,17 @@ package domain
 
 import "time"
 
+type TraceMode string
+
+const (
+	TraceModeDatabase   TraceMode = "database"
+	TraceModeBlockchain TraceMode = "blockchain"
+)
+
 type BatchStatus string
 
 const (
+	BatchStatusStored        BatchStatus = "stored"
 	BatchStatusPendingAnchor BatchStatus = "pending_anchor"
 	BatchStatusAnchored      BatchStatus = "anchored"
 	BatchStatusAnchorFailed  BatchStatus = "anchor_failed"
@@ -39,6 +47,7 @@ type AnchorProofRecord struct {
 type BatchRecord struct {
 	BatchID       string
 	TraceCode     string
+	TraceMode     TraceMode
 	Status        BatchStatus
 	OrchardID     string
 	OrchardName   string
@@ -59,6 +68,7 @@ type BatchRecord struct {
 type CreateBatchParams struct {
 	BatchID       string
 	TraceCode     string
+	TraceMode     TraceMode
 	Status        BatchStatus
 	OrchardID     string
 	OrchardName   string

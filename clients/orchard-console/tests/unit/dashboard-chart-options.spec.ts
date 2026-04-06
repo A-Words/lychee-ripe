@@ -7,7 +7,7 @@ import {
 
 describe('dashboard chart options', () => {
   it('builds status donut chart data in fixed order', () => {
-    const option = buildStatusDonutOption({
+    const option = buildStatusDonutOption('blockchain', {
       anchored: 7,
       pending_anchor: 2,
       anchor_failed: 1
@@ -17,6 +17,15 @@ describe('dashboard chart options', () => {
     expect(option.series[0].data.map((item: any) => item.value)).toEqual([7, 2, 1])
     expect(option.series[0].data[0].name).toBe(DASHBOARD_STATUS_META.anchored.label)
     expect(option.series[0].data[0].itemStyle.color).toBe(DASHBOARD_STATUS_META.anchored.chartColor)
+  })
+
+  it('builds database mode donut chart with stored only', () => {
+    const option = buildStatusDonutOption('database', {
+      stored: 5
+    }) as any
+
+    expect(option.series[0].data.map((item: any) => item.value)).toEqual([5])
+    expect(option.series[0].data[0].name).toBe(DASHBOARD_STATUS_META.stored.label)
   })
 
   it('builds ripeness bar chart with mapped labels and values', () => {

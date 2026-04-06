@@ -27,7 +27,7 @@ func TestGetPublicTracePassWhenOnChainHashMatches(t *testing.T) {
 			AnchoredAt: record.AnchorProof.AnchoredAt,
 		},
 	}
-	svc := NewTraceService(repo, chain, true)
+	svc := NewTraceService(repo, chain, domain.TraceModeBlockchain)
 
 	got, err := svc.GetPublicTrace(context.Background(), record.TraceCode)
 	if err != nil {
@@ -56,7 +56,7 @@ func TestGetPublicTraceFailWhenOnChainHashMismatches(t *testing.T) {
 			AnchoredAt: record.AnchorProof.AnchoredAt,
 		},
 	}
-	svc := NewTraceService(repo, chain, true)
+	svc := NewTraceService(repo, chain, domain.TraceModeBlockchain)
 
 	got, err := svc.GetPublicTrace(context.Background(), record.TraceCode)
 	if err != nil {
@@ -81,7 +81,7 @@ func TestGetPublicTracePendingWhenBatchNotAnchored(t *testing.T) {
 	repo.batches[record.BatchID] = record
 	repo.traceIndex[record.TraceCode] = record.BatchID
 
-	svc := NewTraceService(repo, &fakeTraceAnchorClient{}, true)
+	svc := NewTraceService(repo, &fakeTraceAnchorClient{}, domain.TraceModeBlockchain)
 	got, err := svc.GetPublicTrace(context.Background(), record.TraceCode)
 	if err != nil {
 		t.Fatalf("GetPublicTrace failed: %v", err)
@@ -97,8 +97,46 @@ func TestGetPublicTracePendingWhenBatchNotAnchored(t *testing.T) {
 func TestGetPublicTraceReturnsNotFound(t *testing.T) {
 	t.Parallel()
 
-	svc := NewTraceService(newFakeBatchRepository(), &fakeTraceAnchorClient{}, true)
+	svc := NewTraceService(newFakeBatchRepository(), &fakeTraceAnchorClient{}, domain.TraceModeBlockchain)
 	_, err := svc.GetPublicTrace(context.Background(), "TRC-NOPE-0000")
+	if !errors.Is(err, ErrNotFound) {
+		t.Fatalf("error = %v, want ErrNotFound", err)
+	}
+}
+
+func TestGetPublicTraceReturnsRecordedForDatabaseBatch(t *testing.T) {
+	t.Parallel()
+
+	record := sampleAnchoredTraceBatch(t)
+	record.TraceMode = domain.TraceModeDatabase
+	record.Status = domain.BatchStatusStored
+	record.AnchorHash = nil
+	record.AnchorProof = nil
+
+	repo := newFakeBatchRepository()
+	repo.batches[record.BatchID] = record
+	repo.traceIndex[record.TraceCode] = record.BatchID
+
+	svc := NewTraceService(repo, nil, domain.TraceModeDatabase)
+	got, err := svc.GetPublicTrace(context.Background(), record.TraceCode)
+	if err != nil {
+		t.Fatalf("GetPublicTrace failed: %v", err)
+	}
+	if got.VerifyStatus != TraceVerifyStatusRecorded {
+		t.Fatalf("verify_status = %q, want recorded", got.VerifyStatus)
+	}
+}
+
+func TestGetPublicTraceReturnsNotFoundWhenTraceModeMismatches(t *testing.T) {
+	t.Parallel()
+
+	record := sampleAnchoredTraceBatch(t)
+	repo := newFakeBatchRepository()
+	repo.batches[record.BatchID] = record
+	repo.traceIndex[record.TraceCode] = record.BatchID
+
+	svc := NewTraceService(repo, nil, domain.TraceModeDatabase)
+	_, err := svc.GetPublicTrace(context.Background(), record.TraceCode)
 	if !errors.Is(err, ErrNotFound) {
 		t.Fatalf("error = %v, want ErrNotFound", err)
 	}
@@ -115,7 +153,7 @@ func TestGetPublicTraceReturnsServiceUnavailableWhenChainUnavailable(t *testing.
 	chain := &fakeTraceAnchorClient{
 		err: fmt.Errorf("%w: dial tcp timeout", evm.ErrNodeUnavailable),
 	}
-	svc := NewTraceService(repo, chain, true)
+	svc := NewTraceService(repo, chain, domain.TraceModeBlockchain)
 	_, err := svc.GetPublicTrace(context.Background(), record.TraceCode)
 	if !errors.Is(err, ErrServiceUnavailable) {
 		t.Fatalf("error = %v, want ErrServiceUnavailable", err)
@@ -133,7 +171,7 @@ func TestGetPublicTraceFailsWhenOnChainAnchorMissing(t *testing.T) {
 	chain := &fakeTraceAnchorClient{
 		err: fmt.Errorf("%w: %s", evm.ErrAnchorNotFound, record.BatchID),
 	}
-	svc := NewTraceService(repo, chain, true)
+	svc := NewTraceService(repo, chain, domain.TraceModeBlockchain)
 
 	got, err := svc.GetPublicTrace(context.Background(), record.TraceCode)
 	if err != nil {
@@ -168,6 +206,7 @@ func sampleAnchoredTraceBatch(t *testing.T) domain.BatchRecord {
 	record := domain.BatchRecord{
 		BatchID:     "batch_trace_01",
 		TraceCode:   "TRC-TRAC-E001",
+		TraceMode:   domain.TraceModeBlockchain,
 		Status:      domain.BatchStatusAnchored,
 		OrchardID:   "orchard-1",
 		OrchardName: "orchard",

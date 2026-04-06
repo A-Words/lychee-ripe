@@ -1,6 +1,6 @@
 import type { VerifyStatus } from '~/types/trace'
 
-type VerifyColor = 'success' | 'warning' | 'error'
+type VerifyColor = 'primary' | 'success' | 'warning' | 'error'
 
 export interface VerifyStatusMeta {
   label: string
@@ -9,6 +9,11 @@ export interface VerifyStatusMeta {
 }
 
 export const VERIFY_STATUS_META: Record<VerifyStatus, VerifyStatusMeta> = {
+  recorded: {
+    label: '数据库存证',
+    description: '批次已入库并可在系统内查询',
+    color: 'primary'
+  },
   pass: {
     label: '验证通过',
     description: '链上摘要与库内摘要一致',

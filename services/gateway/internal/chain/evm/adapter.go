@@ -35,10 +35,6 @@ type anyABI interface {
 }
 
 func NewAdapter(ctx context.Context, cfg config.ChainConfig) (*Adapter, error) {
-	if !cfg.Enabled {
-		return nil, fmt.Errorf("%w: chain.enabled must be true", ErrInvalidConfig)
-	}
-
 	client, err := dialRPC(strings.TrimSpace(cfg.RPCURL))
 	if err != nil {
 		return nil, wrapNodeError("dial rpc", err)

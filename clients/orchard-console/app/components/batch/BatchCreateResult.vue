@@ -49,7 +49,10 @@ function formatDateTime(value: string): string {
   }).format(date)
 }
 
-function getStatusMeta(status: BatchStatus): { color: 'success' | 'warning' | 'error', label: string } {
+function getStatusMeta(status: BatchStatus): { color: 'primary' | 'success' | 'warning' | 'error', label: string } {
+  if (status === 'stored') {
+    return { color: 'primary', label: '已入库' }
+  }
   if (status === 'anchored') {
     return { color: 'success', label: '上链成功' }
   }
@@ -88,6 +91,9 @@ function getStatusMeta(status: BatchStatus): { color: 'success' | 'warning' | 'e
         <template #description>
           <p class="text-sm">
             溯源码：{{ batch.trace_code }}
+          </p>
+          <p class="mt-1 text-xs text-muted">
+            {{ batch.trace_mode === 'database' ? '数据库存证，可直接查询。' : '区块链模式批次，可公开验真。' }}
           </p>
           <p class="mt-1 text-xs text-muted">
             创建时间：{{ formatDateTime(batch.created_at) }}

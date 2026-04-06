@@ -48,6 +48,8 @@ func ReconcileBatches(svc ReconcileService, logger *slog.Logger) http.HandlerFun
 			switch {
 			case errors.Is(err, service.ErrInvalidRequest):
 				writeError(w, r, http.StatusBadRequest, "invalid_request", err.Error(), nil)
+			case errors.Is(err, service.ErrConflict):
+				writeError(w, r, http.StatusConflict, "trace_mode_conflict", err.Error(), nil)
 			case errors.Is(err, service.ErrNotFound):
 				writeError(w, r, http.StatusNotFound, "pending_batch_not_found", err.Error(), nil)
 			case errors.Is(err, service.ErrServiceUnavailable):

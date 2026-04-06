@@ -10,6 +10,7 @@ import (
 	"strconv"
 	"strings"
 
+	"github.com/lychee-ripe/gateway/internal/domain"
 	"gopkg.in/yaml.v3"
 )
 
@@ -18,6 +19,7 @@ type Config struct {
 	Server    ServerConfig    `yaml:"server"`
 	Upstream  UpstreamConfig  `yaml:"upstream"`
 	DB        DBConfig        `yaml:"db"`
+	Trace     TraceConfig     `yaml:"trace"`
 	Chain     ChainConfig     `yaml:"chain"`
 	Auth      AuthConfig      `yaml:"auth"`
 	RateLimit RateLimitConfig `yaml:"rate_limit"`
@@ -60,9 +62,13 @@ type PostgresDBConfig struct {
 	Schema  string `yaml:"schema"`
 }
 
+// TraceConfig defines the gateway trace runtime mode.
+type TraceConfig struct {
+	Mode domain.TraceMode `yaml:"mode"`
+}
+
 // ChainConfig defines EVM chain adapter settings.
 type ChainConfig struct {
-	Enabled               bool   `yaml:"enabled"`
 	RPCURL                string `yaml:"rpc_url"`
 	ChainID               string `yaml:"chain_id"`
 	ContractAddress       string `yaml:"contract_address"`
@@ -206,8 +212,10 @@ func Defaults() Config {
 				Schema:  "public",
 			},
 		},
+		Trace: TraceConfig{
+			Mode: domain.TraceModeDatabase,
+		},
 		Chain: ChainConfig{
-			Enabled:               false,
 			TxTimeoutS:            30,
 			ReceiptPollIntervalMS: 500,
 		},
@@ -305,6 +313,14 @@ func (c *Config) Validate() error {
 	if c.DB.Postgres.Schema == "" {
 		c.DB.Postgres.Schema = "public"
 	}
+	if c.Trace.Mode == "" {
+		c.Trace.Mode = domain.TraceModeDatabase
+	}
+	switch c.Trace.Mode {
+	case domain.TraceModeDatabase, domain.TraceModeBlockchain:
+	default:
+		return fmt.Errorf("trace.mode must be one of database|blockchain, got %q", c.Trace.Mode)
+	}
 
 	if c.Chain.TxTimeoutS <= 0 {
 		c.Chain.TxTimeoutS = 30
@@ -313,12 +329,12 @@ func (c *Config) Validate() error {
 		c.Chain.ReceiptPollIntervalMS = 500
 	}
 
-	if !c.Chain.Enabled {
+	if c.Trace.Mode != domain.TraceModeBlockchain {
 		return nil
 	}
 
 	if strings.TrimSpace(c.Chain.RPCURL) == "" {
-		return fmt.Errorf("chain.rpc_url is required when chain.enabled=true")
+		return fmt.Errorf("chain.rpc_url is required when trace.mode=blockchain")
 	}
 	parsedURL, err := url.Parse(strings.TrimSpace(c.Chain.RPCURL))
 	if err != nil || parsedURL.Scheme == "" || parsedURL.Host == "" {
@@ -326,7 +342,7 @@ func (c *Config) Validate() error {
 	}
 
 	if strings.TrimSpace(c.Chain.ChainID) == "" {
-		return fmt.Errorf("chain.chain_id is required when chain.enabled=true")
+		return fmt.Errorf("chain.chain_id is required when trace.mode=blockchain")
 	}
 	chainID, err := strconv.ParseInt(strings.TrimSpace(c.Chain.ChainID), 10, 64)
 	if err != nil || chainID <= 0 {
@@ -334,14 +350,14 @@ func (c *Config) Validate() error {
 	}
 
 	if strings.TrimSpace(c.Chain.ContractAddress) == "" {
-		return fmt.Errorf("chain.contract_address is required when chain.enabled=true")
+		return fmt.Errorf("chain.contract_address is required when trace.mode=blockchain")
 	}
 	if ok, _ := regexp.MatchString(`^0x[0-9a-fA-F]{40}$`, strings.TrimSpace(c.Chain.ContractAddress)); !ok {
 		return fmt.Errorf("chain.contract_address must be a 20-byte hex address")
 	}
 
 	if strings.TrimSpace(c.Chain.PrivateKey) == "" {
-		return fmt.Errorf("chain.private_key is required when chain.enabled=true")
+		return fmt.Errorf("chain.private_key is required when trace.mode=blockchain")
 	}
 	key := strings.TrimPrefix(strings.TrimSpace(c.Chain.PrivateKey), "0x")
 	if ok, _ := regexp.MatchString(`^[0-9a-fA-F]{64}$`, key); !ok {

@@ -6,7 +6,8 @@ type BatchModel struct {
 	ID             uint              `gorm:"primaryKey;autoIncrement"`
 	BatchID        string            `gorm:"column:batch_id;type:text;not null;uniqueIndex"`
 	TraceCode      string            `gorm:"column:trace_code;type:text;not null;uniqueIndex"`
-	Status         string            `gorm:"column:status;type:text;not null;index:idx_batches_status_created_at,priority:1"`
+	TraceMode      string            `gorm:"column:trace_mode;type:text;not null;default:blockchain;index:idx_batches_trace_mode_status_created_at,priority:1"`
+	Status         string            `gorm:"column:status;type:text;not null;index:idx_batches_status_created_at,priority:1;index:idx_batches_trace_mode_status_created_at,priority:2"`
 	OrchardID      string            `gorm:"column:orchard_id;type:text;not null"`
 	OrchardName    string            `gorm:"column:orchard_name;type:text;not null"`
 	PlotID         string            `gorm:"column:plot_id;type:text;not null"`
@@ -25,7 +26,7 @@ type BatchModel struct {
 	ConfirmUnripe  bool              `gorm:"column:confirm_unripe;not null;default:false"`
 	RetryCount     int               `gorm:"column:retry_count;not null;default:0"`
 	LastError      *string           `gorm:"column:last_error;type:text"`
-	CreatedAt      time.Time         `gorm:"column:created_at;not null;index:idx_batches_created_at,sort:desc;index:idx_batches_status_created_at,priority:2,sort:desc"`
+	CreatedAt      time.Time         `gorm:"column:created_at;not null;index:idx_batches_created_at,sort:desc;index:idx_batches_status_created_at,priority:2,sort:desc;index:idx_batches_trace_mode_status_created_at,priority:3,sort:desc"`
 	UpdatedAt      time.Time         `gorm:"column:updated_at;not null"`
 	AnchorProof    *AnchorProofModel `gorm:"foreignKey:BatchID;references:BatchID"`
 }

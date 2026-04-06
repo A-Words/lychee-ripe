@@ -29,7 +29,7 @@ func TestCreateBatchSuccessAnchored(t *testing.T) {
 			}, nil
 		},
 	}
-	svc := NewBatchCreateService(repo, anchor, true, nil)
+	svc := NewBatchCreateService(repo, anchor, domain.TraceModeBlockchain, nil)
 	svc.batchIDFn = func() string { return "batch_01" }
 	svc.traceCodeFn = func() string { return "TRC-ABCD-EFGH" }
 	svc.nowFn = func() time.Time { return time.Date(2026, 3, 2, 10, 31, 0, 0, time.UTC) }
@@ -61,7 +61,7 @@ func TestCreateBatchDegradesOnNodeUnavailable(t *testing.T) {
 			return domain.AnchorProofRecord{}, fmt.Errorf("%w: connection refused", evm.ErrNodeUnavailable)
 		},
 	}
-	svc := NewBatchCreateService(repo, anchor, true, nil)
+	svc := NewBatchCreateService(repo, anchor, domain.TraceModeBlockchain, nil)
 	svc.batchIDFn = func() string { return "batch_02" }
 	svc.traceCodeFn = func() string { return "TRC-IJKL-MNOP" }
 
@@ -92,7 +92,7 @@ func TestCreateBatchDegradesOnTxReverted(t *testing.T) {
 			return domain.AnchorProofRecord{}, fmt.Errorf("%w: status=0", evm.ErrTxReverted)
 		},
 	}
-	svc := NewBatchCreateService(repo, anchor, true, nil)
+	svc := NewBatchCreateService(repo, anchor, domain.TraceModeBlockchain, nil)
 	svc.batchIDFn = func() string { return "batch_03" }
 	svc.traceCodeFn = func() string { return "TRC-QRST-UVWX" }
 
@@ -112,7 +112,7 @@ func TestCreateBatchRejectsUnripeWithoutConfirm(t *testing.T) {
 	t.Parallel()
 
 	repo := newFakeBatchRepository()
-	svc := NewBatchCreateService(repo, nil, false, nil)
+	svc := NewBatchCreateService(repo, nil, domain.TraceModeDatabase, nil)
 	svc.batchIDFn = func() string { return "batch_04" }
 	svc.traceCodeFn = func() string { return "TRC-AAAA-BBBB" }
 
@@ -126,7 +126,7 @@ func TestCreateBatchAllowsThresholdBoundary(t *testing.T) {
 	t.Parallel()
 
 	repo := newFakeBatchRepository()
-	svc := NewBatchCreateService(repo, nil, false, nil)
+	svc := NewBatchCreateService(repo, nil, domain.TraceModeDatabase, nil)
 	svc.batchIDFn = func() string { return "batch_05" }
 	svc.traceCodeFn = func() string { return "TRC-CCCC-DDDD" }
 
@@ -134,11 +134,14 @@ func TestCreateBatchAllowsThresholdBoundary(t *testing.T) {
 	if err != nil {
 		t.Fatalf("CreateBatch failed: %v", err)
 	}
-	if result.HTTPStatus != 202 {
-		t.Fatalf("http status = %d, want 202", result.HTTPStatus)
+	if result.HTTPStatus != 201 {
+		t.Fatalf("http status = %d, want 201", result.HTTPStatus)
 	}
 	if result.Batch.Summary.UnripeRatio != 0.15 {
 		t.Fatalf("unripe_ratio = %v, want 0.15", result.Batch.Summary.UnripeRatio)
+	}
+	if result.Batch.Status != domain.BatchStatusStored {
+		t.Fatalf("status = %q, want stored", result.Batch.Status)
 	}
 }
 
@@ -146,7 +149,7 @@ func TestCreateBatchRejectsTotalZero(t *testing.T) {
 	t.Parallel()
 
 	repo := newFakeBatchRepository()
-	svc := NewBatchCreateService(repo, nil, false, nil)
+	svc := NewBatchCreateService(repo, nil, domain.TraceModeDatabase, nil)
 
 	_, err := svc.CreateBatch(context.Background(), sampleCreateInput(0, 0, 0, 0, 0, false))
 	if !errors.Is(err, ErrInvalidRequest) {
@@ -158,7 +161,7 @@ func TestCreateBatchRejectsSummaryMismatch(t *testing.T) {
 	t.Parallel()
 
 	repo := newFakeBatchRepository()
-	svc := NewBatchCreateService(repo, nil, false, nil)
+	svc := NewBatchCreateService(repo, nil, domain.TraceModeDatabase, nil)
 
 	_, err := svc.CreateBatch(context.Background(), sampleCreateInput(10, 1, 1, 1, 1, false))
 	if !errors.Is(err, ErrInvalidRequest) {
@@ -171,7 +174,7 @@ func TestCreateBatchRetriesOnConflict(t *testing.T) {
 
 	repo := newFakeBatchRepository()
 	repo.createErrors = []error{repository.ErrConflict, nil}
-	svc := NewBatchCreateService(repo, nil, false, nil)
+	svc := NewBatchCreateService(repo, nil, domain.TraceModeDatabase, nil)
 
 	batchIDs := []string{"batch_conflict", "batch_final"}
 	traceCodes := []string{"TRC-FAIL-0001", "TRC-OKAY-0002"}
@@ -203,7 +206,7 @@ func TestCreateBatchReturnsConflictAfterMaxRetries(t *testing.T) {
 
 	repo := newFakeBatchRepository()
 	repo.createErrors = []error{repository.ErrConflict, repository.ErrConflict, repository.ErrConflict}
-	svc := NewBatchCreateService(repo, nil, false, nil)
+	svc := NewBatchCreateService(repo, nil, domain.TraceModeDatabase, nil)
 	svc.batchIDFn = func() string { return "batch_conflict" }
 	svc.traceCodeFn = func() string { return "TRC-CONF-LICT" }
 
@@ -224,7 +227,8 @@ func TestGetBatchByIDSuccess(t *testing.T) {
 	record, err := repo.CreateBatch(context.Background(), domain.CreateBatchParams{
 		BatchID:       "batch_get_ok",
 		TraceCode:     "TRC-GETB-0001",
-		Status:        domain.BatchStatusPendingAnchor,
+		TraceMode:     domain.TraceModeDatabase,
+		Status:        domain.BatchStatusStored,
 		OrchardID:     base.OrchardID,
 		OrchardName:   base.OrchardName,
 		PlotID:        base.PlotID,
@@ -240,7 +244,7 @@ func TestGetBatchByIDSuccess(t *testing.T) {
 	}
 	repo.batches[record.BatchID] = record
 
-	svc := NewBatchCreateService(repo, nil, false, nil)
+	svc := NewBatchCreateService(repo, nil, domain.TraceModeDatabase, nil)
 	got, err := svc.GetBatchByID(context.Background(), "batch_get_ok")
 	if err != nil {
 		t.Fatalf("GetBatchByID failed: %v", err)
@@ -250,10 +254,46 @@ func TestGetBatchByIDSuccess(t *testing.T) {
 	}
 }
 
+func TestGetBatchByIDReturnsNotFoundWhenTraceModeMismatches(t *testing.T) {
+	t.Parallel()
+
+	repo := newFakeBatchRepository()
+	record := domain.BatchRecord{
+		BatchID:     "batch_hidden",
+		TraceCode:   "TRC-HIDE-0001",
+		TraceMode:   domain.TraceModeBlockchain,
+		Status:      domain.BatchStatusAnchored,
+		OrchardID:   "orchard-1",
+		OrchardName: "orchard",
+		PlotID:      "plot-1",
+		HarvestedAt: time.Date(2026, 3, 2, 10, 30, 0, 0, time.UTC),
+		Summary: domain.BatchSummary{
+			Total:          10,
+			Green:          1,
+			Half:           3,
+			Red:            6,
+			Young:          0,
+			UnripeCount:    1,
+			UnripeRatio:    0.1,
+			UnripeHandling: domain.UnripeHandlingSortedOut,
+		},
+		CreatedAt: time.Date(2026, 3, 2, 10, 31, 0, 0, time.UTC),
+		UpdatedAt: time.Date(2026, 3, 2, 10, 31, 0, 0, time.UTC),
+	}
+	repo.batches[record.BatchID] = record
+	repo.traceIndex[record.TraceCode] = record.BatchID
+
+	svc := NewBatchCreateService(repo, nil, domain.TraceModeDatabase, nil)
+	_, err := svc.GetBatchByID(context.Background(), record.BatchID)
+	if !errors.Is(err, ErrNotFound) {
+		t.Fatalf("error = %v, want ErrNotFound", err)
+	}
+}
+
 func TestGetBatchByIDNotFound(t *testing.T) {
 	t.Parallel()
 
-	svc := NewBatchCreateService(newFakeBatchRepository(), nil, false, nil)
+	svc := NewBatchCreateService(newFakeBatchRepository(), nil, domain.TraceModeDatabase, nil)
 	_, err := svc.GetBatchByID(context.Background(), "not_found")
 	if !errors.Is(err, ErrNotFound) {
 		t.Fatalf("error = %v, want ErrNotFound", err)
@@ -265,7 +305,7 @@ func TestGetBatchByIDRepositoryError(t *testing.T) {
 
 	repo := newFakeBatchRepository()
 	repo.getByIDErr = errors.New("db down")
-	svc := NewBatchCreateService(repo, nil, false, nil)
+	svc := NewBatchCreateService(repo, nil, domain.TraceModeDatabase, nil)
 
 	_, err := svc.GetBatchByID(context.Background(), "batch_x")
 	if !errors.Is(err, ErrServiceUnavailable) {
@@ -276,7 +316,7 @@ func TestGetBatchByIDRepositoryError(t *testing.T) {
 func TestGetBatchByIDEmptyID(t *testing.T) {
 	t.Parallel()
 
-	svc := NewBatchCreateService(newFakeBatchRepository(), nil, false, nil)
+	svc := NewBatchCreateService(newFakeBatchRepository(), nil, domain.TraceModeDatabase, nil)
 	_, err := svc.GetBatchByID(context.Background(), "   ")
 	if !errors.Is(err, ErrInvalidRequest) {
 		t.Fatalf("error = %v, want ErrInvalidRequest", err)
@@ -347,6 +387,7 @@ func (f *fakeBatchRepository) CreateBatch(_ context.Context, params domain.Creat
 	record := domain.BatchRecord{
 		BatchID:       params.BatchID,
 		TraceCode:     params.TraceCode,
+		TraceMode:     params.TraceMode,
 		Status:        params.Status,
 		OrchardID:     params.OrchardID,
 		OrchardName:   params.OrchardName,
@@ -367,7 +408,7 @@ func (f *fakeBatchRepository) CreateBatch(_ context.Context, params domain.Creat
 	return record, nil
 }
 
-func (f *fakeBatchRepository) GetBatchByID(_ context.Context, batchID string) (domain.BatchRecord, error) {
+func (f *fakeBatchRepository) GetBatchByID(_ context.Context, batchID string, traceMode domain.TraceMode) (domain.BatchRecord, error) {
 	if f.getByIDErr != nil {
 		return domain.BatchRecord{}, f.getByIDErr
 	}
@@ -375,15 +416,22 @@ func (f *fakeBatchRepository) GetBatchByID(_ context.Context, batchID string) (d
 	if !ok {
 		return domain.BatchRecord{}, repository.ErrNotFound
 	}
+	if traceMode != "" && record.TraceMode != traceMode {
+		return domain.BatchRecord{}, repository.ErrNotFound
+	}
 	return record, nil
 }
 
-func (f *fakeBatchRepository) GetBatchByTraceCode(_ context.Context, traceCode string) (domain.BatchRecord, error) {
+func (f *fakeBatchRepository) GetBatchByTraceCode(_ context.Context, traceCode string, traceMode domain.TraceMode) (domain.BatchRecord, error) {
 	batchID, ok := f.traceIndex[traceCode]
 	if !ok {
 		return domain.BatchRecord{}, repository.ErrNotFound
 	}
-	return f.batches[batchID], nil
+	record := f.batches[batchID]
+	if traceMode != "" && record.TraceMode != traceMode {
+		return domain.BatchRecord{}, repository.ErrNotFound
+	}
+	return record, nil
 }
 
 func (f *fakeBatchRepository) UpdateBatchStatus(
@@ -433,7 +481,7 @@ func (f *fakeBatchRepository) AttachAnchorProof(
 func (f *fakeBatchRepository) ListPendingBatches(_ context.Context, _ int) ([]domain.BatchRecord, error) {
 	out := make([]domain.BatchRecord, 0)
 	for _, record := range f.batches {
-		if record.Status == domain.BatchStatusPendingAnchor {
+		if record.TraceMode == domain.TraceModeBlockchain && record.Status == domain.BatchStatusPendingAnchor {
 			out = append(out, record)
 		}
 	}

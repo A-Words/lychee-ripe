@@ -28,7 +28,7 @@ type AnchorClient interface {
 type BatchCreateService struct {
 	repo         repository.BatchRepository
 	anchorClient AnchorClient
-	chainEnabled bool
+	traceMode    domain.TraceMode
 	logger       *slog.Logger
 
 	nowFn        func() time.Time
@@ -64,7 +64,7 @@ type CreateBatchResult struct {
 func NewBatchCreateService(
 	repo repository.BatchRepository,
 	anchorClient AnchorClient,
-	chainEnabled bool,
+	traceMode domain.TraceMode,
 	logger *slog.Logger,
 ) *BatchCreateService {
 	if logger == nil {
@@ -73,7 +73,7 @@ func NewBatchCreateService(
 	return &BatchCreateService{
 		repo:         repo,
 		anchorClient: anchorClient,
-		chainEnabled: chainEnabled,
+		traceMode:    traceMode,
 		logger:       logger,
 		nowFn:        func() time.Time { return time.Now().UTC() },
 		batchIDFn:    defaultBatchID,
@@ -93,25 +93,36 @@ func (s *BatchCreateService) CreateBatch(ctx context.Context, input BatchCreateI
 		batchID := s.batchIDFn()
 		traceCode := s.traceCodeFn()
 
-		anchorHash, err := s.anchorHashFn(anchorHashPayload{
-			BatchID:     batchID,
-			TraceCode:   traceCode,
-			OrchardID:   normalized.OrchardID,
-			OrchardName: normalized.OrchardName,
-			PlotID:      normalized.PlotID,
-			PlotName:    normalized.PlotName,
-			HarvestedAt: normalized.HarvestedAt.UTC(),
-			Summary:     normalized.Summary,
-			Note:        normalized.Note,
-		})
-		if err != nil {
-			return CreateBatchResult{}, fmt.Errorf("%w: compute anchor hash: %v", ErrServiceUnavailable, err)
+		status := domain.BatchStatusStored
+		traceMode := s.traceMode
+		var anchorHash *string
+		if traceMode == "" {
+			traceMode = domain.TraceModeDatabase
+		}
+		if traceMode == domain.TraceModeBlockchain {
+			status = domain.BatchStatusPendingAnchor
+			computedHash, err := s.anchorHashFn(anchorHashPayload{
+				BatchID:     batchID,
+				TraceCode:   traceCode,
+				OrchardID:   normalized.OrchardID,
+				OrchardName: normalized.OrchardName,
+				PlotID:      normalized.PlotID,
+				PlotName:    normalized.PlotName,
+				HarvestedAt: normalized.HarvestedAt.UTC(),
+				Summary:     normalized.Summary,
+				Note:        normalized.Note,
+			})
+			if err != nil {
+				return CreateBatchResult{}, fmt.Errorf("%w: compute anchor hash: %v", ErrServiceUnavailable, err)
+			}
+			anchorHash = &computedHash
 		}
 
 		createParams := domain.CreateBatchParams{
 			BatchID:       batchID,
 			TraceCode:     traceCode,
-			Status:        domain.BatchStatusPendingAnchor,
+			TraceMode:     traceMode,
+			Status:        status,
 			OrchardID:     normalized.OrchardID,
 			OrchardName:   normalized.OrchardName,
 			PlotID:        normalized.PlotID,
@@ -119,7 +130,7 @@ func (s *BatchCreateService) CreateBatch(ctx context.Context, input BatchCreateI
 			HarvestedAt:   normalized.HarvestedAt.UTC(),
 			Summary:       normalized.Summary,
 			Note:          normalized.Note,
-			AnchorHash:    &anchorHash,
+			AnchorHash:    anchorHash,
 			ConfirmUnripe: normalized.ConfirmUnripe,
 			RetryCount:    0,
 			CreatedAt:     now,
@@ -140,13 +151,20 @@ func (s *BatchCreateService) CreateBatch(ctx context.Context, input BatchCreateI
 			return CreateBatchResult{}, fmt.Errorf("%w: %v", ErrServiceUnavailable, err)
 		}
 
-		if !s.chainEnabled || s.anchorClient == nil {
-			return s.degradeBatch(ctx, created, "chain disabled", nil, http.StatusAccepted)
+		if traceMode == domain.TraceModeDatabase {
+			return CreateBatchResult{
+				Batch:      created,
+				HTTPStatus: http.StatusCreated,
+			}, nil
+		}
+
+		if s.anchorClient == nil {
+			return CreateBatchResult{}, fmt.Errorf("%w: blockchain anchor client unavailable", ErrServiceUnavailable)
 		}
 
 		proof, err := s.anchorClient.AnchorBatch(ctx, evm.AnchorBatchRequest{
 			BatchID:    created.BatchID,
-			AnchorHash: anchorHash,
+			AnchorHash: *anchorHash,
 			Timestamp:  now,
 		})
 		if err != nil {
@@ -164,7 +182,7 @@ func (s *BatchCreateService) CreateBatch(ctx context.Context, input BatchCreateI
 			return CreateBatchResult{}, fmt.Errorf("%w: %v", ErrServiceUnavailable, err)
 		}
 
-		anchored, err := s.repo.GetBatchByID(ctx, created.BatchID)
+		anchored, err := s.repo.GetBatchByID(ctx, created.BatchID, traceMode)
 		if err != nil {
 			return CreateBatchResult{}, fmt.Errorf("%w: %v", ErrServiceUnavailable, err)
 		}
@@ -183,7 +201,7 @@ func (s *BatchCreateService) GetBatchByID(ctx context.Context, batchID string) (
 		return domain.BatchRecord{}, fmt.Errorf("%w: batch_id is required", ErrInvalidRequest)
 	}
 
-	record, err := s.repo.GetBatchByID(ctx, id)
+	record, err := s.repo.GetBatchByID(ctx, id, s.traceMode)
 	if err != nil {
 		if errors.Is(err, repository.ErrNotFound) {
 			return domain.BatchRecord{}, fmt.Errorf("%w: batch not found", ErrNotFound)
@@ -205,7 +223,7 @@ func (s *BatchCreateService) degradeBatch(
 		return CreateBatchResult{}, fmt.Errorf("%w: %v", ErrServiceUnavailable, err)
 	}
 
-	updated, err := s.repo.GetBatchByID(ctx, record.BatchID)
+	updated, err := s.repo.GetBatchByID(ctx, record.BatchID, s.traceMode)
 	if err == nil {
 		return CreateBatchResult{
 			Batch:      updated,

@@ -1,12 +1,14 @@
 <script setup lang="ts">
 import { buildStatusDonutOption } from '~/utils/dashboard-chart-options'
 import type { BatchStatusDistribution } from '~/types/dashboard'
+import type { TraceMode } from '~/types/trace'
 
 const props = defineProps<{
+  traceMode: TraceMode
   statusDistribution: BatchStatusDistribution
 }>()
 
-const option = computed(() => buildStatusDonutOption(props.statusDistribution))
+const option = computed(() => buildStatusDonutOption(props.traceMode, props.statusDistribution))
 </script>
 
 <template>
@@ -17,7 +19,7 @@ const option = computed(() => buildStatusDonutOption(props.statusDistribution))
           批次状态分布
         </h3>
         <p class="mt-1 text-xs text-muted">
-          anchored / pending_anchor / anchor_failed
+          {{ props.traceMode === 'database' ? 'stored' : 'anchored / pending_anchor / anchor_failed' }}
         </p>
       </div>
     </template>

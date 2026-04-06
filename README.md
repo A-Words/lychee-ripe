@@ -6,7 +6,7 @@
 
 - `clients/orchard-console`：Nuxt Web + Tauri Desktop，果园业务操作前端
 - `services/inference-api`：FastAPI 推理服务
-- `services/gateway`：Go 网关，负责鉴权、限流、日志、代理与 WebSocket 透传
+- `services/gateway`：Go 网关，负责鉴权、限流、日志、代理与 WebSocket 透传，并提供 `database / blockchain` 双溯源模式
 - `shared/contracts`：共享常量与 OpenAPI 契约
 - `shared/python`：训练与推理共用的 Python helper
 - `mlops/training`：训练与评估脚本
@@ -18,6 +18,11 @@
 - `tests/stack`：跨服务 smoke 测试
 
 调用链路固定为 `frontend -> gateway -> api`。
+
+Gateway 溯源模式：
+
+- `trace.mode=database`：默认模式，批次以数据库存证为主，不初始化链适配器、不执行补链或链上校验
+- `trace.mode=blockchain`：启用链上锚定、补链与公开验真能力
 
 成熟度映射固定为：
 
@@ -189,6 +194,7 @@ bun run test:stack
 
 默认模型路径、网关默认配置与本地 sqlite 路径都已改成 repo-root 相对解析，直接从仓库根或各服务目录运行都可以。
 `tooling/configs/gateway.yaml.example` 默认面向本地直启，`upstream.base_url` 使用 `http://127.0.0.1:8000`。
+`tooling/configs/gateway*.yaml` 现在以 `trace.mode` 作为权威运行模式，默认值为 `database`；仅当 `trace.mode=blockchain` 时才要求配置 `chain.rpc_url`、`chain.chain_id`、`chain.contract_address` 与 `chain.private_key`。
 Docker Compose 使用仓库自带的 `tooling/configs/gateway.compose.yaml`，其中容器内上游地址为 `http://inference-api:8000`。
 
 ## Docker

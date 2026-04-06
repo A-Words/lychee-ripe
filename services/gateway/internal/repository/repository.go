@@ -17,8 +17,8 @@ var (
 
 type BatchRepository interface {
 	CreateBatch(ctx context.Context, params domain.CreateBatchParams) (domain.BatchRecord, error)
-	GetBatchByID(ctx context.Context, batchID string) (domain.BatchRecord, error)
-	GetBatchByTraceCode(ctx context.Context, traceCode string) (domain.BatchRecord, error)
+	GetBatchByID(ctx context.Context, batchID string, traceMode domain.TraceMode) (domain.BatchRecord, error)
+	GetBatchByTraceCode(ctx context.Context, traceCode string, traceMode domain.TraceMode) (domain.BatchRecord, error)
 	UpdateBatchStatus(ctx context.Context, batchID string, status domain.BatchStatus, lastError *string, retryCount *int, updatedAt time.Time) error
 	AttachAnchorProof(ctx context.Context, batchID string, proof domain.AnchorProofRecord, updatedAt time.Time) error
 	ListPendingBatches(ctx context.Context, limit int) ([]domain.BatchRecord, error)
@@ -36,9 +36,9 @@ type AuditRepository interface {
 }
 
 type DashboardQueryRepository interface {
-	CountBatches(ctx context.Context) (int64, error)
-	CountByStatus(ctx context.Context) (domain.StatusDistribution, error)
-	SumRipeness(ctx context.Context) (domain.RipenessDistribution, error)
-	CountUnripeBatches(ctx context.Context, threshold float64) (count int64, ratio float64, err error)
-	ListRecentAnchors(ctx context.Context, limit int) ([]domain.RecentAnchorRecord, error)
+	CountBatches(ctx context.Context, traceMode domain.TraceMode) (int64, error)
+	CountByStatus(ctx context.Context, traceMode domain.TraceMode) (domain.StatusDistribution, error)
+	SumRipeness(ctx context.Context, traceMode domain.TraceMode) (domain.RipenessDistribution, error)
+	CountUnripeBatches(ctx context.Context, traceMode domain.TraceMode, threshold float64) (count int64, ratio float64, err error)
+	ListRecentAnchors(ctx context.Context, traceMode domain.TraceMode, limit int) ([]domain.RecentAnchorRecord, error)
 }

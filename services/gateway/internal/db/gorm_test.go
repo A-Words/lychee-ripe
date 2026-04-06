@@ -59,6 +59,35 @@ func TestOpenGORMAndAutoMigrateSQLite(t *testing.T) {
 			t.Fatalf("table %s not found", table)
 		}
 	}
+
+	var indexCount int
+	if err := gdb.WithContext(ctx).Raw(
+		"SELECT COUNT(1) FROM sqlite_master WHERE type = 'index' AND tbl_name = 'batches' AND name = ?",
+		"idx_batches_trace_mode_status_created_at",
+	).Scan(&indexCount).Error; err != nil {
+		t.Fatalf("query sqlite_master for composite index: %v", err)
+	}
+	if indexCount != 1 {
+		t.Fatalf("index idx_batches_trace_mode_status_created_at not found")
+	}
+
+	type indexInfoRow struct {
+		Seqno int    `gorm:"column:seqno"`
+		Name  string `gorm:"column:name"`
+	}
+	var indexColumns []indexInfoRow
+	if err := gdb.WithContext(ctx).Raw("PRAGMA index_info('idx_batches_trace_mode_status_created_at')").Scan(&indexColumns).Error; err != nil {
+		t.Fatalf("query index_info for composite index: %v", err)
+	}
+	if len(indexColumns) != 3 {
+		t.Fatalf("composite index columns len = %d, want 3", len(indexColumns))
+	}
+	expectedColumns := []string{"trace_mode", "status", "created_at"}
+	for i, expected := range expectedColumns {
+		if indexColumns[i].Name != expected {
+			t.Fatalf("composite index column[%d] = %q, want %q", i, indexColumns[i].Name, expected)
+		}
+	}
 }
 
 func TestOpenGORMAndAutoMigratePostgresOptional(t *testing.T) {

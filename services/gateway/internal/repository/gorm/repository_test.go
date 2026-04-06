@@ -58,7 +58,7 @@ func TestBatchCRUDAndStatusFlowSQLite(t *testing.T) {
 		t.Fatalf("batch_id = %q, want %q", batch.BatchID, create.BatchID)
 	}
 
-	fetched, err := repo.GetBatchByID(ctx, create.BatchID)
+	fetched, err := repo.GetBatchByID(ctx, create.BatchID, create.TraceMode)
 	if err != nil {
 		t.Fatalf("get batch by id: %v", err)
 	}
@@ -73,7 +73,7 @@ func TestBatchCRUDAndStatusFlowSQLite(t *testing.T) {
 		t.Fatalf("update batch status: %v", err)
 	}
 
-	updated, err := repo.GetBatchByID(ctx, create.BatchID)
+	updated, err := repo.GetBatchByID(ctx, create.BatchID, create.TraceMode)
 	if err != nil {
 		t.Fatalf("get updated batch: %v", err)
 	}
@@ -99,7 +99,7 @@ func TestBatchCRUDAndStatusFlowSQLite(t *testing.T) {
 		t.Fatalf("attach anchor proof: %v", err)
 	}
 
-	anchored, err := repo.GetBatchByID(ctx, create.BatchID)
+	anchored, err := repo.GetBatchByID(ctx, create.BatchID, create.TraceMode)
 	if err != nil {
 		t.Fatalf("get anchored batch: %v", err)
 	}
@@ -155,7 +155,7 @@ func TestListPendingBatchesAndPersistenceAfterRestartSQLite(t *testing.T) {
 		SQLite:           config.SQLiteDBConfig{JournalMode: "WAL", BusyTimeoutMS: 5000},
 	})
 	defer reopenedSQLDB.Close()
-	reopened, err := reopenedRepo.GetBatchByID(ctx, "batch-3")
+	reopened, err := reopenedRepo.GetBatchByID(ctx, "batch-3", domain.TraceModeBlockchain)
 	if err != nil {
 		t.Fatalf("get batch after reopen: %v", err)
 	}
@@ -209,7 +209,7 @@ func TestDashboardAggregationsSQLite(t *testing.T) {
 		t.Fatalf("create third batch: %v", err)
 	}
 
-	count, err := repo.CountBatches(ctx)
+	count, err := repo.CountBatches(ctx, domain.TraceModeBlockchain)
 	if err != nil {
 		t.Fatalf("count batches: %v", err)
 	}
@@ -217,7 +217,7 @@ func TestDashboardAggregationsSQLite(t *testing.T) {
 		t.Fatalf("batch count = %d, want 3", count)
 	}
 
-	status, err := repo.CountByStatus(ctx)
+	status, err := repo.CountByStatus(ctx, domain.TraceModeBlockchain)
 	if err != nil {
 		t.Fatalf("count by status: %v", err)
 	}
@@ -225,7 +225,7 @@ func TestDashboardAggregationsSQLite(t *testing.T) {
 		t.Fatalf("status distribution = %+v, want 1/1/1", status)
 	}
 
-	ripeness, err := repo.SumRipeness(ctx)
+	ripeness, err := repo.SumRipeness(ctx, domain.TraceModeBlockchain)
 	if err != nil {
 		t.Fatalf("sum ripeness: %v", err)
 	}
@@ -233,7 +233,7 @@ func TestDashboardAggregationsSQLite(t *testing.T) {
 		t.Fatalf("ripeness distribution = %+v, want green=5 half=6 red=8 young=1", ripeness)
 	}
 
-	unripeCount, unripeRatio, err := repo.CountUnripeBatches(ctx, 0.15)
+	unripeCount, unripeRatio, err := repo.CountUnripeBatches(ctx, domain.TraceModeBlockchain, 0.15)
 	if err != nil {
 		t.Fatalf("count unripe: %v", err)
 	}
@@ -244,7 +244,7 @@ func TestDashboardAggregationsSQLite(t *testing.T) {
 		t.Fatalf("unripe ratio = %f, want around 0.666", unripeRatio)
 	}
 
-	recent, err := repo.ListRecentAnchors(ctx, 2)
+	recent, err := repo.ListRecentAnchors(ctx, domain.TraceModeBlockchain, 2)
 	if err != nil {
 		t.Fatalf("list recent anchors: %v", err)
 	}
@@ -369,12 +369,144 @@ func TestPostgresOptionalBasicFlow(t *testing.T) {
 	if _, err := repo.CreateBatch(ctx, sampleCreateBatchParams("pg-batch-1", "pg-trace-2")); !errors.Is(err, repository.ErrConflict) {
 		t.Fatalf("duplicate postgres batch should return ErrConflict, got %v", err)
 	}
-	loaded, err := repo.GetBatchByID(ctx, "pg-batch-1")
+	loaded, err := repo.GetBatchByID(ctx, "pg-batch-1", domain.TraceModeBlockchain)
 	if err != nil {
 		t.Fatalf("get postgres batch: %v", err)
 	}
 	if loaded.TraceCode != "pg-trace-1" {
 		t.Fatalf("trace_code = %q, want pg-trace-1", loaded.TraceCode)
+	}
+}
+
+func TestModeScopedReadsAndDashboardAggregationsSQLite(t *testing.T) {
+	t.Parallel()
+	ctx := context.Background()
+	repo, sqlDB := mustNewSQLiteRepo(t)
+	defer sqlDB.Close()
+
+	databaseBatch := sampleCreateBatchParams("batch-db-1", "trace-db-1")
+	databaseBatch.TraceMode = domain.TraceModeDatabase
+	databaseBatch.Status = domain.BatchStatusStored
+	databaseBatch.Summary.Green = 1
+	databaseBatch.Summary.Half = 1
+	databaseBatch.Summary.Red = 3
+	databaseBatch.Summary.Young = 1
+	databaseBatch.Summary.Total = 6
+	databaseBatch.Summary.UnripeCount = 2
+	databaseBatch.Summary.UnripeRatio = 0.33
+	if _, err := repo.CreateBatch(ctx, databaseBatch); err != nil {
+		t.Fatalf("create database batch: %v", err)
+	}
+
+	blockchainBatch := sampleCreateBatchParams("batch-bc-1", "trace-bc-1")
+	blockchainBatch.TraceMode = domain.TraceModeBlockchain
+	blockchainBatch.Status = domain.BatchStatusAnchored
+	blockchainBatch.Summary.Green = 0
+	blockchainBatch.Summary.Half = 4
+	blockchainBatch.Summary.Red = 5
+	blockchainBatch.Summary.Young = 1
+	blockchainBatch.Summary.Total = 10
+	blockchainBatch.Summary.UnripeCount = 1
+	blockchainBatch.Summary.UnripeRatio = 0.1
+	if _, err := repo.CreateBatch(ctx, blockchainBatch); err != nil {
+		t.Fatalf("create blockchain batch: %v", err)
+	}
+	if err := repo.AttachAnchorProof(ctx, blockchainBatch.BatchID, domain.AnchorProofRecord{
+		TxHash:          "0xtest",
+		BlockNumber:     100,
+		ChainID:         "31337",
+		ContractAddress: "0xdef",
+		AnchorHash:      "0xhash",
+		AnchoredAt:      time.Now().UTC(),
+	}, time.Now().UTC()); err != nil {
+		t.Fatalf("attach blockchain proof: %v", err)
+	}
+
+	if _, err := repo.GetBatchByID(ctx, databaseBatch.BatchID, domain.TraceModeBlockchain); !errors.Is(err, repository.ErrNotFound) {
+		t.Fatalf("cross-mode get by id error = %v, want ErrNotFound", err)
+	}
+	if _, err := repo.GetBatchByTraceCode(ctx, blockchainBatch.TraceCode, domain.TraceModeDatabase); !errors.Is(err, repository.ErrNotFound) {
+		t.Fatalf("cross-mode get by trace error = %v, want ErrNotFound", err)
+	}
+
+	databaseCount, err := repo.CountBatches(ctx, domain.TraceModeDatabase)
+	if err != nil {
+		t.Fatalf("count database batches: %v", err)
+	}
+	if databaseCount != 1 {
+		t.Fatalf("database batch count = %d, want 1", databaseCount)
+	}
+
+	blockchainCount, err := repo.CountBatches(ctx, domain.TraceModeBlockchain)
+	if err != nil {
+		t.Fatalf("count blockchain batches: %v", err)
+	}
+	if blockchainCount != 1 {
+		t.Fatalf("blockchain batch count = %d, want 1", blockchainCount)
+	}
+
+	databaseStatus, err := repo.CountByStatus(ctx, domain.TraceModeDatabase)
+	if err != nil {
+		t.Fatalf("count database status: %v", err)
+	}
+	if databaseStatus.Stored != 1 || databaseStatus.Anchored != 0 {
+		t.Fatalf("database status distribution = %+v, want stored only", databaseStatus)
+	}
+
+	blockchainStatus, err := repo.CountByStatus(ctx, domain.TraceModeBlockchain)
+	if err != nil {
+		t.Fatalf("count blockchain status: %v", err)
+	}
+	if blockchainStatus.Anchored != 1 || blockchainStatus.Stored != 0 {
+		t.Fatalf("blockchain status distribution = %+v, want anchored only", blockchainStatus)
+	}
+
+	databaseRipeness, err := repo.SumRipeness(ctx, domain.TraceModeDatabase)
+	if err != nil {
+		t.Fatalf("sum database ripeness: %v", err)
+	}
+	if databaseRipeness.Green != 1 || databaseRipeness.Red != 3 {
+		t.Fatalf("database ripeness = %+v, want green=1 red=3", databaseRipeness)
+	}
+
+	blockchainRipeness, err := repo.SumRipeness(ctx, domain.TraceModeBlockchain)
+	if err != nil {
+		t.Fatalf("sum blockchain ripeness: %v", err)
+	}
+	if blockchainRipeness.Half != 4 || blockchainRipeness.Red != 5 {
+		t.Fatalf("blockchain ripeness = %+v, want half=4 red=5", blockchainRipeness)
+	}
+
+	databaseUnripeCount, _, err := repo.CountUnripeBatches(ctx, domain.TraceModeDatabase, 0.15)
+	if err != nil {
+		t.Fatalf("count database unripe: %v", err)
+	}
+	if databaseUnripeCount != 1 {
+		t.Fatalf("database unripe count = %d, want 1", databaseUnripeCount)
+	}
+
+	blockchainUnripeCount, _, err := repo.CountUnripeBatches(ctx, domain.TraceModeBlockchain, 0.15)
+	if err != nil {
+		t.Fatalf("count blockchain unripe: %v", err)
+	}
+	if blockchainUnripeCount != 0 {
+		t.Fatalf("blockchain unripe count = %d, want 0", blockchainUnripeCount)
+	}
+
+	databaseRecent, err := repo.ListRecentAnchors(ctx, domain.TraceModeDatabase, 5)
+	if err != nil {
+		t.Fatalf("list database recent anchors: %v", err)
+	}
+	if len(databaseRecent) != 0 {
+		t.Fatalf("database recent anchors = %+v, want empty", databaseRecent)
+	}
+
+	blockchainRecent, err := repo.ListRecentAnchors(ctx, domain.TraceModeBlockchain, 5)
+	if err != nil {
+		t.Fatalf("list blockchain recent anchors: %v", err)
+	}
+	if len(blockchainRecent) != 1 || blockchainRecent[0].BatchID != blockchainBatch.BatchID {
+		t.Fatalf("blockchain recent anchors = %+v, want only %s", blockchainRecent, blockchainBatch.BatchID)
 	}
 }
 
@@ -458,6 +590,7 @@ func sampleCreateBatchParams(batchID, traceCode string) domain.CreateBatchParams
 	return domain.CreateBatchParams{
 		BatchID:     batchID,
 		TraceCode:   traceCode,
+		TraceMode:   domain.TraceModeBlockchain,
 		Status:      domain.BatchStatusPendingAnchor,
 		OrchardID:   "orchard-1",
 		OrchardName: "orchard",

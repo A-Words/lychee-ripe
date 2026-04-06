@@ -6,11 +6,13 @@ describe('verify status mapping', () => {
     expect(VERIFY_STATUS_META.pass.color).toBe('success')
     expect(VERIFY_STATUS_META.pending.color).toBe('warning')
     expect(VERIFY_STATUS_META.fail.color).toBe('error')
+    expect(VERIFY_STATUS_META.recorded.color).toBe('primary')
   })
 
   it('contains public labels', () => {
     expect(VERIFY_STATUS_META.pass.label).toBeTruthy()
     expect(VERIFY_STATUS_META.pending.label).toBeTruthy()
     expect(VERIFY_STATUS_META.fail.label).toBeTruthy()
+    expect(VERIFY_STATUS_META.recorded.label).toBeTruthy()
   })
 })

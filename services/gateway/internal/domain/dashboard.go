@@ -3,6 +3,7 @@ package domain
 import "time"
 
 type StatusDistribution struct {
+	Stored        int64
 	Anchored      int64
 	PendingAnchor int64
 	AnchorFailed  int64
@@ -18,6 +19,7 @@ type RipenessDistribution struct {
 type RecentAnchorRecord struct {
 	BatchID    string
 	TraceCode  string
+	TraceMode  TraceMode
 	Status     BatchStatus
 	TxHash     *string
 	AnchoredAt *time.Time

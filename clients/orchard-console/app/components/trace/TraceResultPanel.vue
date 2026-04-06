@@ -9,6 +9,9 @@ const props = defineProps<{
 const trace = computed(() => props.trace)
 const verifyMeta = computed(() => VERIFY_STATUS_META[props.trace.verify_result.verify_status])
 const copied = ref(false)
+const verifyLead = computed(() =>
+  props.trace.verify_result.verify_status === 'recorded' ? '数据库存证' : '链上可核验'
+)
 
 const locationText = computed(() => {
   const orchard = props.trace.batch.orchard_name || '未知果园'
@@ -116,7 +119,7 @@ async function copyTraceCode() {
     >
       <template #description>
         <p class="text-sm">
-          链上可核验：{{ verifyMeta.description }}
+          {{ verifyLead }}：{{ verifyMeta.description }}
         </p>
         <p class="mt-1 text-sm">
           校验说明：{{ trace.verify_result.reason }}

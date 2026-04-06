@@ -1,4 +1,4 @@
-import type { BatchStatus } from '~/types/trace'
+import type { BatchStatus, TraceMode } from '~/types/trace'
 
 export type UnripeHandling = 'sorted_out'
 
@@ -39,6 +39,7 @@ export interface AnchorProof {
 export interface Batch {
   batch_id: string
   trace_code: string
+  trace_mode: TraceMode
   status: BatchStatus
   orchard_id: string
   orchard_name: string

@@ -47,6 +47,9 @@ func TestGetPublicTraceReturns200WithExpectedSchema(t *testing.T) {
 	if batch["batch_id"] != "batch_01" {
 		t.Fatalf("batch_id = %v, want batch_01", batch["batch_id"])
 	}
+	if batch["trace_mode"] != "blockchain" {
+		t.Fatalf("trace_mode = %v, want blockchain", batch["trace_mode"])
+	}
 	if batch["plot_name"] != "" {
 		t.Fatalf("plot_name = %v, want empty string", batch["plot_name"])
 	}
@@ -91,6 +94,11 @@ func TestGetPublicTraceVerifyStatesAndReasons(t *testing.T) {
 			name:         "pending",
 			verifyStatus: service.TraceVerifyStatusPending,
 			reason:       "batch is not anchored yet",
+		},
+		{
+			name:         "recorded",
+			verifyStatus: service.TraceVerifyStatusRecorded,
+			reason:       "batch is recorded in gateway database",
 		},
 	}
 

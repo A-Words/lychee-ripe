@@ -3,11 +3,13 @@ package service
 import (
 	"context"
 	"time"
+
+	"github.com/lychee-ripe/gateway/internal/domain"
 )
 
 func (s *ReconcileService) StartAutoReconcileWorker(ctx context.Context) {
-	if !s.chainEnabled || s.anchorClient == nil {
-		s.logger.Info("auto reconcile worker disabled because chain adapter is unavailable")
+	if s.traceMode != domain.TraceModeBlockchain || s.anchorClient == nil {
+		s.logger.Info("auto reconcile worker disabled because blockchain mode is inactive")
 		return
 	}
 
