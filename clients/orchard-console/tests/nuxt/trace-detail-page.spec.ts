@@ -73,6 +73,26 @@ describe('trace detail page', () => {
     expect(writeText).toHaveBeenCalledWith('TRC-9A7X-11QF')
   })
 
+  it('renders database storage semantics for recorded traces', async () => {
+    getPublicTraceMock.mockResolvedValue(buildTraceResponse({
+      batch: {
+        ...buildTraceResponse().batch,
+        trace_mode: 'database',
+        status: 'stored'
+      },
+      verify_result: {
+        verify_status: 'recorded',
+        reason: '批次已入库并可在系统内查询'
+      }
+    }))
+
+    const wrapper = await mountTraceDetailPage()
+    await flushUi()
+
+    expect(wrapper.text()).toContain('数据库存证')
+    expect(wrapper.text()).not.toContain('链上可核验')
+  })
+
   it('renders the 404 branch when the trace record does not exist', async () => {
     getPublicTraceMock.mockRejectedValue(new Error('not found'))
     parseTraceErrorMock.mockReturnValue({

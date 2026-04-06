@@ -7,6 +7,7 @@ import (
 	"net/http"
 	"time"
 
+	"github.com/lychee-ripe/gateway/internal/domain"
 	"github.com/lychee-ripe/gateway/internal/service"
 )
 
@@ -15,12 +16,13 @@ type DashboardGetService interface {
 }
 
 type dashboardOverviewResponse struct {
+	TraceMode            string                              `json:"trace_mode"`
 	Totals               dashboardTotalsResponse             `json:"totals"`
 	StatusDistribution   dashboardStatusDistributionResponse `json:"status_distribution"`
 	RipenessDistribution dashboardRipenessDistribution       `json:"ripeness_distribution"`
 	UnripeMetrics        dashboardUnripeMetricsResponse      `json:"unripe_metrics"`
 	RecentAnchors        []dashboardRecentAnchorResponse     `json:"recent_anchors"`
-	ReconcileStats       dashboardReconcileStatsResponse     `json:"reconcile_stats"`
+	ReconcileStats       *dashboardReconcileStatsResponse    `json:"reconcile_stats,omitempty"`
 }
 
 type dashboardTotalsResponse struct {
@@ -28,9 +30,10 @@ type dashboardTotalsResponse struct {
 }
 
 type dashboardStatusDistributionResponse struct {
-	Anchored      int64 `json:"anchored"`
-	PendingAnchor int64 `json:"pending_anchor"`
-	AnchorFailed  int64 `json:"anchor_failed"`
+	Stored        *int64 `json:"stored,omitempty"`
+	Anchored      *int64 `json:"anchored,omitempty"`
+	PendingAnchor *int64 `json:"pending_anchor,omitempty"`
+	AnchorFailed  *int64 `json:"anchor_failed,omitempty"`
 }
 
 type dashboardRipenessDistribution struct {
@@ -99,14 +102,11 @@ func toDashboardOverviewResponse(result service.DashboardOverviewResult) dashboa
 	}
 
 	return dashboardOverviewResponse{
+		TraceMode: string(result.TraceMode),
 		Totals: dashboardTotalsResponse{
 			BatchTotal: result.Totals.BatchTotal,
 		},
-		StatusDistribution: dashboardStatusDistributionResponse{
-			Anchored:      result.StatusDistribution.Anchored,
-			PendingAnchor: result.StatusDistribution.PendingAnchor,
-			AnchorFailed:  result.StatusDistribution.AnchorFailed,
-		},
+		StatusDistribution: toDashboardStatusDistributionResponse(result),
 		RipenessDistribution: dashboardRipenessDistribution{
 			Green: result.RipenessDistribution.Green,
 			Half:  result.RipenessDistribution.Half,
@@ -120,11 +120,35 @@ func toDashboardOverviewResponse(result service.DashboardOverviewResult) dashboa
 			UnripeHandling:   result.UnripeMetrics.UnripeHandling,
 		},
 		RecentAnchors: recent,
-		ReconcileStats: dashboardReconcileStatsResponse{
-			PendingCount:    result.ReconcileStats.PendingCount,
-			RetriedTotal:    result.ReconcileStats.RetriedTotal,
-			FailedTotal:     result.ReconcileStats.FailedTotal,
-			LastReconcileAt: result.ReconcileStats.LastReconcileAt,
-		},
+		ReconcileStats: toDashboardReconcileStatsResponse(result.ReconcileStats),
 	}
+}
+
+func toDashboardStatusDistributionResponse(result service.DashboardOverviewResult) dashboardStatusDistributionResponse {
+	if result.TraceMode == "database" {
+		return dashboardStatusDistributionResponse{
+			Stored: int64Ptr(result.StatusDistribution.Stored),
+		}
+	}
+	return dashboardStatusDistributionResponse{
+		Anchored:      int64Ptr(result.StatusDistribution.Anchored),
+		PendingAnchor: int64Ptr(result.StatusDistribution.PendingAnchor),
+		AnchorFailed:  int64Ptr(result.StatusDistribution.AnchorFailed),
+	}
+}
+
+func toDashboardReconcileStatsResponse(stats *domain.ReconcileStats) *dashboardReconcileStatsResponse {
+	if stats == nil {
+		return nil
+	}
+	return &dashboardReconcileStatsResponse{
+		PendingCount:    stats.PendingCount,
+		RetriedTotal:    stats.RetriedTotal,
+		FailedTotal:     stats.FailedTotal,
+		LastReconcileAt: stats.LastReconcileAt,
+	}
+}
+
+func int64Ptr(value int64) *int64 {
+	return &value
 }

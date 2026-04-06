@@ -114,6 +114,27 @@ func TestReconcileBatchesReturns404(t *testing.T) {
 	}
 }
 
+func TestReconcileBatchesReturns409(t *testing.T) {
+	t.Parallel()
+
+	svc := &fakeReconcileService{err: service.ErrConflict}
+	req := httptest.NewRequest(http.MethodPost, "/v1/batches/reconcile", bytes.NewBufferString(`{}`))
+	rec := httptest.NewRecorder()
+
+	ReconcileBatches(svc, nil).ServeHTTP(rec, req)
+
+	if rec.Code != http.StatusConflict {
+		t.Fatalf("status = %d, want 409", rec.Code)
+	}
+	var resp map[string]any
+	if err := json.Unmarshal(rec.Body.Bytes(), &resp); err != nil {
+		t.Fatalf("decode response: %v", err)
+	}
+	if resp["error"] != "trace_mode_conflict" {
+		t.Fatalf("error = %v, want trace_mode_conflict", resp["error"])
+	}
+}
+
 func TestReconcileBatchesReturns503(t *testing.T) {
 	t.Parallel()
 

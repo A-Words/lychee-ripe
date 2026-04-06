@@ -1,13 +1,14 @@
-import { DASHBOARD_STATUS_META, DASHBOARD_STATUS_ORDER } from '~/constants/dashboard-status'
+import { DASHBOARD_STATUS_META, getDashboardStatusOrder } from '~/constants/dashboard-status'
 import { RIPENESS_CLASSES, RIPENESS_COLOR_MAP, RIPENESS_LABEL_MAP } from '~/constants/ripeness'
 import type { BatchStatusDistribution, RipenessDistribution } from '~/types/dashboard'
+import type { TraceMode } from '~/types/trace'
 
 type ChartOption = Record<string, unknown>
 
-export function buildStatusDonutOption(distribution: BatchStatusDistribution): ChartOption {
-  const seriesData = DASHBOARD_STATUS_ORDER.map((key) => ({
+export function buildStatusDonutOption(traceMode: TraceMode, distribution: BatchStatusDistribution): ChartOption {
+  const seriesData = getDashboardStatusOrder(traceMode).map((key) => ({
     name: DASHBOARD_STATUS_META[key].label,
-    value: distribution[key],
+    value: distribution[key] ?? 0,
     itemStyle: {
       color: DASHBOARD_STATUS_META[key].chartColor
     }

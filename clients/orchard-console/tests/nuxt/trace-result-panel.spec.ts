@@ -39,6 +39,25 @@ describe('trace result panel', () => {
     expect(wrapper.text()).toContain('未成熟占比（green + young）')
   })
 
+  it('renders recorded messaging without blockchain copy', async () => {
+    const wrapper = await mountPanel({
+      trace: buildTraceResponse({
+        batch: {
+          ...buildTraceResponse().batch,
+          trace_mode: 'database',
+          status: 'stored'
+        },
+        verify_result: {
+          verify_status: 'recorded',
+          reason: '批次已入库并可在系统内查询'
+        }
+      })
+    })
+
+    expect(wrapper.text()).toContain('数据库存证：批次已入库并可在系统内查询')
+    expect(wrapper.text()).not.toContain('链上可核验')
+  })
+
   it('copies the trace code from the panel action', async () => {
     const { writeText } = installClipboardMock()
     const wrapper = await mountPanel()

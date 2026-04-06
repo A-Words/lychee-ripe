@@ -14,6 +14,9 @@
 - 项目目标：荔枝目标检测与成熟度识别，提供后端推理、网关治理与前端可视化。
 - 调用链路：`clients/orchard-console -> services/gateway -> services/inference-api`。
 - 网关实现：Go HTTP 反向代理 + WebSocket 透传，当前不是 gRPC。
+- Gateway 溯源模式：`trace.mode=database | blockchain`，默认 `database`。
+- `database` 模式下系统与区块链解耦，批次主状态为 `stored`。
+- `blockchain` 模式下保留 `pending_anchor / anchored / anchor_failed` 与补链能力。
 - 成熟度类别映射：`0=green`，`1=half`，`2=red`，`3=young`。
 
 当前顶层职责分组：

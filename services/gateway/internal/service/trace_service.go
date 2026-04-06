@@ -15,12 +15,14 @@ const (
 	TraceVerifyStatusPass    = "pass"
 	TraceVerifyStatusFail    = "fail"
 	TraceVerifyStatusPending = "pending"
+	TraceVerifyStatusRecorded = "recorded"
 
 	traceReasonPending          = "batch is not anchored yet"
 	traceReasonHashMatched      = "anchor_hash matches on-chain record"
 	traceReasonHashMismatched   = "anchor_hash does not match on-chain record"
 	traceReasonOnChainNotFound  = "on-chain anchor not found"
 	traceReasonChainUnavailable = "chain query unavailable"
+	traceReasonRecorded         = "batch is recorded in gateway database"
 )
 
 type TraceAnchorClient interface {
@@ -36,14 +38,14 @@ type TraceQueryResult struct {
 type TraceService struct {
 	repo         repository.BatchRepository
 	anchorClient TraceAnchorClient
-	chainEnabled bool
+	traceMode    domain.TraceMode
 }
 
-func NewTraceService(repo repository.BatchRepository, anchorClient TraceAnchorClient, chainEnabled bool) *TraceService {
+func NewTraceService(repo repository.BatchRepository, anchorClient TraceAnchorClient, traceMode domain.TraceMode) *TraceService {
 	return &TraceService{
 		repo:         repo,
 		anchorClient: anchorClient,
-		chainEnabled: chainEnabled,
+		traceMode:    traceMode,
 	}
 }
 
@@ -61,6 +63,14 @@ func (s *TraceService) GetPublicTrace(ctx context.Context, traceCode string) (Tr
 		return TraceQueryResult{}, fmt.Errorf("%w: %v", ErrServiceUnavailable, err)
 	}
 
+	if s.traceMode == domain.TraceModeDatabase || record.TraceMode == domain.TraceModeDatabase {
+		return TraceQueryResult{
+			Batch:        record,
+			VerifyStatus: TraceVerifyStatusRecorded,
+			Reason:       traceReasonRecorded,
+		}, nil
+	}
+
 	if record.Status != domain.BatchStatusAnchored || record.AnchorProof == nil {
 		return TraceQueryResult{
 			Batch:        record,
@@ -69,7 +79,7 @@ func (s *TraceService) GetPublicTrace(ctx context.Context, traceCode string) (Tr
 		}, nil
 	}
 
-	if !s.chainEnabled || s.anchorClient == nil {
+	if s.anchorClient == nil {
 		return TraceQueryResult{}, fmt.Errorf("%w: %s", ErrServiceUnavailable, traceReasonChainUnavailable)
 	}
 

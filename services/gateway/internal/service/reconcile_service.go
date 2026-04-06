@@ -41,7 +41,7 @@ type ReconcileService struct {
 	batchRepo     repository.BatchRepository
 	reconcileRepo repository.ReconcileRepository
 	anchorClient  AnchorClient
-	chainEnabled  bool
+	traceMode     domain.TraceMode
 	logger        *slog.Logger
 
 	nowFn          func() time.Time
@@ -55,7 +55,7 @@ func NewReconcileService(
 	batchRepo repository.BatchRepository,
 	reconcileRepo repository.ReconcileRepository,
 	anchorClient AnchorClient,
-	chainEnabled bool,
+	traceMode domain.TraceMode,
 	logger *slog.Logger,
 ) *ReconcileService {
 	if logger == nil {
@@ -66,7 +66,7 @@ func NewReconcileService(
 		batchRepo:      batchRepo,
 		reconcileRepo:  reconcileRepo,
 		anchorClient:   anchorClient,
-		chainEnabled:   chainEnabled,
+		traceMode:      traceMode,
 		logger:         logger,
 		nowFn:          func() time.Time { return time.Now().UTC() },
 		workerInterval: autoReconcileInterval,
@@ -75,8 +75,11 @@ func NewReconcileService(
 }
 
 func (s *ReconcileService) TriggerManualReconcile(ctx context.Context, input ManualReconcileInput) (ReconcileResult, error) {
-	if !s.chainEnabled || s.anchorClient == nil {
-		return ReconcileResult{}, fmt.Errorf("%w: chain adapter unavailable", ErrServiceUnavailable)
+	if s.traceMode != domain.TraceModeBlockchain {
+		return ReconcileResult{}, fmt.Errorf("%w: reconcile is only available when trace.mode=blockchain", ErrConflict)
+	}
+	if s.anchorClient == nil {
+		return ReconcileResult{}, fmt.Errorf("%w: blockchain anchor client unavailable", ErrServiceUnavailable)
 	}
 
 	limit, err := normalizeReconcileLimit(input.Limit)
@@ -96,8 +99,8 @@ func (s *ReconcileService) TriggerManualReconcile(ctx context.Context, input Man
 }
 
 func (s *ReconcileService) RunAutoReconcileOnce(ctx context.Context) error {
-	if !s.chainEnabled || s.anchorClient == nil {
-		s.logger.Debug("auto reconcile skipped because chain is disabled")
+	if s.traceMode != domain.TraceModeBlockchain || s.anchorClient == nil {
+		s.logger.Debug("auto reconcile skipped because blockchain mode is disabled")
 		return nil
 	}
 
@@ -167,6 +170,9 @@ func (s *ReconcileService) runReconcile(
 }
 
 func (s *ReconcileService) reconcileOne(ctx context.Context, batch domain.BatchRecord) (domain.ReconcileJobItemRecord, error) {
+	if batch.TraceMode != domain.TraceModeBlockchain {
+		return domain.ReconcileJobItemRecord{}, fmt.Errorf("%w: batch %s is not a blockchain batch", ErrInvalidRequest, batch.BatchID)
+	}
 	if batch.Status != domain.BatchStatusPendingAnchor {
 		return domain.ReconcileJobItemRecord{}, fmt.Errorf("%w: batch %s is not pending_anchor", ErrInvalidRequest, batch.BatchID)
 	}
@@ -257,7 +263,7 @@ func (s *ReconcileService) selectManualTargets(
 			}
 			return nil, 0, 0, fmt.Errorf("%w: %v", ErrServiceUnavailable, err)
 		}
-		if record.Status != domain.BatchStatusPendingAnchor {
+		if record.TraceMode != domain.TraceModeBlockchain || record.Status != domain.BatchStatusPendingAnchor {
 			skippedCount++
 			continue
 		}

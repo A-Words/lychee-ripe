@@ -1,6 +1,7 @@
 export type RipenessLabel = 'green' | 'half' | 'red' | 'young'
-export type BatchStatus = 'pending_anchor' | 'anchored' | 'anchor_failed'
-export type VerifyStatus = 'pass' | 'fail' | 'pending'
+export type TraceMode = 'database' | 'blockchain'
+export type BatchStatus = 'stored' | 'pending_anchor' | 'anchored' | 'anchor_failed'
+export type VerifyStatus = 'pass' | 'fail' | 'pending' | 'recorded'
 
 export interface BatchSummary {
   total: number
@@ -16,6 +17,7 @@ export interface BatchSummary {
 export interface TraceBatch {
   batch_id: string
   trace_code: string
+  trace_mode: TraceMode
   status: BatchStatus
   orchard_name: string
   plot_name: string

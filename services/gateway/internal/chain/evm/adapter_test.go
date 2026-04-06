@@ -260,7 +260,6 @@ func TestAnchorBatchInvalidInput(t *testing.T) {
 func mustNewTestAdapter(t *testing.T, client rpcClient) *Adapter {
 	t.Helper()
 	cfg := config.ChainConfig{
-		Enabled:               true,
 		RPCURL:                "http://127.0.0.1:8545",
 		ChainID:               "31337",
 		ContractAddress:       "0x1234567890abcdef1234567890abcdef12345678",

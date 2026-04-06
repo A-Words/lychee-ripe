@@ -58,7 +58,7 @@ describe('dashboard page', () => {
     await flushUi()
 
     expect(wrapper.text()).toContain('批次总数')
-    expect(wrapper.text()).toContain('最近上链记录')
+    expect(wrapper.text()).toContain('最近链上记录')
     expect(wrapper.text()).toContain('TRC-9A7X-11QF')
     expect(wrapper.get('a[href="/trace/TRC-9A7X-11QF?from=dashboard"]').text()).toContain('查看溯源')
 
@@ -81,7 +81,27 @@ describe('dashboard page', () => {
     await flushUi()
 
     expect(wrapper.text()).toContain('暂无批次数据')
-    expect(wrapper.text()).toContain('暂无上链记录')
+    expect(wrapper.text()).toContain('暂无链上记录')
+    wrapper.unmount()
+  })
+
+  it('hides reconcile and chain history sections in database mode', async () => {
+    getOverviewMock.mockResolvedValue(buildDashboardOverview({
+      trace_mode: 'database',
+      status_distribution: {
+        stored: 3
+      },
+      recent_anchors: [],
+      reconcile_stats: null
+    }))
+
+    const wrapper = await mountDashboardPage()
+    await flushUi()
+
+    expect(wrapper.text()).toContain('模式：数据库')
+    expect(wrapper.text()).toContain('已入库')
+    expect(wrapper.text()).not.toContain('补链统计')
+    expect(wrapper.text()).not.toContain('最近链上记录')
     wrapper.unmount()
   })
 

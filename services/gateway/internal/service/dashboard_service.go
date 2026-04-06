@@ -25,26 +25,30 @@ type DashboardUnripeMetrics struct {
 }
 
 type DashboardOverviewResult struct {
+	TraceMode            domain.TraceMode
 	Totals               DashboardTotals
 	StatusDistribution   domain.StatusDistribution
 	RipenessDistribution domain.RipenessDistribution
 	UnripeMetrics        DashboardUnripeMetrics
 	RecentAnchors        []domain.RecentAnchorRecord
-	ReconcileStats       domain.ReconcileStats
+	ReconcileStats       *domain.ReconcileStats
 }
 
 type DashboardService struct {
 	queryRepo     repository.DashboardQueryRepository
 	reconcileRepo repository.ReconcileRepository
+	traceMode     domain.TraceMode
 }
 
 func NewDashboardService(
 	queryRepo repository.DashboardQueryRepository,
 	reconcileRepo repository.ReconcileRepository,
+	traceMode domain.TraceMode,
 ) *DashboardService {
 	return &DashboardService{
 		queryRepo:     queryRepo,
 		reconcileRepo: reconcileRepo,
+		traceMode:     traceMode,
 	}
 }
 
@@ -77,16 +81,21 @@ func (s *DashboardService) GetOverview(ctx context.Context) (DashboardOverviewRe
 		recent = make([]domain.RecentAnchorRecord, 0)
 	}
 
-	reconcileStats, err := s.reconcileRepo.ListReconcileStats(ctx)
-	if err != nil {
-		return DashboardOverviewResult{}, fmt.Errorf("%w: list reconcile stats: %v", ErrServiceUnavailable, err)
+	var reconcileStats *domain.ReconcileStats
+	if s.traceMode == domain.TraceModeBlockchain {
+		stats, err := s.reconcileRepo.ListReconcileStats(ctx)
+		if err != nil {
+			return DashboardOverviewResult{}, fmt.Errorf("%w: list reconcile stats: %v", ErrServiceUnavailable, err)
+		}
+		reconcileStats = &stats
 	}
 
 	return DashboardOverviewResult{
+		TraceMode: s.traceMode,
 		Totals: DashboardTotals{
 			BatchTotal: total,
 		},
-		StatusDistribution:   status,
+		StatusDistribution:   projectStatusDistribution(s.traceMode, status),
 		RipenessDistribution: ripeness,
 		UnripeMetrics: DashboardUnripeMetrics{
 			UnripeBatchCount: unripeCount,
@@ -97,4 +106,17 @@ func (s *DashboardService) GetOverview(ctx context.Context) (DashboardOverviewRe
 		RecentAnchors:  recent,
 		ReconcileStats: reconcileStats,
 	}, nil
+}
+
+func projectStatusDistribution(traceMode domain.TraceMode, input domain.StatusDistribution) domain.StatusDistribution {
+	if traceMode == domain.TraceModeDatabase {
+		return domain.StatusDistribution{
+			Stored: input.Stored,
+		}
+	}
+	return domain.StatusDistribution{
+		Anchored:      input.Anchored,
+		PendingAnchor: input.PendingAnchor,
+		AnchorFailed:  input.AnchorFailed,
+	}
 }

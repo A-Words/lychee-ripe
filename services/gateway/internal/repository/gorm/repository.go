@@ -31,7 +31,7 @@ var (
 )
 
 func (r *Repository) CreateBatch(ctx context.Context, params domain.CreateBatchParams) (domain.BatchRecord, error) {
-	if !isValidBatchStatus(params.Status) {
+	if !isValidTraceMode(params.TraceMode) || !isValidBatchStatus(params.Status) {
 		return domain.BatchRecord{}, repository.ErrInvalidState
 	}
 
@@ -139,7 +139,7 @@ func (r *Repository) ListPendingBatches(ctx context.Context, limit int) ([]domai
 	var models []BatchModel
 	if err := r.db.WithContext(ctx).
 		Preload("AnchorProof").
-		Where("status = ?", string(domain.BatchStatusPendingAnchor)).
+		Where("trace_mode = ? AND status = ?", string(domain.TraceModeBlockchain), string(domain.BatchStatusPendingAnchor)).
 		Order("created_at DESC").
 		Limit(limit).
 		Find(&models).Error; err != nil {
@@ -260,9 +260,9 @@ func (r *Repository) ListReconcileStats(ctx context.Context) (domain.ReconcileSt
 	var out row
 	if err := r.db.WithContext(ctx).Raw(
 		`SELECT
-			(SELECT COUNT(1) FROM batches WHERE status = 'pending_anchor') AS pending_count,
-			COALESCE((SELECT SUM(retry_count) FROM batches), 0) AS retried_total,
-			(SELECT COUNT(1) FROM batches WHERE status = 'anchor_failed') AS failed_total,
+			(SELECT COUNT(1) FROM batches WHERE trace_mode = 'blockchain' AND status = 'pending_anchor') AS pending_count,
+			COALESCE((SELECT SUM(retry_count) FROM batches WHERE trace_mode = 'blockchain'), 0) AS retried_total,
+			(SELECT COUNT(1) FROM batches WHERE trace_mode = 'blockchain' AND status = 'anchor_failed') AS failed_total,
 			(SELECT MAX(updated_at) FROM reconcile_jobs) AS last_reconcile_at`,
 	).Scan(&out).Error; err != nil {
 		return domain.ReconcileStats{}, mapGormErr(err)
@@ -310,6 +310,7 @@ func (r *Repository) CountBatches(ctx context.Context) (int64, error) {
 
 func (r *Repository) CountByStatus(ctx context.Context) (domain.StatusDistribution, error) {
 	type row struct {
+		Stored        int64 `gorm:"column:stored"`
 		Anchored      int64 `gorm:"column:anchored"`
 		PendingAnchor int64 `gorm:"column:pending_anchor"`
 		AnchorFailed  int64 `gorm:"column:anchor_failed"`
@@ -317,6 +318,7 @@ func (r *Repository) CountByStatus(ctx context.Context) (domain.StatusDistributi
 	var out row
 	if err := r.db.WithContext(ctx).Raw(
 		`SELECT
+			COALESCE(SUM(CASE WHEN status = 'stored' THEN 1 ELSE 0 END), 0) AS stored,
 			COALESCE(SUM(CASE WHEN status = 'anchored' THEN 1 ELSE 0 END), 0) AS anchored,
 			COALESCE(SUM(CASE WHEN status = 'pending_anchor' THEN 1 ELSE 0 END), 0) AS pending_anchor,
 			COALESCE(SUM(CASE WHEN status = 'anchor_failed' THEN 1 ELSE 0 END), 0) AS anchor_failed
@@ -325,6 +327,7 @@ func (r *Repository) CountByStatus(ctx context.Context) (domain.StatusDistributi
 		return domain.StatusDistribution{}, mapGormErr(err)
 	}
 	return domain.StatusDistribution{
+		Stored:        out.Stored,
 		Anchored:      out.Anchored,
 		PendingAnchor: out.PendingAnchor,
 		AnchorFailed:  out.AnchorFailed,
@@ -386,6 +389,7 @@ func (r *Repository) ListRecentAnchors(ctx context.Context, limit int) ([]domain
 	type row struct {
 		BatchID    string     `gorm:"column:batch_id"`
 		TraceCode  string     `gorm:"column:trace_code"`
+		TraceMode  string     `gorm:"column:trace_mode"`
 		Status     string     `gorm:"column:status"`
 		TxHash     *string    `gorm:"column:tx_hash"`
 		AnchoredAt *time.Time `gorm:"column:anchored_at"`
@@ -394,7 +398,7 @@ func (r *Repository) ListRecentAnchors(ctx context.Context, limit int) ([]domain
 	var rows []row
 	if err := r.db.WithContext(ctx).Raw(
 		`SELECT
-			b.batch_id, b.trace_code, b.status, ap.tx_hash, ap.anchored_at, b.created_at
+			b.batch_id, b.trace_code, b.trace_mode, b.status, ap.tx_hash, ap.anchored_at, b.created_at
 		FROM batches b
 		LEFT JOIN anchor_proofs ap ON ap.batch_id = b.batch_id
 		WHERE b.status = 'anchored'
@@ -410,6 +414,7 @@ func (r *Repository) ListRecentAnchors(ctx context.Context, limit int) ([]domain
 		out = append(out, domain.RecentAnchorRecord{
 			BatchID:    item.BatchID,
 			TraceCode:  item.TraceCode,
+			TraceMode:  normalizeTraceMode(item.TraceMode),
 			Status:     domain.BatchStatus(item.Status),
 			TxHash:     item.TxHash,
 			AnchoredAt: item.AnchoredAt,
@@ -440,6 +445,7 @@ func batchModelFromCreateParams(params domain.CreateBatchParams) BatchModel {
 	return BatchModel{
 		BatchID:        params.BatchID,
 		TraceCode:      params.TraceCode,
+		TraceMode:      string(params.TraceMode),
 		Status:         string(params.Status),
 		OrchardID:      params.OrchardID,
 		OrchardName:    params.OrchardName,
@@ -468,6 +474,7 @@ func batchModelToDomain(model BatchModel) domain.BatchRecord {
 	record := domain.BatchRecord{
 		BatchID:       model.BatchID,
 		TraceCode:     model.TraceCode,
+		TraceMode:     normalizeTraceMode(model.TraceMode),
 		Status:        domain.BatchStatus(model.Status),
 		OrchardID:     model.OrchardID,
 		OrchardName:   model.OrchardName,
@@ -581,11 +588,28 @@ func mapGormErr(err error) error {
 
 func isValidBatchStatus(status domain.BatchStatus) bool {
 	switch status {
-	case domain.BatchStatusPendingAnchor, domain.BatchStatusAnchored, domain.BatchStatusAnchorFailed:
+	case domain.BatchStatusStored, domain.BatchStatusPendingAnchor, domain.BatchStatusAnchored, domain.BatchStatusAnchorFailed:
 		return true
 	default:
 		return false
 	}
+}
+
+func isValidTraceMode(mode domain.TraceMode) bool {
+	switch mode {
+	case domain.TraceModeDatabase, domain.TraceModeBlockchain:
+		return true
+	default:
+		return false
+	}
+}
+
+func normalizeTraceMode(raw string) domain.TraceMode {
+	mode := domain.TraceMode(strings.TrimSpace(raw))
+	if isValidTraceMode(mode) {
+		return mode
+	}
+	return domain.TraceModeBlockchain
 }
 
 func isValidReconcileTriggerType(triggerType domain.ReconcileTriggerType) bool {

@@ -4,7 +4,7 @@ import { formatDateTime, formatPercent } from '~/utils/dashboard-format'
 
 const props = defineProps<{
   unripeMetrics: UnripeMetrics
-  reconcileStats: ReconcileStats
+  reconcileStats?: ReconcileStats | null
 }>()
 
 const unripePercent = computed(() => formatPercent(props.unripeMetrics.unripe_batch_ratio))
@@ -15,7 +15,7 @@ const progressWidth = computed(() =>
 </script>
 
 <template>
-  <div class="grid grid-cols-1 gap-4 lg:grid-cols-2">
+  <div class="grid grid-cols-1 gap-4" :class="props.reconcileStats ? 'lg:grid-cols-2' : ''">
     <UCard variant="outline" :ui="{ body: 'p-4 sm:p-5' }">
       <template #header>
         <div>
@@ -49,14 +49,14 @@ const progressWidth = computed(() =>
       </div>
     </UCard>
 
-    <UCard variant="outline" :ui="{ body: 'p-4 sm:p-5' }">
+    <UCard v-if="props.reconcileStats" variant="outline" :ui="{ body: 'p-4 sm:p-5' }">
       <template #header>
         <div>
           <h3 class="text-base font-semibold text-highlighted">
             补链统计
           </h3>
           <p class="mt-1 text-xs text-muted">
-            最近一次补链：{{ formatDateTime(reconcileStats.last_reconcile_at) }}
+            最近一次补链：{{ formatDateTime(reconcileStats?.last_reconcile_at ?? null) }}
           </p>
         </div>
       </template>
@@ -67,7 +67,7 @@ const progressWidth = computed(() =>
             待处理
           </p>
           <p class="mt-1 text-lg font-semibold text-default">
-            {{ reconcileStats.pending_count }}
+            {{ reconcileStats?.pending_count ?? 0 }}
           </p>
         </UCard>
         <UCard variant="subtle" :ui="{ body: 'px-3 py-3' }">
@@ -75,7 +75,7 @@ const progressWidth = computed(() =>
             重试总数
           </p>
           <p class="mt-1 text-lg font-semibold text-default">
-            {{ reconcileStats.retried_total }}
+            {{ reconcileStats?.retried_total ?? 0 }}
           </p>
         </UCard>
         <UCard variant="subtle" :ui="{ body: 'px-3 py-3' }">
@@ -83,7 +83,7 @@ const progressWidth = computed(() =>
             失败总数
           </p>
           <p class="mt-1 text-lg font-semibold text-default">
-            {{ reconcileStats.failed_total }}
+            {{ reconcileStats?.failed_total ?? 0 }}
           </p>
         </UCard>
       </div>

@@ -25,7 +25,7 @@ func TestTriggerManualReconcileSuccess(t *testing.T) {
 		},
 	}
 
-	svc := NewReconcileService(batchRepo, reconcileRepo, anchor, true, nil)
+	svc := NewReconcileService(batchRepo, reconcileRepo, anchor, domain.TraceModeBlockchain, nil)
 	result, err := svc.TriggerManualReconcile(context.Background(), ManualReconcileInput{
 		BatchIDs: []string{rec.BatchID},
 	})
@@ -74,7 +74,7 @@ func TestTriggerManualReconcileFailureBelowThreshold(t *testing.T) {
 			rec.BatchID: fmt.Errorf("%w: timeout", evm.ErrNodeUnavailable),
 		},
 	}
-	svc := NewReconcileService(batchRepo, reconcileRepo, anchor, true, nil)
+	svc := NewReconcileService(batchRepo, reconcileRepo, anchor, domain.TraceModeBlockchain, nil)
 
 	result, err := svc.TriggerManualReconcile(context.Background(), ManualReconcileInput{
 		BatchIDs: []string{rec.BatchID},
@@ -110,7 +110,7 @@ func TestTriggerManualReconcileFailureAtThreshold(t *testing.T) {
 			rec.BatchID: fmt.Errorf("%w: status=0", evm.ErrTxReverted),
 		},
 	}
-	svc := NewReconcileService(batchRepo, reconcileRepo, anchor, true, nil)
+	svc := NewReconcileService(batchRepo, reconcileRepo, anchor, domain.TraceModeBlockchain, nil)
 
 	_, err := svc.TriggerManualReconcile(context.Background(), ManualReconcileInput{
 		BatchIDs: []string{rec.BatchID},
@@ -144,7 +144,7 @@ func TestTriggerManualReconcileMixedBatchIDs(t *testing.T) {
 			pending.BatchID: sampleAnchorProof("0xtx4", *pending.AnchorHash),
 		},
 	}
-	svc := NewReconcileService(batchRepo, reconcileRepo, anchor, true, nil)
+	svc := NewReconcileService(batchRepo, reconcileRepo, anchor, domain.TraceModeBlockchain, nil)
 
 	result, err := svc.TriggerManualReconcile(context.Background(), ManualReconcileInput{
 		BatchIDs: []string{pending.BatchID, "missing", anchored.BatchID},
@@ -160,7 +160,7 @@ func TestTriggerManualReconcileMixedBatchIDs(t *testing.T) {
 func TestTriggerManualReconcileNotFoundWhenNoSchedulableBatch(t *testing.T) {
 	t.Parallel()
 
-	svc := NewReconcileService(newFakeReconcileBatchRepo(), newFakeReconcileRepo(), &fakeReconcileAnchorClient{}, true, nil)
+	svc := NewReconcileService(newFakeReconcileBatchRepo(), newFakeReconcileRepo(), &fakeReconcileAnchorClient{}, domain.TraceModeBlockchain, nil)
 	_, err := svc.TriggerManualReconcile(context.Background(), ManualReconcileInput{
 		BatchIDs: []string{"missing"},
 	})
@@ -169,13 +169,13 @@ func TestTriggerManualReconcileNotFoundWhenNoSchedulableBatch(t *testing.T) {
 	}
 }
 
-func TestTriggerManualReconcileReturnsServiceUnavailableWhenChainDisabled(t *testing.T) {
+func TestTriggerManualReconcileReturnsConflictInDatabaseMode(t *testing.T) {
 	t.Parallel()
 
-	svc := NewReconcileService(newFakeReconcileBatchRepo(), newFakeReconcileRepo(), nil, false, nil)
+	svc := NewReconcileService(newFakeReconcileBatchRepo(), newFakeReconcileRepo(), nil, domain.TraceModeDatabase, nil)
 	_, err := svc.TriggerManualReconcile(context.Background(), ManualReconcileInput{})
-	if !errors.Is(err, ErrServiceUnavailable) {
-		t.Fatalf("error = %v, want ErrServiceUnavailable", err)
+	if !errors.Is(err, ErrConflict) {
+		t.Fatalf("error = %v, want ErrConflict", err)
 	}
 }
 
@@ -191,7 +191,7 @@ func TestRunAutoReconcileOnce(t *testing.T) {
 			rec.BatchID: sampleAnchorProof("0xtx_auto", *rec.AnchorHash),
 		},
 	}
-	svc := NewReconcileService(batchRepo, reconcileRepo, anchor, true, nil)
+	svc := NewReconcileService(batchRepo, reconcileRepo, anchor, domain.TraceModeBlockchain, nil)
 
 	if err := svc.RunAutoReconcileOnce(context.Background()); err != nil {
 		t.Fatalf("RunAutoReconcileOnce failed: %v", err)
@@ -216,7 +216,7 @@ func TestRunAutoReconcileOnce(t *testing.T) {
 func TestTriggerManualReconcileRejectsInvalidLimit(t *testing.T) {
 	t.Parallel()
 
-	svc := NewReconcileService(newFakeReconcileBatchRepo(), newFakeReconcileRepo(), &fakeReconcileAnchorClient{}, true, nil)
+	svc := NewReconcileService(newFakeReconcileBatchRepo(), newFakeReconcileRepo(), &fakeReconcileAnchorClient{}, domain.TraceModeBlockchain, nil)
 	invalid := 0
 	_, err := svc.TriggerManualReconcile(context.Background(), ManualReconcileInput{
 		Limit: &invalid,
@@ -319,7 +319,7 @@ func (f *fakeReconcileBatchRepo) ListPendingBatches(_ context.Context, limit int
 
 	out := make([]domain.BatchRecord, 0, len(f.batches))
 	for _, record := range f.batches {
-		if record.Status == domain.BatchStatusPendingAnchor {
+		if record.TraceMode == domain.TraceModeBlockchain && record.Status == domain.BatchStatusPendingAnchor {
 			out = append(out, record)
 		}
 	}
@@ -432,6 +432,7 @@ func samplePendingBatch(batchID string, retryCount int) domain.BatchRecord {
 	return domain.BatchRecord{
 		BatchID:       batchID,
 		TraceCode:     "TRC-RECO-NCIL",
+		TraceMode:     domain.TraceModeBlockchain,
 		Status:        domain.BatchStatusPendingAnchor,
 		OrchardID:     "orchard-1",
 		OrchardName:   "orchard",

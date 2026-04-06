@@ -8,7 +8,7 @@ import { formatDateTime } from '~/utils/dashboard-format'
 
 useSeoMeta({
   title: '数据看板',
-  description: '批次、成熟度与补链状态的聚合看板。'
+  description: '批次、成熟度与存证模式的聚合看板。'
 })
 
 const { getOverview, parseDashboardError } = useDashboardApi()
@@ -25,6 +25,9 @@ const refreshTimer = ref<number | null>(null)
 const shouldStopAutoRefresh = computed(() => viewState.value === 'auth_blocked')
 const isReadyLike = computed(() => viewState.value === 'ready' || viewState.value === 'empty')
 const isEmpty = computed(() => viewState.value === 'empty')
+const showChainHistory = computed(() =>
+  Boolean(overview.value && (overview.value.trace_mode === 'blockchain' || overview.value.recent_anchors.length > 0))
+)
 
 const unavailableTitle = computed(() =>
   viewState.value === 'auth_blocked' ? '网关鉴权已开启' : '看板服务不可用'
@@ -134,11 +137,14 @@ watch(shouldStopAutoRefresh, () => {
             数据看板
           </h1>
           <p class="text-sm text-toned sm:text-base">
-            聚合展示批次状态、成熟度分布与补链统计。
+            聚合展示批次状态、成熟度分布与当前存证模式。
           </p>
         </div>
 
         <div class="flex flex-wrap items-center gap-2">
+          <UBadge v-if="overview" color="primary" variant="soft">
+            模式：{{ overview.trace_mode === 'database' ? '数据库' : '区块链' }}
+          </UBadge>
           <UBadge color="neutral" variant="soft">
             上次刷新：{{ lastRefreshText }}
           </UBadge>
@@ -174,12 +180,16 @@ watch(shouldStopAutoRefresh, () => {
         />
 
         <DashboardOverviewCards
+          :trace-mode="overview.trace_mode"
           :totals="overview.totals"
           :status-distribution="overview.status_distribution"
         />
 
         <div class="grid grid-cols-1 gap-4 xl:grid-cols-2">
-          <DashboardStatusChart :status-distribution="overview.status_distribution" />
+          <DashboardStatusChart
+            :trace-mode="overview.trace_mode"
+            :status-distribution="overview.status_distribution"
+          />
           <DashboardRipenessChart :ripeness-distribution="overview.ripeness_distribution" />
         </div>
 
@@ -188,7 +198,7 @@ watch(shouldStopAutoRefresh, () => {
           :reconcile-stats="overview.reconcile_stats"
         />
 
-        <DashboardRecentAnchorsTable :records="overview.recent_anchors" />
+        <DashboardRecentAnchorsTable v-if="showChainHistory" :records="overview.recent_anchors" />
       </div>
 
       <UCard v-else variant="outline" :ui="{ body: 'p-5 sm:p-6' }">

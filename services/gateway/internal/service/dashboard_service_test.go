@@ -15,7 +15,7 @@ func TestDashboardServiceGetOverviewEmptyData(t *testing.T) {
 	repo := &fakeDashboardRepo{
 		recentAnchors: []domain.RecentAnchorRecord{},
 	}
-	svc := NewDashboardService(repo, repo)
+	svc := NewDashboardService(repo, repo, domain.TraceModeDatabase)
 
 	result, err := svc.GetOverview(context.Background())
 	if err != nil {
@@ -31,8 +31,8 @@ func TestDashboardServiceGetOverviewEmptyData(t *testing.T) {
 	if len(result.RecentAnchors) != 0 {
 		t.Fatalf("recent_anchors len = %d, want 0", len(result.RecentAnchors))
 	}
-	if result.ReconcileStats.LastReconcileAt != nil {
-		t.Fatalf("last_reconcile_at = %v, want nil", result.ReconcileStats.LastReconcileAt)
+	if result.ReconcileStats != nil {
+		t.Fatalf("reconcile_stats = %v, want nil", result.ReconcileStats)
 	}
 }
 
@@ -59,6 +59,7 @@ func TestDashboardServiceGetOverviewNormalData(t *testing.T) {
 			{
 				BatchID:   "batch_1",
 				TraceCode: "TRC-AAAA-BBBB",
+				TraceMode: domain.TraceModeBlockchain,
 				Status:    domain.BatchStatusAnchored,
 				CreatedAt: now,
 			},
@@ -70,7 +71,7 @@ func TestDashboardServiceGetOverviewNormalData(t *testing.T) {
 			LastReconcileAt: &now,
 		},
 	}
-	svc := NewDashboardService(repo, repo)
+	svc := NewDashboardService(repo, repo, domain.TraceModeBlockchain)
 
 	result, err := svc.GetOverview(context.Background())
 	if err != nil {
@@ -95,7 +96,7 @@ func TestDashboardServiceGetOverviewNormalData(t *testing.T) {
 	if len(result.RecentAnchors) != 1 || result.RecentAnchors[0].BatchID != "batch_1" {
 		t.Fatalf("recent_anchors = %+v", result.RecentAnchors)
 	}
-	if result.ReconcileStats.LastReconcileAt == nil || !result.ReconcileStats.LastReconcileAt.Equal(now) {
+	if result.ReconcileStats == nil || result.ReconcileStats.LastReconcileAt == nil || !result.ReconcileStats.LastReconcileAt.Equal(now) {
 		t.Fatalf("last_reconcile_at = %v, want %v", result.ReconcileStats.LastReconcileAt, now)
 	}
 }
@@ -106,7 +107,7 @@ func TestDashboardServiceGetOverviewReturnsServiceUnavailableOnQueryError(t *tes
 	repo := &fakeDashboardRepo{
 		countBatchesErr: errors.New("db down"),
 	}
-	svc := NewDashboardService(repo, repo)
+	svc := NewDashboardService(repo, repo, domain.TraceModeDatabase)
 
 	_, err := svc.GetOverview(context.Background())
 	if !errors.Is(err, ErrServiceUnavailable) {
@@ -120,7 +121,7 @@ func TestDashboardServiceGetOverviewUsesFixedThresholdAndRecentLimit(t *testing.
 	repo := &fakeDashboardRepo{
 		recentAnchors: []domain.RecentAnchorRecord{},
 	}
-	svc := NewDashboardService(repo, repo)
+	svc := NewDashboardService(repo, repo, domain.TraceModeDatabase)
 
 	if _, err := svc.GetOverview(context.Background()); err != nil {
 		t.Fatalf("GetOverview failed: %v", err)

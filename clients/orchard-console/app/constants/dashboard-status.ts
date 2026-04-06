@@ -1,6 +1,6 @@
-import type { BatchStatus } from '~/types/trace'
+import type { BatchStatus, TraceMode } from '~/types/trace'
 
-type DashboardStatusColor = 'success' | 'warning' | 'error'
+type DashboardStatusColor = 'primary' | 'success' | 'warning' | 'error'
 
 export interface DashboardStatusMeta {
   label: string
@@ -8,13 +8,19 @@ export interface DashboardStatusMeta {
   chartColor: string
 }
 
-export const DASHBOARD_STATUS_ORDER: BatchStatus[] = [
-  'anchored',
-  'pending_anchor',
-  'anchor_failed'
-]
+export function getDashboardStatusOrder(traceMode: TraceMode): BatchStatus[] {
+  if (traceMode === 'database') {
+    return ['stored']
+  }
+  return ['anchored', 'pending_anchor', 'anchor_failed']
+}
 
 export const DASHBOARD_STATUS_META: Record<BatchStatus, DashboardStatusMeta> = {
+  stored: {
+    label: '已入库',
+    color: 'primary',
+    chartColor: '#3178C6'
+  },
   anchored: {
     label: '已上链',
     color: 'success',

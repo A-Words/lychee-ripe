@@ -458,6 +458,7 @@ func sampleCreateBatchParams(batchID, traceCode string) domain.CreateBatchParams
 	return domain.CreateBatchParams{
 		BatchID:     batchID,
 		TraceCode:   traceCode,
+		TraceMode:   domain.TraceModeBlockchain,
 		Status:      domain.BatchStatusPendingAnchor,
 		OrchardID:   "orchard-1",
 		OrchardName: "orchard",

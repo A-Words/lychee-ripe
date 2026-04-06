@@ -187,6 +187,7 @@ func sampleDomainBatch(status domain.BatchStatus, withProof bool) domain.BatchRe
 	record := domain.BatchRecord{
 		BatchID:     "batch_01",
 		TraceCode:   "TRC-ABCD-EFGH",
+		TraceMode:   domain.TraceModeBlockchain,
 		Status:      status,
 		OrchardID:   "orchard-1",
 		OrchardName: "orchard",

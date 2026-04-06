@@ -1,13 +1,14 @@
-import type { BatchStatus } from '~/types/trace'
+import type { BatchStatus, TraceMode } from '~/types/trace'
 
 export interface DashboardTotals {
   batch_total: number
 }
 
 export interface BatchStatusDistribution {
-  anchored: number
-  pending_anchor: number
-  anchor_failed: number
+  stored?: number
+  anchored?: number
+  pending_anchor?: number
+  anchor_failed?: number
 }
 
 export interface RipenessDistribution {
@@ -41,12 +42,13 @@ export interface ReconcileStats {
 }
 
 export interface DashboardOverviewResponse {
+  trace_mode: TraceMode
   totals: DashboardTotals
   status_distribution: BatchStatusDistribution
   ripeness_distribution: RipenessDistribution
   unripe_metrics: UnripeMetrics
   recent_anchors: RecentAnchorRecord[]
-  reconcile_stats: ReconcileStats
+  reconcile_stats?: ReconcileStats | null
 }
 
 export interface DashboardErrorResponse {

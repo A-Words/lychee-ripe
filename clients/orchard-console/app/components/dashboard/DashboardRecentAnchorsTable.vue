@@ -14,7 +14,7 @@ const props = defineProps<{
     <template #header>
       <div class="px-4 py-4 sm:px-5">
         <h3 class="text-base font-semibold text-highlighted">
-          最近上链记录
+          最近链上记录
         </h3>
         <p class="mt-1 text-xs text-muted">
           默认按 created_at 倒序
@@ -27,8 +27,8 @@ const props = defineProps<{
         color="neutral"
         variant="subtle"
         icon="i-lucide-database-zap"
-        title="暂无上链记录"
-        description="当前环境尚未产生 anchored 批次。"
+        title="暂无链上记录"
+        description="当前环境尚未产生 blockchain 模式的 anchored 批次。"
       />
     </div>
 

@@ -13,6 +13,7 @@ import (
 type batchResponse struct {
 	BatchID     string               `json:"batch_id"`
 	TraceCode   string               `json:"trace_code"`
+	TraceMode   string               `json:"trace_mode"`
 	Status      string               `json:"status"`
 	OrchardID   string               `json:"orchard_id"`
 	OrchardName string               `json:"orchard_name"`
@@ -56,6 +57,7 @@ func toBatchResponse(record domain.BatchRecord) batchResponse {
 	resp := batchResponse{
 		BatchID:     record.BatchID,
 		TraceCode:   record.TraceCode,
+		TraceMode:   string(record.TraceMode),
 		Status:      string(record.Status),
 		OrchardID:   record.OrchardID,
 		OrchardName: record.OrchardName,

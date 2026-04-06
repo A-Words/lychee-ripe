@@ -14,6 +14,7 @@ import (
 	"github.com/lychee-ripe/gateway/internal/chain/evm"
 	"github.com/lychee-ripe/gateway/internal/config"
 	gatewaydb "github.com/lychee-ripe/gateway/internal/db"
+	"github.com/lychee-ripe/gateway/internal/domain"
 	"github.com/lychee-ripe/gateway/internal/handler"
 	"github.com/lychee-ripe/gateway/internal/middleware"
 	"github.com/lychee-ripe/gateway/internal/proxy"
@@ -76,7 +77,7 @@ func main() {
 	}
 
 	var chainAdapter *evm.Adapter
-	if cfg.Chain.Enabled {
+	if cfg.Trace.Mode == domain.TraceModeBlockchain {
 		chainAdapter, err = evm.NewAdapter(context.Background(), cfg.Chain)
 		if err != nil {
 			logger.Error("failed to initialize chain adapter", "error", err)
@@ -93,14 +94,16 @@ func main() {
 	}
 
 	repo := repositorygorm.New(gdb)
-	batchSvc := service.NewBatchCreateService(repo, chainAdapter, cfg.Chain.Enabled, logger)
-	traceSvc := service.NewTraceService(repo, chainAdapter, cfg.Chain.Enabled)
-	reconcileSvc := service.NewReconcileService(repo, repo, chainAdapter, cfg.Chain.Enabled, logger)
-	dashboardSvc := service.NewDashboardService(repo, repo)
+	batchSvc := service.NewBatchCreateService(repo, chainAdapter, cfg.Trace.Mode, logger)
+	traceSvc := service.NewTraceService(repo, chainAdapter, cfg.Trace.Mode)
+	reconcileSvc := service.NewReconcileService(repo, repo, chainAdapter, cfg.Trace.Mode, logger)
+	dashboardSvc := service.NewDashboardService(repo, repo, cfg.Trace.Mode)
 
 	appCtx, appCancel := context.WithCancel(context.Background())
 	defer appCancel()
-	go reconcileSvc.StartAutoReconcileWorker(appCtx)
+	if cfg.Trace.Mode == domain.TraceModeBlockchain {
+		go reconcileSvc.StartAutoReconcileWorker(appCtx)
+	}
 
 	// Compose the middleware chain.
 	mux := http.NewServeMux()
@@ -138,7 +141,7 @@ func main() {
 			"upstream", cfg.Upstream.BaseURL,
 			"db_driver", cfg.DB.Driver,
 			"db_dsn", gatewaydb.SanitizeDSN(cfg.DB.Driver, cfg.DB.DSN),
-			"chain_enabled", cfg.Chain.Enabled,
+			"trace_mode", cfg.Trace.Mode,
 			"chain_rpc_url", cfg.Chain.RPCURL,
 			"chain_id", cfg.Chain.ChainID,
 			"chain_contract_address", cfg.Chain.ContractAddress,

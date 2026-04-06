@@ -165,7 +165,7 @@ paths:
   /v1/batches:
     post:
       operationId: createBatch
-      summary: Create a harvest batch and trigger anchor workflow
+      summary: Create a harvest batch in database or blockchain trace mode
       tags: [batch]
       security:
         - ApiKeyAuth: []
@@ -177,13 +177,13 @@ paths:
               $ref: "#/components/schemas/BatchCreateRequest"
       responses:
         "201":
-          description: Batch created and anchored
+          description: Batch created successfully in the active trace mode
           content:
             application/json:
               schema:
                 $ref: "#/components/schemas/Batch"
         "202":
-          description: Batch accepted and saved, chain anchor pending
+          description: Batch accepted and saved, blockchain anchor pending
           content:
             application/json:
               schema:
@@ -263,7 +263,7 @@ paths:
   /v1/trace/{trace_code}:
     get:
       operationId: getPublicTrace
-      summary: Public trace query and verification result
+      summary: Public trace query and mode-aware verification result
       tags: [trace]
       security: []
       parameters:
@@ -282,7 +282,7 @@ paths:
               schema:
                 $ref: "#/components/schemas/ErrorResponse"
         "503":
-          description: Verify service unavailable
+          description: Blockchain verify service unavailable
           content:
             application/json:
               schema:
@@ -324,7 +324,7 @@ paths:
   /v1/batches/reconcile:
     post:
       operationId: reconcileBatches
-      summary: Trigger manual reconcile for pending anchor batches
+      summary: Trigger manual reconcile for pending blockchain anchor batches
       tags: [batch]
       security:
         - ApiKeyAuth: []
@@ -365,6 +365,12 @@ paths:
             application/json:
               schema:
                 $ref: "#/components/schemas/ErrorResponse"
+        "409":
+          description: Reconcile is not available in database mode
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ErrorResponse"
         "503":
           description: Reconcile service unavailable
           content:
@@ -399,6 +405,10 @@ components:
       description: Public trace code.
 
   schemas:
+    TraceMode:
+      type: string
+      enum: [database, blockchain]
+
     RipenessLabel:
       type: string
       enum: [green, half, red, young]
@@ -409,11 +419,11 @@ components:
 
     BatchStatus:
       type: string
-      enum: [pending_anchor, anchored, anchor_failed]
+      enum: [stored, pending_anchor, anchored, anchor_failed]
 
     VerifyStatus:
       type: string
-      enum: [pass, fail, pending]
+      enum: [pass, fail, pending, recorded]
 
     UnripeHandling:
       type: string
@@ -694,12 +704,14 @@ components:
     Batch:
       type: object
       required:
-        [batch_id, trace_code, status, orchard_id, orchard_name, plot_id, harvested_at, summary, created_at]
+        [batch_id, trace_code, trace_mode, status, orchard_id, orchard_name, plot_id, harvested_at, summary, created_at]
       properties:
         batch_id:
           type: string
         trace_code:
           type: string
+        trace_mode:
+          $ref: "#/components/schemas/TraceMode"
         status:
           $ref: "#/components/schemas/BatchStatus"
         orchard_id:
@@ -729,12 +741,14 @@ components:
 
     TraceBatch:
       type: object
-      required: [batch_id, trace_code, status, orchard_name, plot_name, harvested_at, summary, created_at]
+      required: [batch_id, trace_code, trace_mode, status, orchard_name, plot_name, harvested_at, summary, created_at]
       properties:
         batch_id:
           type: string
         trace_code:
           type: string
+        trace_mode:
+          $ref: "#/components/schemas/TraceMode"
         status:
           $ref: "#/components/schemas/BatchStatus"
         orchard_name:
@@ -778,8 +792,10 @@ components:
 
     BatchStatusDistribution:
       type: object
-      required: [anchored, pending_anchor, anchor_failed]
       properties:
+        stored:
+          type: integer
+          minimum: 0
         anchored:
           type: integer
           minimum: 0
@@ -868,8 +884,10 @@ components:
     DashboardOverviewResponse:
       type: object
       required:
-        [totals, status_distribution, ripeness_distribution, unripe_metrics, recent_anchors, reconcile_stats]
+        [trace_mode, totals, status_distribution, ripeness_distribution, unripe_metrics, recent_anchors]
       properties:
+        trace_mode:
+          $ref: "#/components/schemas/TraceMode"
         totals:
           $ref: "#/components/schemas/DashboardTotals"
         status_distribution:
@@ -883,7 +901,9 @@ components:
           items:
             $ref: "#/components/schemas/RecentAnchorRecord"
         reconcile_stats:
-          $ref: "#/components/schemas/ReconcileStats"
+          oneOf:
+            - $ref: "#/components/schemas/ReconcileStats"
+            - type: "null"
 
     ReconcileRequest:
       type: object

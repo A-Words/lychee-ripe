@@ -22,6 +22,7 @@ type traceResponse struct {
 type traceBatchResponse struct {
 	BatchID     string               `json:"batch_id"`
 	TraceCode   string               `json:"trace_code"`
+	TraceMode   string               `json:"trace_mode"`
 	Status      string               `json:"status"`
 	OrchardName string               `json:"orchard_name"`
 	PlotName    string               `json:"plot_name"`
@@ -71,6 +72,7 @@ func toTraceResponse(result service.TraceQueryResult) traceResponse {
 		Batch: traceBatchResponse{
 			BatchID:     result.Batch.BatchID,
 			TraceCode:   result.Batch.TraceCode,
+			TraceMode:   string(result.Batch.TraceMode),
 			Status:      string(result.Batch.Status),
 			OrchardName: result.Batch.OrchardName,
 			PlotName:    plotName,

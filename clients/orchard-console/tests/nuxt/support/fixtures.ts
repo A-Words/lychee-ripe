@@ -36,6 +36,7 @@ export function buildBatch(overrides: Partial<Batch> = {}): Batch {
   return {
     batch_id: 'batch-001',
     trace_code: 'TRC-9A7X-11QF',
+    trace_mode: 'blockchain',
     status: 'anchored',
     orchard_id: 'orchard-demo-01',
     orchard_name: '荔枝示范园',
@@ -65,6 +66,7 @@ export function buildTraceResponse(overrides: Partial<TraceResponse> = {}): Trac
     batch: {
       batch_id: 'batch-001',
       trace_code: 'TRC-9A7X-11QF',
+      trace_mode: 'blockchain',
       status: 'anchored',
       orchard_name: '荔枝示范园',
       plot_name: 'A1 区',
@@ -83,6 +85,7 @@ export function buildTraceResponse(overrides: Partial<TraceResponse> = {}): Trac
 
 export function buildDashboardOverview(overrides: Partial<DashboardOverviewResponse> = {}): DashboardOverviewResponse {
   return {
+    trace_mode: overrides.trace_mode ?? 'blockchain',
     totals: {
       batch_total: 8,
       ...overrides.totals
@@ -117,12 +120,14 @@ export function buildDashboardOverview(overrides: Partial<DashboardOverviewRespo
         created_at: '2026-03-30T09:00:00.000Z'
       }
     ],
-    reconcile_stats: {
-      pending_count: 2,
-      retried_total: 4,
-      failed_total: 1,
-      last_reconcile_at: '2026-03-30T10:00:00.000Z',
-      ...overrides.reconcile_stats
-    }
+    reconcile_stats: overrides.reconcile_stats === null
+      ? null
+      : {
+          pending_count: 2,
+          retried_total: 4,
+          failed_total: 1,
+          last_reconcile_at: '2026-03-30T10:00:00.000Z',
+          ...overrides.reconcile_stats
+        }
   }
 }

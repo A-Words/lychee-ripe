@@ -31,7 +31,7 @@
               数据看板
             </h2>
             <p class="text-sm text-toned sm:text-base">
-              聚合查看批次状态、成熟度分布与补链统计。
+              聚合查看批次状态、成熟度分布与当前存证模式。
             </p>
             <div class="pt-2">
               <UButton to="/dashboard" icon="i-lucide-chart-pie" label="进入数据看板" />
@@ -45,7 +45,7 @@
               公众溯源查询
             </h2>
             <p class="text-sm text-toned sm:text-base">
-              通过溯源码查询荔枝批次摘要与链上验签结论。
+              通过溯源码查询荔枝批次摘要、数据库存证或链上校验结果。
             </p>
             <div class="pt-2">
               <UButton to="/trace" icon="i-lucide-arrow-right" label="进入查询页" />

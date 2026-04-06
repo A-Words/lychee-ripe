@@ -10,6 +10,7 @@ const stubs = createNuxtUiStubs()
 
 describe('batch create result', () => {
   it.each([
+    ['stored', '已入库'],
     ['anchored', '上链成功'],
     ['pending_anchor', '已保存待补链'],
     ['anchor_failed', '补链失败']
@@ -43,12 +44,25 @@ describe('batch create result', () => {
   it('shows anchor proof only when it exists', async () => {
     const wrapper = await mountResult({
       batch: buildBatch({
+        trace_mode: 'database',
         status: 'pending_anchor',
         anchor_proof: null
       })
     })
 
     expect(wrapper.text()).not.toContain('链上交易哈希')
+  })
+
+  it('shows database wording for stored batches', async () => {
+    const wrapper = await mountResult({
+      batch: buildBatch({
+        trace_mode: 'database',
+        status: 'stored',
+        anchor_proof: null
+      })
+    })
+
+    expect(wrapper.text()).toContain('数据库存证，可直接查询。')
   })
 
   it('emits continue when the user wants to create another batch', async () => {

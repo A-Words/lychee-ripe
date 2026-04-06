@@ -20,6 +20,7 @@ func TestGetDashboardOverviewReturns200(t *testing.T) {
 	tx := "0xabc"
 	svc := &fakeDashboardGetService{
 		result: service.DashboardOverviewResult{
+			TraceMode: domain.TraceModeBlockchain,
 			Totals: service.DashboardTotals{BatchTotal: 10},
 			StatusDistribution: domain.StatusDistribution{
 				Anchored:      7,
@@ -42,13 +43,14 @@ func TestGetDashboardOverviewReturns200(t *testing.T) {
 				{
 					BatchID:    "batch_1",
 					TraceCode:  "TRC-1111-AAAA",
+					TraceMode:  domain.TraceModeBlockchain,
 					Status:     domain.BatchStatusAnchored,
 					TxHash:     &tx,
 					AnchoredAt: &last,
 					CreatedAt:  last,
 				},
 			},
-			ReconcileStats: domain.ReconcileStats{
+			ReconcileStats: &domain.ReconcileStats{
 				PendingCount:    2,
 				RetriedTotal:    3,
 				FailedTotal:     1,
@@ -73,6 +75,9 @@ func TestGetDashboardOverviewReturns200(t *testing.T) {
 	if resp["totals"] == nil || resp["status_distribution"] == nil || resp["ripeness_distribution"] == nil {
 		t.Fatalf("missing top-level fields: %+v", resp)
 	}
+	if resp["trace_mode"] != "blockchain" {
+		t.Fatalf("trace_mode = %v, want blockchain", resp["trace_mode"])
+	}
 	if resp["recent_anchors"] == nil || resp["reconcile_stats"] == nil {
 		t.Fatalf("missing recent_anchors/reconcile_stats: %+v", resp)
 	}
@@ -83,12 +88,11 @@ func TestGetDashboardOverviewRecentAnchorsAndReconcileStatsShape(t *testing.T) {
 
 	svc := &fakeDashboardGetService{
 		result: service.DashboardOverviewResult{
-			RecentAnchors: []domain.RecentAnchorRecord{},
-			ReconcileStats: domain.ReconcileStats{
-				PendingCount: 0,
-				RetriedTotal: 0,
-				FailedTotal:  0,
+			TraceMode:     domain.TraceModeDatabase,
+			StatusDistribution: domain.StatusDistribution{
+				Stored: 3,
 			},
+			RecentAnchors: []domain.RecentAnchorRecord{},
 			UnripeMetrics: service.DashboardUnripeMetrics{
 				Threshold:      0.15,
 				UnripeHandling: "sorted_out",
@@ -115,12 +119,18 @@ func TestGetDashboardOverviewRecentAnchorsAndReconcileStatsShape(t *testing.T) {
 	if len(recent) != 0 {
 		t.Fatalf("recent_anchors len = %d, want 0", len(recent))
 	}
-	stats, ok := resp["reconcile_stats"].(map[string]any)
+	status, ok := resp["status_distribution"].(map[string]any)
 	if !ok {
-		t.Fatalf("reconcile_stats type = %T, want object", resp["reconcile_stats"])
+		t.Fatalf("status_distribution type = %T, want object", resp["status_distribution"])
 	}
-	if stats["pending_count"] == nil || stats["retried_total"] == nil || stats["failed_total"] == nil {
-		t.Fatalf("reconcile_stats missing required fields: %+v", stats)
+	if status["stored"] != float64(3) {
+		t.Fatalf("stored = %v, want 3", status["stored"])
+	}
+	if status["anchored"] != nil || status["pending_anchor"] != nil || status["anchor_failed"] != nil {
+		t.Fatalf("unexpected blockchain fields in database mode: %+v", status)
+	}
+	if _, ok := resp["reconcile_stats"]; ok {
+		t.Fatalf("reconcile_stats should be omitted in database mode: %+v", resp)
 	}
 }
 

@@ -21,8 +21,10 @@ db:
     ssl_mode: "disable"
     schema: "public"
 
+trace:
+  mode: "database" # database | blockchain
+
 chain:
-  enabled: false
   rpc_url: "http://127.0.0.1:8545"
   chain_id: "31337"
   contract_address: "0x1234567890abcdef1234567890abcdef12345678"
