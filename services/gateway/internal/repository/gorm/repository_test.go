@@ -510,6 +510,100 @@ func TestModeScopedReadsAndDashboardAggregationsSQLite(t *testing.T) {
 	}
 }
 
+func TestResolvePrincipalBindsActivePreProvisionedUser(t *testing.T) {
+	t.Parallel()
+
+	ctx := context.Background()
+	repo, sqlDB := mustNewSQLiteRepo(t)
+	defer sqlDB.Close()
+
+	now := time.Now().UTC()
+	user := UserModel{
+		ID:          "user-1",
+		Email:       "operator@example.com",
+		DisplayName: "Provisioned Operator",
+		Role:        string(domain.UserRoleOperator),
+		Status:      string(domain.UserStatusActive),
+		CreatedAt:   now,
+		UpdatedAt:   now,
+	}
+	if err := repo.db.WithContext(ctx).Create(&user).Error; err != nil {
+		t.Fatalf("seed user: %v", err)
+	}
+
+	claims := domain.IdentityClaims{
+		Subject:     "oidc-sub-1",
+		Email:       "operator@example.com",
+		DisplayName: "OIDC Operator",
+	}
+	principal, err := repo.ResolvePrincipal(ctx, claims, domain.AuthModeOIDC, now.Add(time.Minute))
+	if err != nil {
+		t.Fatalf("ResolvePrincipal returned error: %v", err)
+	}
+	if principal.Subject != "oidc-sub-1" {
+		t.Fatalf("principal subject = %q, want oidc-sub-1", principal.Subject)
+	}
+
+	var stored UserModel
+	if err := repo.db.WithContext(ctx).Where("id = ?", user.ID).First(&stored).Error; err != nil {
+		t.Fatalf("reload user: %v", err)
+	}
+	if stored.OIDCSubject == nil || *stored.OIDCSubject != "oidc-sub-1" {
+		t.Fatalf("oidc_subject = %v, want oidc-sub-1", stored.OIDCSubject)
+	}
+	if stored.DisplayName != "OIDC Operator" {
+		t.Fatalf("display_name = %q, want OIDC Operator", stored.DisplayName)
+	}
+	if stored.LastLoginAt == nil {
+		t.Fatal("expected last_login_at to be set")
+	}
+}
+
+func TestResolvePrincipalDoesNotBindDisabledPreProvisionedUser(t *testing.T) {
+	t.Parallel()
+
+	ctx := context.Background()
+	repo, sqlDB := mustNewSQLiteRepo(t)
+	defer sqlDB.Close()
+
+	now := time.Now().UTC()
+	user := UserModel{
+		ID:          "user-2",
+		Email:       "disabled@example.com",
+		DisplayName: "Disabled User",
+		Role:        string(domain.UserRoleOperator),
+		Status:      string(domain.UserStatusDisabled),
+		CreatedAt:   now,
+		UpdatedAt:   now,
+	}
+	if err := repo.db.WithContext(ctx).Create(&user).Error; err != nil {
+		t.Fatalf("seed user: %v", err)
+	}
+
+	claims := domain.IdentityClaims{
+		Subject:     "oidc-disabled-sub",
+		Email:       "disabled@example.com",
+		DisplayName: "Attempted Login",
+	}
+	if _, err := repo.ResolvePrincipal(ctx, claims, domain.AuthModeOIDC, now.Add(time.Minute)); !errors.Is(err, repository.ErrInvalidState) {
+		t.Fatalf("ResolvePrincipal error = %v, want ErrInvalidState", err)
+	}
+
+	var stored UserModel
+	if err := repo.db.WithContext(ctx).Where("id = ?", user.ID).First(&stored).Error; err != nil {
+		t.Fatalf("reload user: %v", err)
+	}
+	if stored.OIDCSubject != nil {
+		t.Fatalf("oidc_subject = %v, want nil", stored.OIDCSubject)
+	}
+	if stored.DisplayName != "Disabled User" {
+		t.Fatalf("display_name = %q, want Disabled User", stored.DisplayName)
+	}
+	if stored.LastLoginAt != nil {
+		t.Fatalf("last_login_at = %v, want nil", stored.LastLoginAt)
+	}
+}
+
 func mustNewSQLiteRepo(t *testing.T) (*Repository, *sql.DB) {
 	t.Helper()
 	cfg := config.DBConfig{
@@ -539,6 +633,9 @@ func mustNewRepoWithConfig(t *testing.T, cfg config.DBConfig) (*Repository, *sql
 		&ReconcileJobModel{},
 		&ReconcileJobItemModel{},
 		&AuditLogModel{},
+		&UserModel{},
+		&OrchardModel{},
+		&PlotModel{},
 	); err != nil {
 		t.Fatalf("auto migrate: %v", err)
 	}

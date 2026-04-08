@@ -50,6 +50,9 @@ func TestDefaults(t *testing.T) {
 	if cfg.Chain.ReceiptPollIntervalMS != 500 {
 		t.Errorf("unexpected default chain.receipt_poll_interval_ms: %d", cfg.Chain.ReceiptPollIntervalMS)
 	}
+	if got := cfg.CORS.AllowedMethods; len(got) != 5 || got[0] != "GET" || got[1] != "POST" || got[2] != "PATCH" || got[3] != "DELETE" || got[4] != "OPTIONS" {
+		t.Errorf("unexpected default cors.allowed_methods: %#v", got)
+	}
 }
 
 func TestLoad(t *testing.T) {
@@ -145,6 +148,9 @@ trace:
 	// Defaults should be preserved for unset fields.
 	if cfg.CORS.MaxAgeS != 3600 {
 		t.Errorf("cors max_age_s = %d, want 3600 (default)", cfg.CORS.MaxAgeS)
+	}
+	if got := cfg.CORS.AllowedMethods; len(got) != 5 || got[0] != "GET" || got[1] != "POST" || got[2] != "PATCH" || got[3] != "DELETE" || got[4] != "OPTIONS" {
+		t.Errorf("unexpected default cors.allowed_methods: %#v", got)
 	}
 }
 

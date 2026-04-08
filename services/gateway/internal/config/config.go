@@ -244,7 +244,7 @@ func Defaults() Config {
 		CORS: CORSConfig{
 			Enabled:        true,
 			AllowedOrigins: []string{"*"},
-			AllowedMethods: []string{"GET", "POST", "OPTIONS"},
+			AllowedMethods: []string{"GET", "POST", "PATCH", "DELETE", "OPTIONS"},
 			AllowedHeaders: []string{"Content-Type", "Authorization", "X-API-Key"},
 			MaxAgeS:        3600,
 		},

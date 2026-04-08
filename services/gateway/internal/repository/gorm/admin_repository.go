@@ -45,6 +45,9 @@ func (r *Repository) ResolvePrincipal(
 			if err := tx.Where("email = ? AND oidc_subject IS NULL", email).First(&user).Error; err != nil {
 				return mapGormErr(err)
 			}
+			if user.Status != string(domain.UserStatusActive) {
+				return repository.ErrInvalidState
+			}
 			user.OIDCSubject = &subject
 			if displayName != "" {
 				user.DisplayName = displayName

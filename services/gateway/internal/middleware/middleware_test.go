@@ -249,7 +249,7 @@ func TestCORSPreflight(t *testing.T) {
 	cfg := config.CORSConfig{
 		Enabled:        true,
 		AllowedOrigins: []string{"*"},
-		AllowedMethods: []string{"GET", "POST"},
+		AllowedMethods: []string{"GET", "POST", "PATCH", "DELETE"},
 		AllowedHeaders: []string{"Content-Type"},
 		MaxAgeS:        3600,
 	}
@@ -266,6 +266,9 @@ func TestCORSPreflight(t *testing.T) {
 	}
 	if rec.Header().Get("Access-Control-Allow-Origin") != "*" {
 		t.Error("missing CORS origin header")
+	}
+	if rec.Header().Get("Access-Control-Allow-Methods") != "GET, POST, PATCH, DELETE" {
+		t.Errorf("allow methods = %q, want GET, POST, PATCH, DELETE", rec.Header().Get("Access-Control-Allow-Methods"))
 	}
 }
 

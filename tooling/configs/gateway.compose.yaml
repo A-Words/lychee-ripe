@@ -52,6 +52,8 @@ cors:
   allowed_methods:
     - "GET"
     - "POST"
+    - "PATCH"
+    - "DELETE"
     - "OPTIONS"
   allowed_headers:
     - "Content-Type"

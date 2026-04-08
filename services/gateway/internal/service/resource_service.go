@@ -98,9 +98,11 @@ func (s *OrchardService) Update(ctx context.Context, orchardID string, input Orc
 	if strings.TrimSpace(current.OrchardName) == "" {
 		return domain.OrchardRecord{}, ErrInvalidRequest
 	}
-	if current.Status == "" {
-		current.Status = domain.ResourceStatusActive
+	status, err := normalizeResourceStatus(current.Status)
+	if err != nil {
+		return domain.OrchardRecord{}, err
 	}
+	current.Status = status
 	updated, err := s.repo.UpdateOrchard(ctx, current)
 	if err != nil {
 		if errors.Is(err, repository.ErrNotFound) {
@@ -169,6 +171,11 @@ func (s *PlotService) Update(ctx context.Context, plotID string, input PlotInput
 		current.Status = input.Status
 	}
 	current.UpdatedAt = s.nowFn()
+	status, err := normalizeResourceStatus(current.Status)
+	if err != nil {
+		return domain.PlotRecord{}, err
+	}
+	current.Status = status
 	updated, err := s.repo.UpdatePlot(ctx, current)
 	if err != nil {
 		if errors.Is(err, repository.ErrNotFound) {
@@ -248,9 +255,11 @@ func normalizeOrchardInput(input OrchardInput, now time.Time, setID bool) (domai
 	if record.OrchardID == "" || record.OrchardName == "" {
 		return domain.OrchardRecord{}, ErrInvalidRequest
 	}
-	if record.Status == "" {
-		record.Status = domain.ResourceStatusActive
+	status, err := normalizeResourceStatus(record.Status)
+	if err != nil {
+		return domain.OrchardRecord{}, err
 	}
+	record.Status = status
 	return record, nil
 }
 
@@ -269,8 +278,23 @@ func normalizePlotInput(input PlotInput, now time.Time, setID bool) (domain.Plot
 	if record.PlotID == "" || record.OrchardID == "" || record.PlotName == "" {
 		return domain.PlotRecord{}, ErrInvalidRequest
 	}
-	if record.Status == "" {
-		record.Status = domain.ResourceStatusActive
+	status, err := normalizeResourceStatus(record.Status)
+	if err != nil {
+		return domain.PlotRecord{}, err
 	}
+	record.Status = status
 	return record, nil
+}
+
+func normalizeResourceStatus(status domain.ResourceStatus) (domain.ResourceStatus, error) {
+	switch strings.TrimSpace(string(status)) {
+	case "":
+		return domain.ResourceStatusActive, nil
+	case string(domain.ResourceStatusActive):
+		return domain.ResourceStatusActive, nil
+	case string(domain.ResourceStatusArchived):
+		return domain.ResourceStatusArchived, nil
+	default:
+		return "", ErrInvalidRequest
+	}
 }
