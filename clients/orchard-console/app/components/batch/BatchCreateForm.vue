@@ -83,7 +83,11 @@ watch(() => state.orchardPresetId, (value) => {
   if (firstPlot) {
     state.plot_id = firstPlot.plot_id
     state.plot_name = firstPlot.plot_name
+    return
   }
+
+  state.plot_id = ''
+  state.plot_name = ''
 })
 
 watch(() => state.plotPresetId, (value) => {

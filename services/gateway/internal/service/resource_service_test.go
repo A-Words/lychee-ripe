@@ -94,6 +94,62 @@ func TestOrchardServiceUpdateRejectsInvalidStatus(t *testing.T) {
 	}
 }
 
+func TestOrchardServiceUpdatePreservesArchivedStatusWhenOmitted(t *testing.T) {
+	t.Parallel()
+
+	repo := &fakeOrchardRepo{
+		record: domain.OrchardRecord{
+			OrchardID:   "orchard-1",
+			OrchardName: "Archived Orchard",
+			Status:      domain.ResourceStatusArchived,
+			CreatedAt:   time.Now().UTC(),
+			UpdatedAt:   time.Now().UTC(),
+		},
+	}
+	svc := NewOrchardService(repo)
+
+	updated, err := svc.Update(context.Background(), "orchard-1", OrchardInput{
+		OrchardName: "Archived Orchard Renamed",
+	})
+	if err != nil {
+		t.Fatalf("Update returned error: %v", err)
+	}
+	if updated.Status != domain.ResourceStatusArchived {
+		t.Fatalf("status = %q, want archived", updated.Status)
+	}
+	if repo.record.Status != domain.ResourceStatusArchived {
+		t.Fatalf("stored status = %q, want archived", repo.record.Status)
+	}
+}
+
+func TestOrchardServiceUpdatePreservesActiveStatusWhenOmitted(t *testing.T) {
+	t.Parallel()
+
+	repo := &fakeOrchardRepo{
+		record: domain.OrchardRecord{
+			OrchardID:   "orchard-1",
+			OrchardName: "Active Orchard",
+			Status:      domain.ResourceStatusActive,
+			CreatedAt:   time.Now().UTC(),
+			UpdatedAt:   time.Now().UTC(),
+		},
+	}
+	svc := NewOrchardService(repo)
+
+	updated, err := svc.Update(context.Background(), "orchard-1", OrchardInput{
+		OrchardName: "Active Orchard Renamed",
+	})
+	if err != nil {
+		t.Fatalf("Update returned error: %v", err)
+	}
+	if updated.Status != domain.ResourceStatusActive {
+		t.Fatalf("status = %q, want active", updated.Status)
+	}
+	if repo.record.Status != domain.ResourceStatusActive {
+		t.Fatalf("stored status = %q, want active", repo.record.Status)
+	}
+}
+
 func TestPlotServiceUpdateRejectsInvalidStatus(t *testing.T) {
 	t.Parallel()
 

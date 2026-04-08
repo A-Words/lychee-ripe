@@ -93,7 +93,9 @@ func (s *OrchardService) Update(ctx context.Context, orchardID string, input Orc
 		return domain.OrchardRecord{}, ErrServiceUnavailable
 	}
 	current.OrchardName = strings.TrimSpace(input.OrchardName)
-	current.Status = input.Status
+	if input.Status != "" {
+		current.Status = input.Status
+	}
 	current.UpdatedAt = s.nowFn()
 	if strings.TrimSpace(current.OrchardName) == "" {
 		return domain.OrchardRecord{}, ErrInvalidRequest

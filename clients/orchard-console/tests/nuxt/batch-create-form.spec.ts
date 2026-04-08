@@ -47,6 +47,24 @@ describe('batch create form', () => {
     expect(getField(wrapper, 'plot_name').get('input').element.value).toBe('东坡 2 号地块')
   })
 
+  it('clears plot fields when switching to an orchard without plots', async () => {
+    const wrapper = await mountForm()
+
+    await getField(wrapper, 'orchardPresetId').get('select').setValue('orchard-east-02')
+    await flushUi()
+
+    expect(getField(wrapper, 'plotPresetId').get('select').element.value).toBe('plot-e01')
+    expect(getField(wrapper, 'plot_id').get('input').element.value).toBe('plot-e01')
+    expect(getField(wrapper, 'plot_name').get('input').element.value).toBe('东坡 1 号地块')
+
+    await getField(wrapper, 'orchardPresetId').get('select').setValue('orchard-empty-03')
+    await flushUi()
+
+    expect(getField(wrapper, 'plotPresetId').get('select').element.value).toBe('')
+    expect(getField(wrapper, 'plot_id').get('input').element.value).toBe('')
+    expect(getField(wrapper, 'plot_name').get('input').element.value).toBe('')
+  })
+
   it('blocks submit until unripe confirmation is checked', async () => {
     const wrapper = await mountForm({
       requireConfirmUnripe: true
@@ -127,5 +145,10 @@ const ORCHARDS: OrchardWithPlots[] = [
       { plot_id: 'plot-e01', plot_name: '东坡 1 号地块' },
       { plot_id: 'plot-e02', plot_name: '东坡 2 号地块' }
     ]
+  },
+  {
+    orchard_id: 'orchard-empty-03',
+    orchard_name: '空白果园',
+    plots: []
   }
 ]
