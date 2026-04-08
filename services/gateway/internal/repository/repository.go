@@ -45,7 +45,6 @@ type DashboardQueryRepository interface {
 
 type UserRepository interface {
 	CountUsers(ctx context.Context) (int64, error)
-	CountActiveAdmins(ctx context.Context) (int64, error)
 	ResolvePrincipal(ctx context.Context, identity domain.IdentityClaims, mode domain.AuthMode, now time.Time) (domain.Principal, error)
 	GetPrincipalByID(ctx context.Context, userID string) (domain.UserRecord, error)
 	ListUsers(ctx context.Context) ([]domain.UserRecord, error)

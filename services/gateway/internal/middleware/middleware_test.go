@@ -115,6 +115,70 @@ func TestAuthRejectsReconcilePathForOperator(t *testing.T) {
 	}
 }
 
+func TestAuthAllowsCreateBatchForOperator(t *testing.T) {
+	cfg := config.AuthConfig{Mode: config.AuthModeOIDC}
+	mw := Auth(cfg, fakeValidator{}, fakeResolver{principal: domain.Principal{Role: domain.UserRoleOperator, Status: domain.UserStatusActive}}, slog.Default())
+	handler := mw(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		w.WriteHeader(http.StatusOK)
+	}))
+
+	req := httptest.NewRequest(http.MethodPost, "/v1/batches", nil)
+	req.Header.Set("Authorization", "Bearer token")
+	rec := httptest.NewRecorder()
+	handler.ServeHTTP(rec, req)
+	if rec.Code != http.StatusOK {
+		t.Errorf("expected 200 on create batch for operator, got %d", rec.Code)
+	}
+}
+
+func TestAuthAllowsGetBatchForOperator(t *testing.T) {
+	cfg := config.AuthConfig{Mode: config.AuthModeOIDC}
+	mw := Auth(cfg, fakeValidator{}, fakeResolver{principal: domain.Principal{Role: domain.UserRoleOperator, Status: domain.UserStatusActive}}, slog.Default())
+	handler := mw(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		w.WriteHeader(http.StatusOK)
+	}))
+
+	req := httptest.NewRequest(http.MethodGet, "/v1/batches/batch-1", nil)
+	req.Header.Set("Authorization", "Bearer token")
+	rec := httptest.NewRecorder()
+	handler.ServeHTTP(rec, req)
+	if rec.Code != http.StatusOK {
+		t.Errorf("expected 200 on get batch for operator, got %d", rec.Code)
+	}
+}
+
+func TestAuthRejectsDeleteBatchCollectionForOperator(t *testing.T) {
+	cfg := config.AuthConfig{Mode: config.AuthModeOIDC}
+	mw := Auth(cfg, fakeValidator{}, fakeResolver{principal: domain.Principal{Role: domain.UserRoleOperator, Status: domain.UserStatusActive}}, slog.Default())
+	handler := mw(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		w.WriteHeader(http.StatusOK)
+	}))
+
+	req := httptest.NewRequest(http.MethodDelete, "/v1/batches", nil)
+	req.Header.Set("Authorization", "Bearer token")
+	rec := httptest.NewRecorder()
+	handler.ServeHTTP(rec, req)
+	if rec.Code != http.StatusForbidden {
+		t.Errorf("expected 403 on delete /v1/batches for operator, got %d", rec.Code)
+	}
+}
+
+func TestAuthRejectsDeleteBatchItemForOperator(t *testing.T) {
+	cfg := config.AuthConfig{Mode: config.AuthModeOIDC}
+	mw := Auth(cfg, fakeValidator{}, fakeResolver{principal: domain.Principal{Role: domain.UserRoleOperator, Status: domain.UserStatusActive}}, slog.Default())
+	handler := mw(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		w.WriteHeader(http.StatusOK)
+	}))
+
+	req := httptest.NewRequest(http.MethodDelete, "/v1/batches/batch-1", nil)
+	req.Header.Set("Authorization", "Bearer token")
+	rec := httptest.NewRecorder()
+	handler.ServeHTTP(rec, req)
+	if rec.Code != http.StatusForbidden {
+		t.Errorf("expected 403 on delete /v1/batches/{id} for operator, got %d", rec.Code)
+	}
+}
+
 func TestAuthRejectsUnknownProvisionedUser(t *testing.T) {
 	cfg := config.AuthConfig{Mode: config.AuthModeOIDC}
 	mw := Auth(cfg, fakeValidator{}, fakeResolver{err: service.ErrNotFound}, slog.Default())

@@ -24,7 +24,7 @@ func TestUserAdminServiceUpdateUserRejectsDemotingLastActiveAdmin(t *testing.T) 
 			CreatedAt:   now,
 			UpdatedAt:   now,
 		},
-		activeAdminCount: 1,
+		updateErr: repository.ErrInvalidState,
 	}
 	svc := NewUserAdminService(repo)
 	svc.nowFn = func() time.Time { return now.Add(time.Minute) }
@@ -39,8 +39,8 @@ func TestUserAdminServiceUpdateUserRejectsDemotingLastActiveAdmin(t *testing.T) 
 	if !errors.Is(err, ErrInvalidRequest) {
 		t.Fatalf("error = %v, want ErrInvalidRequest", err)
 	}
-	if repo.updateCalled {
-		t.Fatal("expected repository update to be skipped")
+	if !repo.updateCalled {
+		t.Fatal("expected repository update to be called")
 	}
 }
 
@@ -58,7 +58,7 @@ func TestUserAdminServiceUpdateUserRejectsDisablingLastActiveAdmin(t *testing.T)
 			CreatedAt:   now,
 			UpdatedAt:   now,
 		},
-		activeAdminCount: 1,
+		updateErr: repository.ErrInvalidState,
 	}
 	svc := NewUserAdminService(repo)
 	svc.nowFn = func() time.Time { return now.Add(time.Minute) }
@@ -73,8 +73,8 @@ func TestUserAdminServiceUpdateUserRejectsDisablingLastActiveAdmin(t *testing.T)
 	if !errors.Is(err, ErrInvalidRequest) {
 		t.Fatalf("error = %v, want ErrInvalidRequest", err)
 	}
-	if repo.updateCalled {
-		t.Fatal("expected repository update to be skipped")
+	if !repo.updateCalled {
+		t.Fatal("expected repository update to be called")
 	}
 }
 
@@ -92,7 +92,6 @@ func TestUserAdminServiceUpdateUserAllowsChangingOneAdminWhenAnotherExists(t *te
 			CreatedAt:   now,
 			UpdatedAt:   now,
 		},
-		activeAdminCount: 2,
 	}
 	svc := NewUserAdminService(repo)
 	svc.nowFn = func() time.Time { return now.Add(time.Minute) }
@@ -129,7 +128,6 @@ func TestUserAdminServiceUpdateUserAllowsUpdatingLastAdminProfile(t *testing.T) 
 			CreatedAt:   now,
 			UpdatedAt:   now,
 		},
-		activeAdminCount: 1,
 	}
 	svc := NewUserAdminService(repo)
 	svc.nowFn = func() time.Time { return now.Add(time.Minute) }
@@ -155,7 +153,7 @@ func TestUserAdminServiceUpdateUserAllowsUpdatingLastAdminProfile(t *testing.T) 
 	}
 }
 
-func TestUserAdminServiceUpdateUserReturnsServiceUnavailableWhenCountingAdminsFails(t *testing.T) {
+func TestUserAdminServiceUpdateUserReturnsServiceUnavailableOnRepositoryFailure(t *testing.T) {
 	t.Parallel()
 
 	now := time.Date(2026, 4, 9, 8, 0, 0, 0, time.UTC)
@@ -169,7 +167,7 @@ func TestUserAdminServiceUpdateUserReturnsServiceUnavailableWhenCountingAdminsFa
 			CreatedAt:   now,
 			UpdatedAt:   now,
 		},
-		countActiveAdminsErr: repository.ErrDBUnavailable,
+		updateErr: repository.ErrDBUnavailable,
 	}
 	svc := NewUserAdminService(repo)
 	svc.nowFn = func() time.Time { return now.Add(time.Minute) }
@@ -184,18 +182,16 @@ func TestUserAdminServiceUpdateUserReturnsServiceUnavailableWhenCountingAdminsFa
 	if !errors.Is(err, ErrServiceUnavailable) {
 		t.Fatalf("error = %v, want ErrServiceUnavailable", err)
 	}
-	if repo.updateCalled {
-		t.Fatal("expected repository update to be skipped")
+	if !repo.updateCalled {
+		t.Fatal("expected repository update to be called")
 	}
 }
 
 type fakeUserAdminRepo struct {
-	user                 domain.UserRecord
-	getErr               error
-	updateErr            error
-	activeAdminCount     int64
-	countActiveAdminsErr error
-	updateCalled         bool
+	user         domain.UserRecord
+	getErr       error
+	updateErr    error
+	updateCalled bool
 }
 
 func (f *fakeUserAdminRepo) GetPrincipalByID(_ context.Context, userID string) (domain.UserRecord, error) {
@@ -206,10 +202,6 @@ func (f *fakeUserAdminRepo) GetPrincipalByID(_ context.Context, userID string) (
 		return domain.UserRecord{}, repository.ErrNotFound
 	}
 	return f.user, nil
-}
-
-func (f *fakeUserAdminRepo) CountActiveAdmins(_ context.Context) (int64, error) {
-	return f.activeAdminCount, f.countActiveAdminsErr
 }
 
 func (f *fakeUserAdminRepo) ListUsers(_ context.Context) ([]domain.UserRecord, error) {

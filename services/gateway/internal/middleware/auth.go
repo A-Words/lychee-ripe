@@ -125,7 +125,7 @@ func isAuthorized(path, method string, role domain.UserRole) bool {
 	switch {
 	case strings.HasPrefix(path, "/v1/infer/"),
 		path == "/v1/models/current",
-		path == "/v1/batches",
+		(method == http.MethodPost && path == "/v1/batches"),
 		(method == http.MethodGet && strings.HasPrefix(path, "/v1/batches/") && path != "/v1/batches/reconcile"),
 		path == "/v1/dashboard/overview":
 		return true

@@ -8,6 +8,8 @@ import (
 	"os"
 	"path/filepath"
 	"strings"
+	"sync"
+	"sync/atomic"
 	"testing"
 	"time"
 
@@ -601,6 +603,199 @@ func TestResolvePrincipalDoesNotBindDisabledPreProvisionedUser(t *testing.T) {
 	}
 	if stored.LastLoginAt != nil {
 		t.Fatalf("last_login_at = %v, want nil", stored.LastLoginAt)
+	}
+}
+
+func TestUpdateUserRejectsDemotingLastActiveAdmin(t *testing.T) {
+	t.Parallel()
+
+	ctx := context.Background()
+	repo, sqlDB := mustNewSQLiteRepo(t)
+	defer sqlDB.Close()
+
+	now := time.Now().UTC()
+	admin := UserModel{
+		ID:          "admin-1",
+		Email:       "admin@example.com",
+		DisplayName: "Admin",
+		Role:        string(domain.UserRoleAdmin),
+		Status:      string(domain.UserStatusActive),
+		CreatedAt:   now,
+		UpdatedAt:   now,
+	}
+	if err := repo.db.WithContext(ctx).Create(&admin).Error; err != nil {
+		t.Fatalf("seed admin: %v", err)
+	}
+
+	_, err := repo.UpdateUser(ctx, domain.UserRecord{
+		ID:          admin.ID,
+		Email:       admin.Email,
+		DisplayName: admin.DisplayName,
+		Role:        domain.UserRoleOperator,
+		Status:      domain.UserStatusActive,
+		CreatedAt:   admin.CreatedAt,
+		UpdatedAt:   now.Add(time.Minute),
+	})
+	if !errors.Is(err, repository.ErrInvalidState) {
+		t.Fatalf("UpdateUser error = %v, want ErrInvalidState", err)
+	}
+}
+
+func TestUpdateUserAllowsDemotingAdminWhenAnotherActiveAdminExists(t *testing.T) {
+	t.Parallel()
+
+	ctx := context.Background()
+	repo, sqlDB := mustNewSQLiteRepo(t)
+	defer sqlDB.Close()
+
+	now := time.Now().UTC()
+	admins := []UserModel{
+		{
+			ID:          "admin-1",
+			Email:       "admin-1@example.com",
+			DisplayName: "Admin 1",
+			Role:        string(domain.UserRoleAdmin),
+			Status:      string(domain.UserStatusActive),
+			CreatedAt:   now,
+			UpdatedAt:   now,
+		},
+		{
+			ID:          "admin-2",
+			Email:       "admin-2@example.com",
+			DisplayName: "Admin 2",
+			Role:        string(domain.UserRoleAdmin),
+			Status:      string(domain.UserStatusActive),
+			CreatedAt:   now,
+			UpdatedAt:   now,
+		},
+	}
+	if err := repo.db.WithContext(ctx).Create(&admins).Error; err != nil {
+		t.Fatalf("seed admins: %v", err)
+	}
+
+	updated, err := repo.UpdateUser(ctx, domain.UserRecord{
+		ID:          admins[0].ID,
+		Email:       admins[0].Email,
+		DisplayName: admins[0].DisplayName,
+		Role:        domain.UserRoleOperator,
+		Status:      domain.UserStatusActive,
+		CreatedAt:   admins[0].CreatedAt,
+		UpdatedAt:   now.Add(time.Minute),
+	})
+	if err != nil {
+		t.Fatalf("UpdateUser returned error: %v", err)
+	}
+	if updated.Role != domain.UserRoleOperator {
+		t.Fatalf("updated role = %q, want operator", updated.Role)
+	}
+}
+
+func TestUpdateUserConcurrentDemotionsPreserveActiveAdmin(t *testing.T) {
+	t.Parallel()
+
+	ctx := context.Background()
+	dbPath := filepath.Join(t.TempDir(), "gateway-users.db")
+	cfg := config.DBConfig{
+		Driver:           "sqlite",
+		DSN:              dbPath,
+		MaxOpenConns:     10,
+		MaxIdleConns:     5,
+		ConnMaxLifetimeS: 300,
+		SQLite: config.SQLiteDBConfig{
+			JournalMode:   "WAL",
+			BusyTimeoutMS: 5000,
+		},
+	}
+	repoA, sqlDBA := mustNewRepoWithConfig(t, cfg)
+	defer sqlDBA.Close()
+	repoB, sqlDBB := mustNewRepoWithConfig(t, cfg)
+	defer sqlDBB.Close()
+
+	now := time.Now().UTC()
+	admins := []UserModel{
+		{
+			ID:          "admin-1",
+			Email:       "admin-1@example.com",
+			DisplayName: "Admin 1",
+			Role:        string(domain.UserRoleAdmin),
+			Status:      string(domain.UserStatusActive),
+			CreatedAt:   now,
+			UpdatedAt:   now,
+		},
+		{
+			ID:          "admin-2",
+			Email:       "admin-2@example.com",
+			DisplayName: "Admin 2",
+			Role:        string(domain.UserRoleAdmin),
+			Status:      string(domain.UserStatusActive),
+			CreatedAt:   now,
+			UpdatedAt:   now,
+		},
+	}
+	if err := repoA.db.WithContext(ctx).Create(&admins).Error; err != nil {
+		t.Fatalf("seed admins: %v", err)
+	}
+
+	start := make(chan struct{})
+	var wg sync.WaitGroup
+	var successCount atomic.Int32
+	var invalidStateCount atomic.Int32
+	errCh := make(chan error, len(admins))
+
+	repos := []*Repository{repoA, repoB}
+	for idx, admin := range admins {
+		admin := admin
+		repo := repos[idx]
+		wg.Add(1)
+		go func() {
+			defer wg.Done()
+			<-start
+			_, err := repo.UpdateUser(ctx, domain.UserRecord{
+				ID:          admin.ID,
+				Email:       admin.Email,
+				DisplayName: admin.DisplayName,
+				Role:        domain.UserRoleOperator,
+				Status:      domain.UserStatusActive,
+				CreatedAt:   admin.CreatedAt,
+				UpdatedAt:   now.Add(time.Minute),
+			})
+			switch {
+			case err == nil:
+				successCount.Add(1)
+			case errors.Is(err, repository.ErrInvalidState):
+				invalidStateCount.Add(1)
+			default:
+				errCh <- err
+			}
+		}()
+	}
+
+	close(start)
+	wg.Wait()
+	close(errCh)
+
+	for err := range errCh {
+		if err != nil {
+			t.Fatalf("unexpected concurrent update error: %v", err)
+		}
+	}
+
+	if successCount.Load() != 1 {
+		t.Fatalf("success count = %d, want 1", successCount.Load())
+	}
+	if invalidStateCount.Load() != 1 {
+		t.Fatalf("invalid state count = %d, want 1", invalidStateCount.Load())
+	}
+
+	var activeAdmins int64
+	if err := repoA.db.WithContext(ctx).
+		Model(&UserModel{}).
+		Where("role = ? AND status = ?", string(domain.UserRoleAdmin), string(domain.UserStatusActive)).
+		Count(&activeAdmins).Error; err != nil {
+		t.Fatalf("count active admins: %v", err)
+	}
+	if activeAdmins != 1 {
+		t.Fatalf("active admin count = %d, want 1", activeAdmins)
 	}
 }
 

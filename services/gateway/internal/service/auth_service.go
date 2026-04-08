@@ -3,7 +3,6 @@ package service
 import (
 	"context"
 	"errors"
-	"fmt"
 	"strings"
 	"time"
 
@@ -18,7 +17,6 @@ type AuthUserRepository interface {
 
 type UserAdminRepository interface {
 	GetPrincipalByID(ctx context.Context, userID string) (domain.UserRecord, error)
-	CountActiveAdmins(ctx context.Context) (int64, error)
 	ListUsers(ctx context.Context) ([]domain.UserRecord, error)
 	CreateUser(ctx context.Context, user domain.UserRecord) (domain.UserRecord, error)
 	UpdateUser(ctx context.Context, user domain.UserRecord) (domain.UserRecord, error)
@@ -114,16 +112,12 @@ func (s *UserAdminService) UpdateUser(ctx context.Context, input UserUpdateInput
 		}
 		return domain.UserRecord{}, ErrServiceUnavailable
 	}
-	originalUser := current
 	current.Email = strings.ToLower(strings.TrimSpace(input.Email))
 	current.DisplayName = strings.TrimSpace(input.DisplayName)
 	current.Role = input.Role
 	current.Status = input.Status
 	current.UpdatedAt = s.nowFn()
 	if err := validateUserRecord(current); err != nil {
-		return domain.UserRecord{}, err
-	}
-	if err := s.ensureActiveAdminPreserved(ctx, originalUser, current); err != nil {
 		return domain.UserRecord{}, err
 	}
 	updated, err := s.repo.UpdateUser(ctx, current)
@@ -133,30 +127,13 @@ func (s *UserAdminService) UpdateUser(ctx context.Context, input UserUpdateInput
 			return domain.UserRecord{}, ErrConflict
 		case errors.Is(err, repository.ErrNotFound):
 			return domain.UserRecord{}, ErrNotFound
+		case errors.Is(err, repository.ErrInvalidState):
+			return domain.UserRecord{}, ErrInvalidRequest
 		default:
 			return domain.UserRecord{}, ErrServiceUnavailable
 		}
 	}
 	return updated, nil
-}
-
-func (s *UserAdminService) ensureActiveAdminPreserved(ctx context.Context, before domain.UserRecord, after domain.UserRecord) error {
-	if !isActiveAdmin(before) || isActiveAdmin(after) {
-		return nil
-	}
-
-	count, err := s.repo.CountActiveAdmins(ctx)
-	if err != nil {
-		return ErrServiceUnavailable
-	}
-	if count <= 1 {
-		return fmt.Errorf("%w: system must retain at least one active admin account", ErrInvalidRequest)
-	}
-	return nil
-}
-
-func isActiveAdmin(user domain.UserRecord) bool {
-	return user.Role == domain.UserRoleAdmin && user.Status == domain.UserStatusActive
 }
 
 func normalizeCreateUser(input UserCreateInput, now time.Time) (domain.UserRecord, error) {

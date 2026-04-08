@@ -10,6 +10,7 @@ import (
 	"github.com/lychee-ripe/gateway/internal/domain"
 	"github.com/lychee-ripe/gateway/internal/repository"
 	"gorm.io/gorm"
+	"gorm.io/gorm/clause"
 )
 
 var (
@@ -106,17 +107,6 @@ func (r *Repository) CountUsers(ctx context.Context) (int64, error) {
 	return count, nil
 }
 
-func (r *Repository) CountActiveAdmins(ctx context.Context) (int64, error) {
-	var count int64
-	if err := r.db.WithContext(ctx).
-		Model(&UserModel{}).
-		Where("role = ? AND status = ?", string(domain.UserRoleAdmin), string(domain.UserStatusActive)).
-		Count(&count).Error; err != nil {
-		return 0, mapGormErr(err)
-	}
-	return count, nil
-}
-
 func (r *Repository) ListUsers(ctx context.Context) ([]domain.UserRecord, error) {
 	var models []UserModel
 	if err := r.db.WithContext(ctx).Order("created_at DESC").Find(&models).Error; err != nil {
@@ -139,20 +129,140 @@ func (r *Repository) CreateUser(ctx context.Context, user domain.UserRecord) (do
 
 func (r *Repository) UpdateUser(ctx context.Context, user domain.UserRecord) (domain.UserRecord, error) {
 	model := userModelFromDomain(user)
-	res := r.db.WithContext(ctx).Model(&UserModel{}).Where("id = ?", model.ID).Updates(map[string]any{
+
+	var err error
+	switch r.db.Dialector.Name() {
+	case "postgres":
+		err = r.updateUserPostgres(ctx, model)
+	default:
+		err = r.updateUserAtomically(ctx, model)
+	}
+	if err != nil {
+		return domain.UserRecord{}, err
+	}
+	return r.GetPrincipalByID(ctx, model.ID)
+}
+
+func (r *Repository) updateUserPostgres(ctx context.Context, model UserModel) error {
+	return r.db.WithContext(ctx).Transaction(func(tx *gorm.DB) error {
+		var current UserModel
+		if err := tx.Clauses(clause.Locking{Strength: "UPDATE"}).
+			Where("id = ?", model.ID).
+			First(&current).Error; err != nil {
+			return mapGormErr(err)
+		}
+
+		if removesActiveAdmin(current, model) {
+			var activeAdminIDs []string
+			if err := tx.Model(&UserModel{}).
+				Clauses(clause.Locking{Strength: "UPDATE"}).
+				Where("role = ? AND status = ?", string(domain.UserRoleAdmin), string(domain.UserStatusActive)).
+				Pluck("id", &activeAdminIDs).Error; err != nil {
+				return mapGormErr(err)
+			}
+			if len(activeAdminIDs) <= 1 {
+				return fmt.Errorf("%w: system must retain at least one active admin account", repository.ErrInvalidState)
+			}
+		}
+
+		return updateUserRecord(tx, model)
+	})
+}
+
+func (r *Repository) updateUserAtomically(ctx context.Context, model UserModel) error {
+	var lastErr error
+	for attempt := 0; attempt < 5; attempt++ {
+		lastErr = r.updateUserAtomicallyOnce(ctx, model)
+		if lastErr == nil {
+			return nil
+		}
+		if !isSQLiteBusy(lastErr) {
+			return lastErr
+		}
+
+		select {
+		case <-ctx.Done():
+			return fmt.Errorf("%w: %v", repository.ErrDBUnavailable, ctx.Err())
+		case <-time.After(time.Duration(attempt+1) * 25 * time.Millisecond):
+		}
+	}
+	return mapGormErr(lastErr)
+}
+
+func (r *Repository) updateUserAtomicallyOnce(ctx context.Context, model UserModel) error {
+	res := r.db.WithContext(ctx).
+		Model(&UserModel{}).
+		Where("id = ?", model.ID).
+		Where(
+			`NOT (role = ? AND status = ?) OR (? = ? AND ? = ?) OR EXISTS (
+				SELECT 1 FROM users AS other
+				WHERE other.id <> users.id AND other.role = ? AND other.status = ?
+			)`,
+			string(domain.UserRoleAdmin),
+			string(domain.UserStatusActive),
+			model.Role,
+			string(domain.UserRoleAdmin),
+			model.Status,
+			string(domain.UserStatusActive),
+			string(domain.UserRoleAdmin),
+			string(domain.UserStatusActive),
+		).
+		Updates(userUpdateAssignments(model))
+	if res.Error != nil {
+		return res.Error
+	}
+	if res.RowsAffected > 0 {
+		return nil
+	}
+
+	var exists int64
+	if err := r.db.WithContext(ctx).
+		Model(&UserModel{}).
+		Where("id = ?", model.ID).
+		Count(&exists).Error; err != nil {
+		return err
+	}
+	if exists == 0 {
+		return repository.ErrNotFound
+	}
+	return fmt.Errorf("%w: system must retain at least one active admin account", repository.ErrInvalidState)
+}
+
+func updateUserRecord(tx *gorm.DB, model UserModel) error {
+	res := tx.Model(&UserModel{}).
+		Where("id = ?", model.ID).
+		Updates(userUpdateAssignments(model))
+	if res.Error != nil {
+		return mapGormErr(res.Error)
+	}
+	if res.RowsAffected == 0 {
+		return repository.ErrNotFound
+	}
+	return nil
+}
+
+func userUpdateAssignments(model UserModel) map[string]any {
+	return map[string]any{
 		"email":        model.Email,
 		"display_name": model.DisplayName,
 		"role":         model.Role,
 		"status":       model.Status,
 		"updated_at":   model.UpdatedAt,
-	})
-	if res.Error != nil {
-		return domain.UserRecord{}, mapGormErr(res.Error)
 	}
-	if res.RowsAffected == 0 {
-		return domain.UserRecord{}, repository.ErrNotFound
+}
+
+func removesActiveAdmin(current UserModel, next UserModel) bool {
+	return current.Role == string(domain.UserRoleAdmin) &&
+		current.Status == string(domain.UserStatusActive) &&
+		(next.Role != string(domain.UserRoleAdmin) || next.Status != string(domain.UserStatusActive))
+}
+
+func isSQLiteBusy(err error) bool {
+	if err == nil {
+		return false
 	}
-	return r.GetPrincipalByID(ctx, model.ID)
+	msg := strings.ToLower(err.Error())
+	return strings.Contains(msg, "database is locked") || strings.Contains(msg, "sqlite_busy")
 }
 
 func (r *Repository) ListOrchards(ctx context.Context, includeArchived bool) ([]domain.OrchardRecord, error) {
