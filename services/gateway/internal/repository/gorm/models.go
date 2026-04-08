@@ -87,3 +87,40 @@ type AuditLogModel struct {
 }
 
 func (AuditLogModel) TableName() string { return "audit_logs" }
+
+type UserModel struct {
+	ID          string     `gorm:"column:id;type:text;primaryKey"`
+	Email       string     `gorm:"column:email;type:text;not null;uniqueIndex"`
+	DisplayName string     `gorm:"column:display_name;type:text;not null"`
+	OIDCSubject *string    `gorm:"column:oidc_subject;type:text;uniqueIndex"`
+	Role        string     `gorm:"column:role;type:text;not null;index"`
+	Status      string     `gorm:"column:status;type:text;not null;index"`
+	LastLoginAt *time.Time `gorm:"column:last_login_at"`
+	CreatedAt   time.Time  `gorm:"column:created_at;not null"`
+	UpdatedAt   time.Time  `gorm:"column:updated_at;not null"`
+}
+
+func (UserModel) TableName() string { return "users" }
+
+type OrchardModel struct {
+	ID          uint      `gorm:"primaryKey;autoIncrement"`
+	OrchardID   string    `gorm:"column:orchard_id;type:text;not null;uniqueIndex"`
+	OrchardName string    `gorm:"column:orchard_name;type:text;not null"`
+	Status      string    `gorm:"column:status;type:text;not null;index"`
+	CreatedAt   time.Time `gorm:"column:created_at;not null"`
+	UpdatedAt   time.Time `gorm:"column:updated_at;not null"`
+}
+
+func (OrchardModel) TableName() string { return "orchards" }
+
+type PlotModel struct {
+	ID        uint      `gorm:"primaryKey;autoIncrement"`
+	PlotID    string    `gorm:"column:plot_id;type:text;not null;uniqueIndex"`
+	OrchardID string    `gorm:"column:orchard_id;type:text;not null;index"`
+	PlotName  string    `gorm:"column:plot_name;type:text;not null"`
+	Status    string    `gorm:"column:status;type:text;not null;index"`
+	CreatedAt time.Time `gorm:"column:created_at;not null"`
+	UpdatedAt time.Time `gorm:"column:updated_at;not null"`
+}
+
+func (PlotModel) TableName() string { return "plots" }

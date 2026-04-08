@@ -45,13 +45,34 @@ paths:
               schema:
                 $ref: "#/components/schemas/HealthResponse"
 
+  /v1/auth/me:
+    get:
+      operationId: getCurrentPrincipal
+      summary: Get the current authenticated principal
+      tags: [auth]
+      security:
+        - OpenIdConnect: []
+      responses:
+        "200":
+          description: Current principal
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Principal"
+        "401":
+          description: Missing or invalid bearer token
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ErrorResponse"
+
   /v1/models/current:
     get:
       operationId: currentModel
       summary: Current loaded model info (proxied)
       tags: [v1]
       security:
-        - ApiKeyAuth: []
+        - OpenIdConnect: []
         - BearerAuth: []
       responses:
         "200":
@@ -85,7 +106,7 @@ paths:
       summary: Single image inference (proxied)
       tags: [v1]
       security:
-        - ApiKeyAuth: []
+        - OpenIdConnect: []
         - BearerAuth: []
       requestBody:
         required: true
@@ -142,7 +163,7 @@ paths:
       summary: WebSocket streaming inference (proxied)
       tags: [v1]
       security:
-        - ApiKeyAuth: []
+        - OpenIdConnect: []
         - BearerAuth: []
       description: >
         WebSocket endpoint. Send binary frames (image bytes) to receive per-frame
@@ -168,7 +189,7 @@ paths:
       summary: Create a harvest batch in database or blockchain trace mode
       tags: [batch]
       security:
-        - ApiKeyAuth: []
+        - OpenIdConnect: []
       requestBody:
         required: true
         content:
@@ -225,7 +246,7 @@ paths:
       summary: Get batch detail by batch id within the current trace mode
       tags: [batch]
       security:
-        - ApiKeyAuth: []
+        - OpenIdConnect: []
       parameters:
         - $ref: "#/components/parameters/BatchID"
       responses:
@@ -294,7 +315,7 @@ paths:
       summary: Get dashboard aggregate metrics filtered by the current trace mode
       tags: [dashboard]
       security:
-        - ApiKeyAuth: []
+        - OpenIdConnect: []
       responses:
         "200":
           description: Dashboard overview scoped to the current trace mode
@@ -327,7 +348,7 @@ paths:
       summary: Trigger manual reconcile for pending blockchain anchor batches
       tags: [batch]
       security:
-        - ApiKeyAuth: []
+        - OpenIdConnect: []
       requestBody:
         required: false
         content:
@@ -378,12 +399,232 @@ paths:
               schema:
                 $ref: "#/components/schemas/ErrorResponse"
 
+  /v1/orchards:
+    get:
+      operationId: listOrchards
+      summary: List orchards
+      tags: [admin]
+      security:
+        - OpenIdConnect: []
+      responses:
+        "200":
+          description: Orchard list
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/OrchardListResponse"
+    post:
+      operationId: createOrchard
+      summary: Create orchard
+      tags: [admin]
+      security:
+        - OpenIdConnect: []
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/OrchardUpsertRequest"
+      responses:
+        "201":
+          description: Orchard created
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Orchard"
+
+  /v1/orchards/{orchard_id}:
+    patch:
+      operationId: updateOrchard
+      summary: Update orchard
+      tags: [admin]
+      security:
+        - OpenIdConnect: []
+      parameters:
+        - name: orchard_id
+          in: path
+          required: true
+          schema:
+            type: string
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/OrchardUpdateRequest"
+      responses:
+        "200":
+          description: Orchard updated
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Orchard"
+    delete:
+      operationId: archiveOrchard
+      summary: Archive orchard
+      tags: [admin]
+      security:
+        - OpenIdConnect: []
+      parameters:
+        - name: orchard_id
+          in: path
+          required: true
+          schema:
+            type: string
+      responses:
+        "200":
+          description: Orchard archived
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Orchard"
+
+  /v1/plots:
+    get:
+      operationId: listPlots
+      summary: List plots
+      tags: [admin]
+      security:
+        - OpenIdConnect: []
+      responses:
+        "200":
+          description: Plot list
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/PlotListResponse"
+    post:
+      operationId: createPlot
+      summary: Create plot
+      tags: [admin]
+      security:
+        - OpenIdConnect: []
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/PlotUpsertRequest"
+      responses:
+        "201":
+          description: Plot created
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Plot"
+
+  /v1/plots/{plot_id}:
+    patch:
+      operationId: updatePlot
+      summary: Update plot
+      tags: [admin]
+      security:
+        - OpenIdConnect: []
+      parameters:
+        - name: plot_id
+          in: path
+          required: true
+          schema:
+            type: string
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/PlotUpdateRequest"
+      responses:
+        "200":
+          description: Plot updated
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Plot"
+    delete:
+      operationId: archivePlot
+      summary: Archive plot
+      tags: [admin]
+      security:
+        - OpenIdConnect: []
+      parameters:
+        - name: plot_id
+          in: path
+          required: true
+          schema:
+            type: string
+      responses:
+        "200":
+          description: Plot archived
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Plot"
+
+  /v1/admin/users:
+    get:
+      operationId: listUsers
+      summary: List provisioned users
+      tags: [admin]
+      security:
+        - OpenIdConnect: []
+      responses:
+        "200":
+          description: User list
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/UserListResponse"
+    post:
+      operationId: createUser
+      summary: Create provisioned user
+      tags: [admin]
+      security:
+        - OpenIdConnect: []
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/UserUpsertRequest"
+      responses:
+        "201":
+          description: User created
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/User"
+
+  /v1/admin/users/{user_id}:
+    patch:
+      operationId: updateUser
+      summary: Update provisioned user
+      tags: [admin]
+      security:
+        - OpenIdConnect: []
+      parameters:
+        - name: user_id
+          in: path
+          required: true
+          schema:
+            type: string
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/UserUpsertRequest"
+      responses:
+        "200":
+          description: User updated
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/User"
+
 components:
   securitySchemes:
-    ApiKeyAuth:
-      type: apiKey
-      in: header
-      name: X-API-Key
+    OpenIdConnect:
+      type: openIdConnect
+      openIdConnectUrl: https://issuer.example.com/.well-known/openid-configuration
     BearerAuth:
       type: http
       scheme: bearer
@@ -938,6 +1179,191 @@ components:
           minimum: 0
         message:
           type: string
+
+    AuthMode:
+      type: string
+      enum: [disabled, oidc]
+
+    UserRole:
+      type: string
+      enum: [admin, operator]
+
+    UserStatus:
+      type: string
+      enum: [active, disabled]
+
+    ResourceStatus:
+      type: string
+      enum: [active, archived]
+
+    Principal:
+      type: object
+      required: [subject, email, display_name, role, status, auth_mode, permissions]
+      properties:
+        subject:
+          type: string
+        email:
+          type: string
+        display_name:
+          type: string
+        role:
+          $ref: "#/components/schemas/UserRole"
+        status:
+          $ref: "#/components/schemas/UserStatus"
+        auth_mode:
+          $ref: "#/components/schemas/AuthMode"
+        permissions:
+          type: array
+          items:
+            type: string
+
+    Orchard:
+      type: object
+      required: [orchard_id, orchard_name, status, created_at, updated_at]
+      properties:
+        orchard_id:
+          type: string
+        orchard_name:
+          type: string
+        status:
+          $ref: "#/components/schemas/ResourceStatus"
+        created_at:
+          type: string
+          format: date-time
+        updated_at:
+          type: string
+          format: date-time
+
+    Plot:
+      type: object
+      required: [plot_id, orchard_id, plot_name, status, created_at, updated_at]
+      properties:
+        plot_id:
+          type: string
+        orchard_id:
+          type: string
+        plot_name:
+          type: string
+        status:
+          $ref: "#/components/schemas/ResourceStatus"
+        created_at:
+          type: string
+          format: date-time
+        updated_at:
+          type: string
+          format: date-time
+
+    User:
+      type: object
+      required: [id, email, display_name, role, status, created_at, updated_at]
+      properties:
+        id:
+          type: string
+        email:
+          type: string
+        display_name:
+          type: string
+        oidc_subject:
+          type: string
+          nullable: true
+        role:
+          $ref: "#/components/schemas/UserRole"
+        status:
+          $ref: "#/components/schemas/UserStatus"
+        last_login_at:
+          type: string
+          format: date-time
+          nullable: true
+        created_at:
+          type: string
+          format: date-time
+        updated_at:
+          type: string
+          format: date-time
+
+    OrchardListResponse:
+      type: object
+      required: [items]
+      properties:
+        items:
+          type: array
+          items:
+            $ref: "#/components/schemas/Orchard"
+
+    PlotListResponse:
+      type: object
+      required: [items]
+      properties:
+        items:
+          type: array
+          items:
+            $ref: "#/components/schemas/Plot"
+
+    UserListResponse:
+      type: object
+      required: [items]
+      properties:
+        items:
+          type: array
+          items:
+            $ref: "#/components/schemas/User"
+
+    OrchardUpsertRequest:
+      type: object
+      required: [orchard_id, orchard_name]
+      properties:
+        orchard_id:
+          type: string
+        orchard_name:
+          type: string
+        status:
+          $ref: "#/components/schemas/ResourceStatus"
+
+    OrchardUpdateRequest:
+      type: object
+      required: [orchard_name, status]
+      properties:
+        orchard_name:
+          type: string
+        status:
+          $ref: "#/components/schemas/ResourceStatus"
+
+    PlotUpsertRequest:
+      type: object
+      required: [plot_id, orchard_id, plot_name]
+      properties:
+        plot_id:
+          type: string
+        orchard_id:
+          type: string
+        plot_name:
+          type: string
+        status:
+          $ref: "#/components/schemas/ResourceStatus"
+
+    PlotUpdateRequest:
+      type: object
+      required: [orchard_id, plot_name, status]
+      properties:
+        orchard_id:
+          type: string
+        plot_name:
+          type: string
+        status:
+          $ref: "#/components/schemas/ResourceStatus"
+
+    UserUpsertRequest:
+      type: object
+      required: [email, display_name, role, status]
+      properties:
+        email:
+          type: string
+        display_name:
+          type: string
+        role:
+          $ref: "#/components/schemas/UserRole"
+        status:
+          $ref: "#/components/schemas/UserStatus"
 
     ErrorResponse:
       type: object

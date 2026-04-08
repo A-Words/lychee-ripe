@@ -5,6 +5,7 @@ import {
   useBatchCreate,
   validateBatchSummaryInput
 } from '~/composables/useBatchCreate'
+import type { OrchardWithPlots } from '~/types/resources'
 import { useCamera } from '~/composables/useCamera'
 import { useInferenceStream } from '~/composables/useInferenceStream'
 import { toBatchSummaryInput } from '~/utils/session-aggregator'
@@ -23,6 +24,7 @@ const stream = useInferenceStream({
   jpegQuality: 0.8
 })
 const { createBatch, parseCreateError } = useBatchCreate()
+const adminApi = useAdminApi()
 const {
   startStream,
   stopStream,
@@ -38,6 +40,24 @@ const submitting = ref(false)
 const submitError = ref<BatchCreateApiError | null>(null)
 const createdBatch = ref<Batch | null>(null)
 const createdStatusCode = ref<number>(0)
+const orchardOptions = ref<OrchardWithPlots[]>([])
+
+async function loadOrchardOptions() {
+  const [orchards, plots] = await Promise.all([
+    adminApi.listOrchards(false),
+    adminApi.listPlots(undefined, false)
+  ])
+  orchardOptions.value = orchards.map((orchard) => ({
+    orchard_id: orchard.orchard_id,
+    orchard_name: orchard.orchard_name,
+    plots: plots
+      .filter((plot) => plot.orchard_id === orchard.orchard_id)
+      .map((plot) => ({
+        plot_id: plot.plot_id,
+        plot_name: plot.plot_name
+      }))
+  }))
+}
 
 const requireConfirmUnripe = computed(() => aggregateSummary.value.unripe_ratio > 0.15)
 
@@ -114,6 +134,10 @@ onBeforeUnmount(() => {
   void stopStream()
   camera.stopCamera()
 })
+
+onMounted(() => {
+  void loadOrchardOptions()
+})
 </script>
 
 <template>
@@ -159,6 +183,7 @@ onBeforeUnmount(() => {
         <div class="space-y-6">
           <BatchCreateForm
             v-if="!createdBatch"
+            :orchards="orchardOptions"
             :summary="aggregateSummary"
             :submitting="submitting"
             :is-recognizing="isStreaming"

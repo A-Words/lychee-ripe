@@ -42,3 +42,31 @@ type DashboardQueryRepository interface {
 	CountUnripeBatches(ctx context.Context, traceMode domain.TraceMode, threshold float64) (count int64, ratio float64, err error)
 	ListRecentAnchors(ctx context.Context, traceMode domain.TraceMode, limit int) ([]domain.RecentAnchorRecord, error)
 }
+
+type UserRepository interface {
+	ResolvePrincipal(ctx context.Context, identity domain.IdentityClaims, mode domain.AuthMode, now time.Time) (domain.Principal, error)
+	GetPrincipalByID(ctx context.Context, userID string) (domain.UserRecord, error)
+	ListUsers(ctx context.Context) ([]domain.UserRecord, error)
+	CreateUser(ctx context.Context, user domain.UserRecord) (domain.UserRecord, error)
+	UpdateUser(ctx context.Context, user domain.UserRecord) (domain.UserRecord, error)
+}
+
+type OrchardRepository interface {
+	ListOrchards(ctx context.Context, includeArchived bool) ([]domain.OrchardRecord, error)
+	CreateOrchard(ctx context.Context, orchard domain.OrchardRecord) (domain.OrchardRecord, error)
+	UpdateOrchard(ctx context.Context, orchard domain.OrchardRecord) (domain.OrchardRecord, error)
+	GetOrchard(ctx context.Context, orchardID string) (domain.OrchardRecord, error)
+}
+
+type PlotRepository interface {
+	ListPlots(ctx context.Context, orchardID string, includeArchived bool) ([]domain.PlotRecord, error)
+	CreatePlot(ctx context.Context, plot domain.PlotRecord) (domain.PlotRecord, error)
+	UpdatePlot(ctx context.Context, plot domain.PlotRecord) (domain.PlotRecord, error)
+	GetPlot(ctx context.Context, plotID string) (domain.PlotRecord, error)
+}
+
+type SeedRepository interface {
+	CountOrchards(ctx context.Context) (int64, error)
+	CreateOrchardIfNotExists(ctx context.Context, orchard domain.OrchardRecord) error
+	CreatePlotIfNotExists(ctx context.Context, plot domain.PlotRecord) error
+}

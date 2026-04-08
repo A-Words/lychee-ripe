@@ -142,7 +142,8 @@ describe('useInferenceStream', () => {
   it('waits for the final summary before finishing a manual stop', async () => {
     const stream = useInferenceStream({
       videoElement: ref(createFakeVideo()),
-      frameIntervalMs: 50
+      frameIntervalMs: 50,
+      auth: fakeAuth()
     })
 
     await stream.startStream()
@@ -171,7 +172,8 @@ describe('useInferenceStream', () => {
   it('drops an encoded frame when stop is requested mid-send', async () => {
     const stream = useInferenceStream({
       videoElement: ref(createFakeVideo()),
-      frameIntervalMs: 10
+      frameIntervalMs: 10,
+      auth: fakeAuth()
     })
 
     await stream.startStream()
@@ -207,7 +209,8 @@ describe('useInferenceStream', () => {
   it('still reports an unexpected close as a stream error', async () => {
     const stream = useInferenceStream({
       videoElement: ref(createFakeVideo()),
-      frameIntervalMs: 50
+      frameIntervalMs: 50,
+      auth: fakeAuth()
     })
 
     await stream.startStream()
@@ -220,3 +223,10 @@ describe('useInferenceStream', () => {
     expect(stream.streamError.value).toBe('识别流连接中断，请重试。')
   })
 })
+
+function fakeAuth() {
+  return {
+    init: vi.fn(async () => {}),
+    websocketUrl: vi.fn((path: string) => `ws://127.0.0.1:9000${path}`)
+  }
+}

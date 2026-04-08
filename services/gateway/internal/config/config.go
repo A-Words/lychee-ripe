@@ -77,10 +77,22 @@ type ChainConfig struct {
 	ReceiptPollIntervalMS int    `yaml:"receipt_poll_interval_ms"`
 }
 
-// AuthConfig defines API key authentication settings.
+// AuthConfig defines authentication settings.
 type AuthConfig struct {
-	Enabled bool     `yaml:"enabled"`
-	APIKeys []string `yaml:"api_keys"`
+	Mode AuthModeConfig `yaml:"mode"`
+	OIDC OIDCConfig     `yaml:"oidc"`
+}
+
+type AuthModeConfig string
+
+const (
+	AuthModeDisabled AuthModeConfig = "disabled"
+	AuthModeOIDC     AuthModeConfig = "oidc"
+)
+
+type OIDCConfig struct {
+	IssuerURL string `yaml:"issuer_url"`
+	Audience  string `yaml:"audience"`
 }
 
 // RateLimitConfig defines token-bucket rate limiting settings.
@@ -220,7 +232,7 @@ func Defaults() Config {
 			ReceiptPollIntervalMS: 500,
 		},
 		Auth: AuthConfig{
-			Enabled: false,
+			Mode: AuthModeDisabled,
 		},
 		RateLimit: RateLimitConfig{
 			Enabled:           true,
@@ -270,6 +282,7 @@ func Load(path string) (Config, error) {
 	if strings.EqualFold(strings.TrimSpace(cfg.DB.Driver), "sqlite") {
 		cfg.DB.DSN = normalizeSQLiteDSN(path, cfg.DB.DSN)
 	}
+	applyEnvOverrides(&cfg)
 	if err := cfg.Validate(); err != nil {
 		return Config{}, fmt.Errorf("validate gateway config %s: %w", path, err)
 	}
@@ -329,40 +342,69 @@ func (c *Config) Validate() error {
 		c.Chain.ReceiptPollIntervalMS = 500
 	}
 
-	if c.Trace.Mode != domain.TraceModeBlockchain {
-		return nil
+	if c.Trace.Mode == domain.TraceModeBlockchain {
+		if strings.TrimSpace(c.Chain.RPCURL) == "" {
+			return fmt.Errorf("chain.rpc_url is required when trace.mode=blockchain")
+		}
+		parsedURL, err := url.Parse(strings.TrimSpace(c.Chain.RPCURL))
+		if err != nil || parsedURL.Scheme == "" || parsedURL.Host == "" {
+			return fmt.Errorf("chain.rpc_url must be a valid absolute url")
+		}
+
+		if strings.TrimSpace(c.Chain.ChainID) == "" {
+			return fmt.Errorf("chain.chain_id is required when trace.mode=blockchain")
+		}
+		chainID, err := strconv.ParseInt(strings.TrimSpace(c.Chain.ChainID), 10, 64)
+		if err != nil || chainID <= 0 {
+			return fmt.Errorf("chain.chain_id must be a positive integer string")
+		}
+
+		if strings.TrimSpace(c.Chain.ContractAddress) == "" {
+			return fmt.Errorf("chain.contract_address is required when trace.mode=blockchain")
+		}
+		if ok, _ := regexp.MatchString(`^0x[0-9a-fA-F]{40}$`, strings.TrimSpace(c.Chain.ContractAddress)); !ok {
+			return fmt.Errorf("chain.contract_address must be a 20-byte hex address")
+		}
+
+		if strings.TrimSpace(c.Chain.PrivateKey) == "" {
+			return fmt.Errorf("chain.private_key is required when trace.mode=blockchain")
+		}
+		key := strings.TrimPrefix(strings.TrimSpace(c.Chain.PrivateKey), "0x")
+		if ok, _ := regexp.MatchString(`^[0-9a-fA-F]{64}$`, key); !ok {
+			return fmt.Errorf("chain.private_key must be a 32-byte hex private key")
+		}
 	}
 
-	if strings.TrimSpace(c.Chain.RPCURL) == "" {
-		return fmt.Errorf("chain.rpc_url is required when trace.mode=blockchain")
+	if c.Auth.Mode == "" {
+		c.Auth.Mode = AuthModeDisabled
 	}
-	parsedURL, err := url.Parse(strings.TrimSpace(c.Chain.RPCURL))
-	if err != nil || parsedURL.Scheme == "" || parsedURL.Host == "" {
-		return fmt.Errorf("chain.rpc_url must be a valid absolute url")
-	}
-
-	if strings.TrimSpace(c.Chain.ChainID) == "" {
-		return fmt.Errorf("chain.chain_id is required when trace.mode=blockchain")
-	}
-	chainID, err := strconv.ParseInt(strings.TrimSpace(c.Chain.ChainID), 10, 64)
-	if err != nil || chainID <= 0 {
-		return fmt.Errorf("chain.chain_id must be a positive integer string")
-	}
-
-	if strings.TrimSpace(c.Chain.ContractAddress) == "" {
-		return fmt.Errorf("chain.contract_address is required when trace.mode=blockchain")
-	}
-	if ok, _ := regexp.MatchString(`^0x[0-9a-fA-F]{40}$`, strings.TrimSpace(c.Chain.ContractAddress)); !ok {
-		return fmt.Errorf("chain.contract_address must be a 20-byte hex address")
-	}
-
-	if strings.TrimSpace(c.Chain.PrivateKey) == "" {
-		return fmt.Errorf("chain.private_key is required when trace.mode=blockchain")
-	}
-	key := strings.TrimPrefix(strings.TrimSpace(c.Chain.PrivateKey), "0x")
-	if ok, _ := regexp.MatchString(`^[0-9a-fA-F]{64}$`, key); !ok {
-		return fmt.Errorf("chain.private_key must be a 32-byte hex private key")
+	switch c.Auth.Mode {
+	case AuthModeDisabled:
+	case AuthModeOIDC:
+		if strings.TrimSpace(c.Auth.OIDC.IssuerURL) == "" {
+			return fmt.Errorf("auth.oidc.issuer_url is required when auth.mode=oidc")
+		}
+		if strings.TrimSpace(c.Auth.OIDC.Audience) == "" {
+			return fmt.Errorf("auth.oidc.audience is required when auth.mode=oidc")
+		}
+	default:
+		return fmt.Errorf("auth.mode must be one of disabled|oidc, got %q", c.Auth.Mode)
 	}
 
 	return nil
+}
+
+func applyEnvOverrides(cfg *Config) {
+	if cfg == nil {
+		return
+	}
+	if value := strings.TrimSpace(os.Getenv("LYCHEE_AUTH_MODE")); value != "" {
+		cfg.Auth.Mode = AuthModeConfig(strings.ToLower(value))
+	}
+	if value := strings.TrimSpace(os.Getenv("LYCHEE_AUTH_OIDC_ISSUER_URL")); value != "" {
+		cfg.Auth.OIDC.IssuerURL = value
+	}
+	if value := strings.TrimSpace(os.Getenv("LYCHEE_AUTH_OIDC_AUDIENCE")); value != "" {
+		cfg.Auth.OIDC.Audience = value
+	}
 }

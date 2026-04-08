@@ -15,6 +15,9 @@
 - 调用链路：`clients/orchard-console -> services/gateway -> services/inference-api`。
 - 网关实现：Go HTTP 反向代理 + WebSocket 透传，当前不是 gRPC。
 - Gateway 溯源模式：`trace.mode=database | blockchain`，默认 `database`。
+- Gateway 认证模式：`auth.mode=disabled | oidc`，默认 `disabled`。
+- `disabled` 模式下网关为受保护接口注入模拟 `admin` 主体，便于本地开发。
+- `oidc` 模式下网关按 `JWT + JWKS` 校验 Bearer Token，并基于本地 `users` 表做角色授权。
 - `database` 模式下系统与区块链解耦，批次主状态为 `stored`。
 - `blockchain` 模式下保留 `pending_anchor / anchored / anchor_failed` 与补链能力。
 - 成熟度类别映射：`0=green`，`1=half`，`2=red`，`3=young`。
@@ -140,6 +143,7 @@
 - 前端禁止直连 `services/inference-api`，默认必须走 `services/gateway`
 - 任何行为改动，至少运行一次相关测试；若未执行，必须说明原因和风险
 - `tooling/configs/gateway.yaml.example` 应保持本地直启可用，默认 `upstream.base_url` 指向 `http://127.0.0.1:8000`
+- `tooling/configs/gateway.yaml.example` 默认 `auth.mode=disabled`，应保持本地直启和管理后台可用
 - Docker Compose 应使用独立的 `tooling/configs/gateway.compose.yaml`，其中 `upstream.base_url` 指向容器服务名 `http://inference-api:8000`
 
 ## 5. 提交前检查

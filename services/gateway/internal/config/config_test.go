@@ -75,9 +75,10 @@ db:
     ssl_mode: "disable"
     schema: "public"
 auth:
-  enabled: true
-  api_keys:
-    - "test-key-1"
+  mode: "oidc"
+  oidc:
+    issuer_url: "https://issuer.example.com"
+    audience: "lychee-ripe"
 rate_limit:
   enabled: false
 trace:
@@ -122,11 +123,14 @@ trace:
 	if cfg.DB.Postgres.Schema != "public" {
 		t.Errorf("db.postgres.schema = %q, want public", cfg.DB.Postgres.Schema)
 	}
-	if !cfg.Auth.Enabled {
-		t.Error("auth should be enabled")
+	if cfg.Auth.Mode != AuthModeOIDC {
+		t.Errorf("auth.mode = %q, want oidc", cfg.Auth.Mode)
 	}
-	if len(cfg.Auth.APIKeys) != 1 || cfg.Auth.APIKeys[0] != "test-key-1" {
-		t.Errorf("api_keys = %v", cfg.Auth.APIKeys)
+	if cfg.Auth.OIDC.IssuerURL != "https://issuer.example.com" {
+		t.Errorf("auth.oidc.issuer_url = %q", cfg.Auth.OIDC.IssuerURL)
+	}
+	if cfg.Auth.OIDC.Audience != "lychee-ripe" {
+		t.Errorf("auth.oidc.audience = %q", cfg.Auth.OIDC.Audience)
 	}
 	if cfg.RateLimit.Enabled {
 		t.Error("rate_limit should be disabled")

@@ -4,7 +4,7 @@ import { mapBatchErrorMessage } from '../../app/composables/useBatchCreate'
 describe('batch error mapping', () => {
   it('maps auth-related errors to fixed hint', () => {
     const message = mapBatchErrorMessage(401, '')
-    expect(message).toContain('未传 API Key')
+    expect(message).toContain('登录态已失效')
   })
 
   it('keeps backend message for 400 validation failure', () => {

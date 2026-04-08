@@ -6,7 +6,7 @@
 
 - `clients/orchard-console`：Nuxt Web + Tauri Desktop，果园业务操作前端
 - `services/inference-api`：FastAPI 推理服务
-- `services/gateway`：Go 网关，负责鉴权、限流、日志、代理与 WebSocket 透传，并提供 `database / blockchain` 双溯源模式
+- `services/gateway`：Go 网关，负责 OIDC 鉴权、本地授权、限流、日志、代理与 WebSocket 透传，并提供 `database / blockchain` 双溯源模式
 - `shared/contracts`：共享常量与 OpenAPI 契约
 - `shared/python`：训练与推理共用的 Python helper
 - `mlops/training`：训练与评估脚本
@@ -23,6 +23,11 @@ Gateway 溯源模式：
 
 - `trace.mode=database`：默认模式，批次以数据库存证为主，不初始化链适配器、不执行补链或链上校验
 - `trace.mode=blockchain`：启用链上锚定、补链与公开验真能力
+
+Gateway 认证模式：
+
+- `auth.mode=disabled`：开发旁路，所有受保护接口默认以模拟 `admin` 身份放行
+- `auth.mode=oidc`：网关本地校验 OIDC Access Token（JWT + JWKS），角色与启停状态由本地数据库维护
 
 成熟度映射固定为：
 
@@ -195,7 +200,25 @@ bun run test:stack
 默认模型路径、网关默认配置与本地 sqlite 路径都已改成 repo-root 相对解析，直接从仓库根或各服务目录运行都可以。
 `tooling/configs/gateway.yaml.example` 默认面向本地直启，`upstream.base_url` 使用 `http://127.0.0.1:8000`。
 `tooling/configs/gateway*.yaml` 现在以 `trace.mode` 作为权威运行模式，默认值为 `database`；仅当 `trace.mode=blockchain` 时才要求配置 `chain.rpc_url`、`chain.chain_id`、`chain.contract_address` 与 `chain.private_key`。
+`tooling/configs/gateway*.yaml` 现在以 `auth.mode` 作为认证开关，默认值为 `disabled`；启用 OIDC 时需配置 `auth.oidc.issuer_url`、`auth.oidc.audience`，也可通过 `LYCHEE_AUTH_MODE`、`LYCHEE_AUTH_OIDC_ISSUER_URL`、`LYCHEE_AUTH_OIDC_AUDIENCE` 覆盖。
 Docker Compose 使用仓库自带的 `tooling/configs/gateway.compose.yaml`，其中容器内上游地址为 `http://inference-api:8000`。
+
+前端运行时认证配置：
+
+- `NUXT_PUBLIC_AUTH_MODE=disabled|oidc`
+- `NUXT_PUBLIC_OIDC_ISSUER_URL`
+- `NUXT_PUBLIC_OIDC_WEB_CLIENT_ID`
+- `NUXT_PUBLIC_OIDC_TAURI_CLIENT_ID`
+- `NUXT_PUBLIC_OIDC_SCOPE`
+- `NUXT_PUBLIC_OIDC_WEB_REDIRECT_URI`
+- `NUXT_PUBLIC_OIDC_WEB_POST_LOGOUT_REDIRECT_URI`
+
+本地开发默认建议：
+
+```sh
+LYCHEE_AUTH_MODE=disabled
+NUXT_PUBLIC_AUTH_MODE=disabled
+```
 
 ## Docker
 

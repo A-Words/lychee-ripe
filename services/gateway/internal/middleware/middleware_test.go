@@ -2,6 +2,7 @@ package middleware
 
 import (
 	"bufio"
+	"context"
 	"io"
 	"log/slog"
 	"net"
@@ -10,16 +11,25 @@ import (
 	"testing"
 
 	"github.com/lychee-ripe/gateway/internal/config"
+	"github.com/lychee-ripe/gateway/internal/domain"
+	"github.com/lychee-ripe/gateway/internal/service"
 )
 
 func TestAuthDisabled(t *testing.T) {
-	cfg := config.AuthConfig{Enabled: false}
-	mw := Auth(cfg, slog.Default())
+	cfg := config.AuthConfig{Mode: config.AuthModeDisabled}
+	mw := Auth(cfg, nil, nil, slog.Default())
 	handler := mw(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		principal, ok := GetPrincipal(r.Context())
+		if !ok {
+			t.Fatal("expected principal in disabled mode")
+		}
+		if principal.Role != domain.UserRoleAdmin {
+			t.Fatalf("principal role = %q, want admin", principal.Role)
+		}
 		w.WriteHeader(http.StatusOK)
 	}))
 
-	req := httptest.NewRequest(http.MethodGet, "/", nil)
+	req := httptest.NewRequest(http.MethodGet, "/v1/dashboard/overview", nil)
 	rec := httptest.NewRecorder()
 	handler.ServeHTTP(rec, req)
 	if rec.Code != http.StatusOK {
@@ -27,103 +37,24 @@ func TestAuthDisabled(t *testing.T) {
 	}
 }
 
-func TestAuthEnabledEmptyKeysRejectsAll(t *testing.T) {
-	cfg := config.AuthConfig{Enabled: true, APIKeys: []string{}}
-	mw := Auth(cfg, slog.Default())
+func TestAuthOIDCMissingBearerRejects(t *testing.T) {
+	cfg := config.AuthConfig{Mode: config.AuthModeOIDC}
+	mw := Auth(cfg, fakeValidator{}, fakeResolver{}, slog.Default())
 	handler := mw(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		t.Fatal("handler should not be reached")
 	}))
 
-	req := httptest.NewRequest(http.MethodGet, "/", nil)
-	req.Header.Set("X-API-Key", "anything")
+	req := httptest.NewRequest(http.MethodGet, "/v1/dashboard/overview", nil)
 	rec := httptest.NewRecorder()
 	handler.ServeHTTP(rec, req)
 	if rec.Code != http.StatusUnauthorized {
-		t.Errorf("expected 401 with enabled + empty keys, got %d", rec.Code)
+		t.Errorf("expected 401 with missing bearer token, got %d", rec.Code)
 	}
 }
 
-func TestAuthEnabledNilKeysRejectsAll(t *testing.T) {
-	cfg := config.AuthConfig{Enabled: true}
-	mw := Auth(cfg, slog.Default())
-	handler := mw(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-		t.Fatal("handler should not be reached")
-	}))
-
-	req := httptest.NewRequest(http.MethodGet, "/", nil)
-	rec := httptest.NewRecorder()
-	handler.ServeHTTP(rec, req)
-	if rec.Code != http.StatusUnauthorized {
-		t.Errorf("expected 401 with enabled + nil keys, got %d", rec.Code)
-	}
-}
-
-func TestAuthValidKey(t *testing.T) {
-	cfg := config.AuthConfig{Enabled: true, APIKeys: []string{"secret-key"}}
-	mw := Auth(cfg, slog.Default())
-	handler := mw(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-		w.WriteHeader(http.StatusOK)
-	}))
-
-	req := httptest.NewRequest(http.MethodGet, "/", nil)
-	req.Header.Set("X-API-Key", "secret-key")
-	rec := httptest.NewRecorder()
-	handler.ServeHTTP(rec, req)
-	if rec.Code != http.StatusOK {
-		t.Errorf("expected 200, got %d", rec.Code)
-	}
-}
-
-func TestAuthBearerToken(t *testing.T) {
-	cfg := config.AuthConfig{Enabled: true, APIKeys: []string{"bearer-token"}}
-	mw := Auth(cfg, slog.Default())
-	handler := mw(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-		w.WriteHeader(http.StatusOK)
-	}))
-
-	req := httptest.NewRequest(http.MethodGet, "/", nil)
-	req.Header.Set("Authorization", "Bearer bearer-token")
-	rec := httptest.NewRecorder()
-	handler.ServeHTTP(rec, req)
-	if rec.Code != http.StatusOK {
-		t.Errorf("expected 200, got %d", rec.Code)
-	}
-}
-
-func TestAuthInvalidKey(t *testing.T) {
-	cfg := config.AuthConfig{Enabled: true, APIKeys: []string{"secret-key"}}
-	mw := Auth(cfg, slog.Default())
-	handler := mw(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-		w.WriteHeader(http.StatusOK)
-	}))
-
-	req := httptest.NewRequest(http.MethodGet, "/", nil)
-	req.Header.Set("X-API-Key", "wrong-key")
-	rec := httptest.NewRecorder()
-	handler.ServeHTTP(rec, req)
-	if rec.Code != http.StatusUnauthorized {
-		t.Errorf("expected 401, got %d", rec.Code)
-	}
-}
-
-func TestAuthNoKey(t *testing.T) {
-	cfg := config.AuthConfig{Enabled: true, APIKeys: []string{"secret-key"}}
-	mw := Auth(cfg, slog.Default())
-	handler := mw(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-		w.WriteHeader(http.StatusOK)
-	}))
-
-	req := httptest.NewRequest(http.MethodGet, "/", nil)
-	rec := httptest.NewRecorder()
-	handler.ServeHTTP(rec, req)
-	if rec.Code != http.StatusUnauthorized {
-		t.Errorf("expected 401, got %d", rec.Code)
-	}
-}
-
-func TestAuthAllowsPublicTracePathWithoutKey(t *testing.T) {
-	cfg := config.AuthConfig{Enabled: true, APIKeys: []string{"secret-key"}}
-	mw := Auth(cfg, slog.Default())
+func TestAuthAllowsPublicTracePathWithoutBearer(t *testing.T) {
+	cfg := config.AuthConfig{Mode: config.AuthModeOIDC}
+	mw := Auth(cfg, fakeValidator{}, fakeResolver{}, slog.Default())
 	handler := mw(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		w.WriteHeader(http.StatusOK)
 	}))
@@ -136,64 +67,51 @@ func TestAuthAllowsPublicTracePathWithoutKey(t *testing.T) {
 	}
 }
 
-func TestAuthStillRequiresKeyForProtectedPath(t *testing.T) {
-	cfg := config.AuthConfig{Enabled: true, APIKeys: []string{"secret-key"}}
-	mw := Auth(cfg, slog.Default())
-	handler := mw(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-		w.WriteHeader(http.StatusOK)
-	}))
-
-	req := httptest.NewRequest(http.MethodPost, "/v1/batches", nil)
-	rec := httptest.NewRecorder()
-	handler.ServeHTTP(rec, req)
-	if rec.Code != http.StatusUnauthorized {
-		t.Errorf("expected 401 for protected path without key, got %d", rec.Code)
-	}
-}
-
-func TestAuthRequiresKeyForProtectedReadPath(t *testing.T) {
-	cfg := config.AuthConfig{Enabled: true, APIKeys: []string{"secret-key"}}
-	mw := Auth(cfg, slog.Default())
-	handler := mw(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-		w.WriteHeader(http.StatusOK)
-	}))
-
-	tests := []struct {
-		name   string
-		method string
-		path   string
-	}{
-		{name: "batch detail", method: http.MethodGet, path: "/v1/batches/batch_01"},
-		{name: "dashboard overview", method: http.MethodGet, path: "/v1/dashboard/overview"},
-		{name: "reconcile", method: http.MethodPost, path: "/v1/batches/reconcile"},
-		{name: "proxy infer image", method: http.MethodPost, path: "/v1/infer/image"},
-	}
-
-	for _, tt := range tests {
-		t.Run(tt.name, func(t *testing.T) {
-			req := httptest.NewRequest(tt.method, tt.path, nil)
-			rec := httptest.NewRecorder()
-			handler.ServeHTTP(rec, req)
-			if rec.Code != http.StatusUnauthorized {
-				t.Fatalf("%s %s: expected 401, got %d", tt.method, tt.path, rec.Code)
-			}
-		})
-	}
-}
-
-func TestAuthAllowsProtectedPathWithValidKey(t *testing.T) {
-	cfg := config.AuthConfig{Enabled: true, APIKeys: []string{"secret-key"}}
-	mw := Auth(cfg, slog.Default())
+func TestAuthAllowsProtectedPathForOperator(t *testing.T) {
+	cfg := config.AuthConfig{Mode: config.AuthModeOIDC}
+	mw := Auth(cfg, fakeValidator{}, fakeResolver{principal: domain.Principal{Role: domain.UserRoleOperator, Status: domain.UserStatusActive}}, slog.Default())
 	handler := mw(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		w.WriteHeader(http.StatusOK)
 	}))
 
 	req := httptest.NewRequest(http.MethodGet, "/v1/dashboard/overview", nil)
-	req.Header.Set("X-API-Key", "secret-key")
+	req.Header.Set("Authorization", "Bearer token")
 	rec := httptest.NewRecorder()
 	handler.ServeHTTP(rec, req)
 	if rec.Code != http.StatusOK {
-		t.Errorf("expected 200 for protected path with valid key, got %d", rec.Code)
+		t.Errorf("expected 200 for operator on dashboard, got %d", rec.Code)
+	}
+}
+
+func TestAuthRejectsAdminPathForOperator(t *testing.T) {
+	cfg := config.AuthConfig{Mode: config.AuthModeOIDC}
+	mw := Auth(cfg, fakeValidator{}, fakeResolver{principal: domain.Principal{Role: domain.UserRoleOperator, Status: domain.UserStatusActive}}, slog.Default())
+	handler := mw(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		w.WriteHeader(http.StatusOK)
+	}))
+
+	req := httptest.NewRequest(http.MethodGet, "/v1/admin/users", nil)
+	req.Header.Set("Authorization", "Bearer token")
+	rec := httptest.NewRecorder()
+	handler.ServeHTTP(rec, req)
+	if rec.Code != http.StatusForbidden {
+		t.Errorf("expected 403 on admin path, got %d", rec.Code)
+	}
+}
+
+func TestAuthRejectsUnknownProvisionedUser(t *testing.T) {
+	cfg := config.AuthConfig{Mode: config.AuthModeOIDC}
+	mw := Auth(cfg, fakeValidator{}, fakeResolver{err: service.ErrNotFound}, slog.Default())
+	handler := mw(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		w.WriteHeader(http.StatusOK)
+	}))
+
+	req := httptest.NewRequest(http.MethodGet, "/v1/dashboard/overview", nil)
+	req.Header.Set("Authorization", "Bearer token")
+	rec := httptest.NewRecorder()
+	handler.ServeHTTP(rec, req)
+	if rec.Code != http.StatusForbidden {
+		t.Errorf("expected 403 for unknown user, got %d", rec.Code)
 	}
 }
 
@@ -210,6 +128,46 @@ func TestRateLimitAllows(t *testing.T) {
 	if rec.Code != http.StatusOK {
 		t.Errorf("expected 200, got %d", rec.Code)
 	}
+}
+
+type fakeValidator struct {
+	err error
+}
+
+func (f fakeValidator) Validate(_ context.Context, _ string) (domain.IdentityClaims, error) {
+	if f.err != nil {
+		return domain.IdentityClaims{}, f.err
+	}
+	return domain.IdentityClaims{
+		Subject:     "sub-1",
+		Email:       "admin@example.com",
+		DisplayName: "Admin",
+	}, nil
+}
+
+type fakeResolver struct {
+	principal domain.Principal
+	err       error
+}
+
+func (f fakeResolver) ResolvePrincipal(_ context.Context, _ domain.IdentityClaims, _ domain.AuthMode) (domain.Principal, error) {
+	if f.err != nil {
+		return domain.Principal{}, f.err
+	}
+	if f.principal.Role == "" {
+		return domain.Principal{
+			Subject:     "sub-1",
+			Email:       "admin@example.com",
+			DisplayName: "Admin",
+			Role:        domain.UserRoleAdmin,
+			Status:      domain.UserStatusActive,
+			AuthMode:    domain.AuthModeOIDC,
+		}, nil
+	}
+	if f.principal.AuthMode == "" {
+		f.principal.AuthMode = domain.AuthModeOIDC
+	}
+	return f.principal, nil
 }
 
 func TestRateLimitExceeded(t *testing.T) {

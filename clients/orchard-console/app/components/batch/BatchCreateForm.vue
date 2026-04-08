@@ -1,8 +1,8 @@
 <script setup lang="ts">
 import type { FormError, FormSubmitEvent } from '@nuxt/ui'
-import { ORCHARD_PRESETS } from '~/constants/orchard-presets'
 import { toRFC3339FromLocal } from '~/composables/useBatchCreate'
 import type { BatchCreateApiError, BatchCreateFormInput } from '~/types/batch'
+import type { OrchardWithPlots } from '~/types/resources'
 import type { SessionAggregateSummary } from '~/utils/session-aggregator'
 
 interface FormState {
@@ -18,6 +18,7 @@ interface FormState {
 }
 
 const props = defineProps<{
+  orchards: OrchardWithPlots[]
   summary: SessionAggregateSummary
   submitting: boolean
   isRecognizing: boolean
@@ -29,13 +30,16 @@ const emit = defineEmits<{
   (event: 'submit', payload: BatchCreateFormInput): void
 }>()
 
+const initialOrchard = computed(() => props.orchards[0])
+const initialPlot = computed(() => initialOrchard.value?.plots[0])
+
 const state = reactive<FormState>({
-  orchardPresetId: ORCHARD_PRESETS[0]?.orchard_id,
-  orchard_id: ORCHARD_PRESETS[0]?.orchard_id || '',
-  orchard_name: ORCHARD_PRESETS[0]?.orchard_name || '',
-  plotPresetId: ORCHARD_PRESETS[0]?.plots[0]?.plot_id,
-  plot_id: ORCHARD_PRESETS[0]?.plots[0]?.plot_id || '',
-  plot_name: ORCHARD_PRESETS[0]?.plots[0]?.plot_name || '',
+  orchardPresetId: initialOrchard.value?.orchard_id,
+  orchard_id: initialOrchard.value?.orchard_id || '',
+  orchard_name: initialOrchard.value?.orchard_name || '',
+  plotPresetId: initialPlot.value?.plot_id,
+  plot_id: initialPlot.value?.plot_id || '',
+  plot_name: initialPlot.value?.plot_name || '',
   harvested_at: getLocalDateTimeNow(),
   note: '',
   confirm_unripe: false
@@ -44,14 +48,14 @@ const state = reactive<FormState>({
 const formError = ref('')
 
 const orchardItems = computed(() =>
-  ORCHARD_PRESETS.map((orchard) => ({
+  props.orchards.map((orchard) => ({
     label: orchard.orchard_name,
     value: orchard.orchard_id
   }))
 )
 
 const selectedPreset = computed(() =>
-  ORCHARD_PRESETS.find((orchard) => orchard.orchard_id === state.orchardPresetId)
+  props.orchards.find((orchard) => orchard.orchard_id === state.orchardPresetId)
 )
 
 const plotItems = computed(() =>
@@ -66,7 +70,7 @@ const submitDisabled = computed(() =>
 )
 
 watch(() => state.orchardPresetId, (value) => {
-  const preset = ORCHARD_PRESETS.find((orchard) => orchard.orchard_id === value)
+  const preset = props.orchards.find((orchard) => orchard.orchard_id === value)
   if (!preset) {
     return
   }
@@ -96,6 +100,18 @@ watch(() => props.requireConfirmUnripe, (required) => {
     state.confirm_unripe = false
   }
 })
+
+watch(() => props.orchards, (orchards) => {
+  if (state.orchardPresetId || orchards.length === 0) {
+    return
+  }
+  state.orchardPresetId = orchards[0]?.orchard_id
+  state.orchard_id = orchards[0]?.orchard_id || ''
+  state.orchard_name = orchards[0]?.orchard_name || ''
+  state.plotPresetId = orchards[0]?.plots[0]?.plot_id
+  state.plot_id = orchards[0]?.plots[0]?.plot_id || ''
+  state.plot_name = orchards[0]?.plots[0]?.plot_name || ''
+}, { immediate: true })
 
 function validate(current: FormState): FormError[] {
   const errors: FormError[] = []

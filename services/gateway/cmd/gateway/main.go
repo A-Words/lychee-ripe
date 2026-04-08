@@ -17,6 +17,7 @@ import (
 	"github.com/lychee-ripe/gateway/internal/domain"
 	"github.com/lychee-ripe/gateway/internal/handler"
 	"github.com/lychee-ripe/gateway/internal/middleware"
+	"github.com/lychee-ripe/gateway/internal/oidc"
 	"github.com/lychee-ripe/gateway/internal/proxy"
 	repositorygorm "github.com/lychee-ripe/gateway/internal/repository/gorm"
 	"github.com/lychee-ripe/gateway/internal/service"
@@ -94,10 +95,27 @@ func main() {
 	}
 
 	repo := repositorygorm.New(gdb)
+	if err := service.SeedDefaultResources(context.Background(), repo); err != nil {
+		logger.Error("failed to seed default orchard data", "error", err)
+		os.Exit(1)
+	}
 	batchSvc := service.NewBatchCreateService(repo, chainAdapter, cfg.Trace.Mode, logger)
 	traceSvc := service.NewTraceService(repo, chainAdapter, cfg.Trace.Mode)
 	reconcileSvc := service.NewReconcileService(repo, repo, chainAdapter, cfg.Trace.Mode, logger)
 	dashboardSvc := service.NewDashboardService(repo, repo, cfg.Trace.Mode)
+	authSvc := service.NewAuthService(repo)
+	userSvc := service.NewUserAdminService(repo)
+	orchardSvc := service.NewOrchardService(repo)
+	plotSvc := service.NewPlotService(repo)
+
+	var validator *oidc.Validator
+	if cfg.Auth.Mode == config.AuthModeOIDC {
+		validator, err = oidc.NewValidator(cfg.Auth.OIDC)
+		if err != nil {
+			logger.Error("failed to initialize oidc validator", "error", err)
+			os.Exit(1)
+		}
+	}
 
 	appCtx, appCancel := context.WithCancel(context.Background())
 	defer appCancel()
@@ -108,8 +126,20 @@ func main() {
 	// Compose the middleware chain.
 	mux := http.NewServeMux()
 	mux.HandleFunc("GET /healthz", handler.Health(cfg.Upstream, logger))
+	mux.HandleFunc("GET /v1/auth/me", handler.GetCurrentPrincipal())
 	mux.HandleFunc("POST /v1/batches", handler.CreateBatch(batchSvc, logger))
 	mux.HandleFunc("GET /v1/batches/{batch_id}", handler.GetBatch(batchSvc, logger))
+	mux.HandleFunc("GET /v1/orchards", handler.ListOrchards(orchardSvc))
+	mux.HandleFunc("POST /v1/orchards", handler.CreateOrchard(orchardSvc))
+	mux.HandleFunc("PATCH /v1/orchards/{orchard_id}", handler.UpdateOrchard(orchardSvc))
+	mux.HandleFunc("DELETE /v1/orchards/{orchard_id}", handler.ArchiveOrchard(orchardSvc))
+	mux.HandleFunc("GET /v1/plots", handler.ListPlots(plotSvc))
+	mux.HandleFunc("POST /v1/plots", handler.CreatePlot(plotSvc))
+	mux.HandleFunc("PATCH /v1/plots/{plot_id}", handler.UpdatePlot(plotSvc))
+	mux.HandleFunc("DELETE /v1/plots/{plot_id}", handler.ArchivePlot(plotSvc))
+	mux.HandleFunc("GET /v1/admin/users", handler.ListUsers(userSvc))
+	mux.HandleFunc("POST /v1/admin/users", handler.CreateUser(userSvc))
+	mux.HandleFunc("PATCH /v1/admin/users/{user_id}", handler.UpdateUser(userSvc))
 	mux.HandleFunc("GET /v1/trace/{trace_code}", handler.GetPublicTrace(traceSvc, logger))
 	mux.HandleFunc("GET /v1/dashboard/overview", handler.GetDashboardOverview(dashboardSvc, logger))
 	mux.HandleFunc("POST /v1/batches/reconcile", handler.ReconcileBatches(reconcileSvc, logger))
@@ -118,7 +148,7 @@ func main() {
 	// Apply middleware (outermost runs first).
 	// Order: RequestID → Logging → CORS → RateLimit → Auth → handler
 	var h http.Handler = mux
-	h = middleware.Auth(cfg.Auth, logger)(h)
+	h = middleware.Auth(cfg.Auth, validator, authSvc, logger)(h)
 	h = middleware.RateLimit(cfg.RateLimit, logger)(h)
 	h = middleware.CORS(cfg.CORS)(h)
 	h = middleware.Logging(logger)(h)
@@ -145,7 +175,7 @@ func main() {
 			"chain_rpc_url", cfg.Chain.RPCURL,
 			"chain_id", cfg.Chain.ChainID,
 			"chain_contract_address", cfg.Chain.ContractAddress,
-			"auth", cfg.Auth.Enabled,
+			"auth_mode", cfg.Auth.Mode,
 			"rate_limit", cfg.RateLimit.Enabled,
 		)
 		if err := srv.ListenAndServe(); err != nil && err != http.ErrServerClosed {

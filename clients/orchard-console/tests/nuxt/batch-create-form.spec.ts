@@ -2,6 +2,7 @@ import { describe, expect, it } from 'vitest'
 import { mountSuspended } from '@nuxt/test-utils/runtime'
 import BatchCreateForm from '../../app/components/batch/BatchCreateForm.vue'
 import { toRFC3339FromLocal } from '../../app/composables/useBatchCreate'
+import type { OrchardWithPlots } from '../../app/types/resources'
 import { buildSessionSummary } from './support/fixtures'
 import { flushUi } from './support/helpers'
 import { createNuxtUiStubs } from './support/ui-stubs'
@@ -92,6 +93,7 @@ describe('batch create form', () => {
 async function mountForm(overrides: Partial<InstanceType<typeof BatchCreateForm>['$props']> = {}) {
   return await mountSuspended(BatchCreateForm, {
     props: {
+      orchards: ORCHARDS,
       summary: buildSessionSummary(),
       submitting: false,
       isRecognizing: false,
@@ -108,3 +110,22 @@ async function mountForm(overrides: Partial<InstanceType<typeof BatchCreateForm>
 function getField(wrapper: Awaited<ReturnType<typeof mountSuspended>>, name: string) {
   return wrapper.get(`[data-field-name="${name}"]`)
 }
+
+const ORCHARDS: OrchardWithPlots[] = [
+  {
+    orchard_id: 'orchard-demo-01',
+    orchard_name: '荔枝示范园',
+    plots: [
+      { plot_id: 'plot-a01', plot_name: 'A1 区' },
+      { plot_id: 'plot-a02', plot_name: 'A2 区' }
+    ]
+  },
+  {
+    orchard_id: 'orchard-east-02',
+    orchard_name: '东麓果园',
+    plots: [
+      { plot_id: 'plot-e01', plot_name: '东坡 1 号地块' },
+      { plot_id: 'plot-e02', plot_name: '东坡 2 号地块' }
+    ]
+  }
+]
