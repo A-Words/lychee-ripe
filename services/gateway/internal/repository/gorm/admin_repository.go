@@ -104,6 +104,17 @@ func (r *Repository) CountUsers(ctx context.Context) (int64, error) {
 	return count, nil
 }
 
+func (r *Repository) CountActiveAdmins(ctx context.Context) (int64, error) {
+	var count int64
+	if err := r.db.WithContext(ctx).
+		Model(&UserModel{}).
+		Where("role = ? AND status = ?", string(domain.UserRoleAdmin), string(domain.UserStatusActive)).
+		Count(&count).Error; err != nil {
+		return 0, mapGormErr(err)
+	}
+	return count, nil
+}
+
 func (r *Repository) ListUsers(ctx context.Context) ([]domain.UserRecord, error) {
 	var models []UserModel
 	if err := r.db.WithContext(ctx).Order("created_at DESC").Find(&models).Error; err != nil {

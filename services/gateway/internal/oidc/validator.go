@@ -146,7 +146,15 @@ func (v *Validator) getKey(ctx context.Context, kid string) (*rsa.PublicKey, err
 	}
 	v.mu.RUnlock()
 
-	if err := v.refreshKeys(ctx); err != nil {
+	forceRefresh := false
+	v.mu.RLock()
+	_, kidKnown := v.keys[kid]
+	v.mu.RUnlock()
+	if !kidKnown {
+		forceRefresh = true
+	}
+
+	if err := v.refreshKeys(ctx, forceRefresh); err != nil {
 		return nil, err
 	}
 
@@ -159,11 +167,11 @@ func (v *Validator) getKey(ctx context.Context, kid string) (*rsa.PublicKey, err
 	return key, nil
 }
 
-func (v *Validator) refreshKeys(ctx context.Context) error {
+func (v *Validator) refreshKeys(ctx context.Context, force bool) error {
 	v.mu.Lock()
 	defer v.mu.Unlock()
 
-	if time.Since(v.lastSynced) < jwksTTL && len(v.keys) > 0 {
+	if !force && time.Since(v.lastSynced) < jwksTTL && len(v.keys) > 0 {
 		return nil
 	}
 	doc, err := v.Discover(ctx)
