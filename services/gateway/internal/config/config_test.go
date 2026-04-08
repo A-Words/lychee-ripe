@@ -76,6 +76,7 @@ db:
     schema: "public"
 auth:
   mode: "oidc"
+  bootstrap_admin_email: "admin@example.com"
   oidc:
     issuer_url: "https://issuer.example.com"
     audience: "lychee-ripe"
@@ -125,6 +126,9 @@ trace:
 	}
 	if cfg.Auth.Mode != AuthModeOIDC {
 		t.Errorf("auth.mode = %q, want oidc", cfg.Auth.Mode)
+	}
+	if cfg.Auth.BootstrapAdminEmail != "admin@example.com" {
+		t.Errorf("auth.bootstrap_admin_email = %q, want admin@example.com", cfg.Auth.BootstrapAdminEmail)
 	}
 	if cfg.Auth.OIDC.IssuerURL != "https://issuer.example.com" {
 		t.Errorf("auth.oidc.issuer_url = %q", cfg.Auth.OIDC.IssuerURL)
@@ -262,6 +266,41 @@ db:
 	_, err := Load(cfgPath)
 	if err == nil {
 		t.Fatal("expected validation error for invalid db.driver")
+	}
+}
+
+func TestLoadAppliesAuthEnvOverrides(t *testing.T) {
+	dir := t.TempDir()
+	cfgPath := filepath.Join(dir, "gateway.yaml")
+	content := `
+auth:
+  mode: "disabled"
+`
+	if err := os.WriteFile(cfgPath, []byte(content), 0o644); err != nil {
+		t.Fatal(err)
+	}
+
+	t.Setenv("LYCHEE_AUTH_MODE", "oidc")
+	t.Setenv("LYCHEE_AUTH_OIDC_ISSUER_URL", "https://issuer.override.example.com")
+	t.Setenv("LYCHEE_AUTH_OIDC_AUDIENCE", "lychee-ripe-override")
+	t.Setenv("LYCHEE_AUTH_BOOTSTRAP_ADMIN_EMAIL", "bootstrap@example.com")
+
+	cfg, err := Load(cfgPath)
+	if err != nil {
+		t.Fatalf("Load failed: %v", err)
+	}
+
+	if cfg.Auth.Mode != AuthModeOIDC {
+		t.Fatalf("auth.mode = %q, want oidc", cfg.Auth.Mode)
+	}
+	if cfg.Auth.OIDC.IssuerURL != "https://issuer.override.example.com" {
+		t.Fatalf("auth.oidc.issuer_url = %q", cfg.Auth.OIDC.IssuerURL)
+	}
+	if cfg.Auth.OIDC.Audience != "lychee-ripe-override" {
+		t.Fatalf("auth.oidc.audience = %q", cfg.Auth.OIDC.Audience)
+	}
+	if cfg.Auth.BootstrapAdminEmail != "bootstrap@example.com" {
+		t.Fatalf("auth.bootstrap_admin_email = %q", cfg.Auth.BootstrapAdminEmail)
 	}
 }
 

@@ -79,8 +79,9 @@ type ChainConfig struct {
 
 // AuthConfig defines authentication settings.
 type AuthConfig struct {
-	Mode AuthModeConfig `yaml:"mode"`
-	OIDC OIDCConfig     `yaml:"oidc"`
+	Mode                AuthModeConfig `yaml:"mode"`
+	BootstrapAdminEmail string         `yaml:"bootstrap_admin_email"`
+	OIDC                OIDCConfig     `yaml:"oidc"`
 }
 
 type AuthModeConfig string
@@ -406,5 +407,8 @@ func applyEnvOverrides(cfg *Config) {
 	}
 	if value := strings.TrimSpace(os.Getenv("LYCHEE_AUTH_OIDC_AUDIENCE")); value != "" {
 		cfg.Auth.OIDC.Audience = value
+	}
+	if value := strings.TrimSpace(os.Getenv("LYCHEE_AUTH_BOOTSTRAP_ADMIN_EMAIL")); value != "" {
+		cfg.Auth.BootstrapAdminEmail = value
 	}
 }

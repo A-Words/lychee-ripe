@@ -1,25 +1,35 @@
-const PUBLIC_PREFIXES = ['/trace', '/login', '/auth/callback']
-const PUBLIC_EXACT = ['/']
+import { resolveAuthGuardDecision } from '~/utils/auth-guard'
 
 export default defineNuxtRouteMiddleware(async (to) => {
-  const auth = useAuth()
-  await auth.init()
-
-  const isPublic = PUBLIC_EXACT.includes(to.path) || PUBLIC_PREFIXES.some((prefix) => to.path === prefix || to.path.startsWith(`${prefix}/`))
-  if (isPublic) {
+  if (import.meta.server) {
     return
   }
 
-  if (!auth.isAuthenticated.value) {
+  const auth = useAuth()
+  await auth.init()
+
+  const decision = resolveAuthGuardDecision({
+    path: to.path,
+    fullPath: to.fullPath,
+    isServer: false,
+    isAuthenticated: auth.isAuthenticated.value,
+    isAdmin: auth.isAdmin.value
+  })
+
+  if (decision.kind === 'allow') {
+    return
+  }
+
+  if (decision.kind === 'login') {
     return navigateTo({
       path: '/login',
       query: {
-        redirect: to.fullPath
+        redirect: decision.redirect
       }
     })
   }
 
-  if (to.path.startsWith('/admin') && !auth.isAdmin.value) {
+  if (decision.kind === 'dashboard') {
     return navigateTo('/dashboard')
   }
 })

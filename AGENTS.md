@@ -18,6 +18,7 @@
 - Gateway 认证模式：`auth.mode=disabled | oidc`，默认 `disabled`。
 - `disabled` 模式下网关为受保护接口注入模拟 `admin` 主体，便于本地开发。
 - `oidc` 模式下网关按 `JWT + JWKS` 校验 Bearer Token，并基于本地 `users` 表做角色授权。
+- `oidc` 模式首次跑在空库上时，必须提供 `auth.bootstrap_admin_email` 或 `LYCHEE_AUTH_BOOTSTRAP_ADMIN_EMAIL`，用于引导首个管理员账号。
 - `database` 模式下系统与区块链解耦，批次主状态为 `stored`。
 - `blockchain` 模式下保留 `pending_anchor / anchored / anchor_failed` 与补链能力。
 - 成熟度类别映射：`0=green`，`1=half`，`2=red`，`3=young`。
@@ -143,7 +144,7 @@
 - 前端禁止直连 `services/inference-api`，默认必须走 `services/gateway`
 - 任何行为改动，至少运行一次相关测试；若未执行，必须说明原因和风险
 - `tooling/configs/gateway.yaml.example` 应保持本地直启可用，默认 `upstream.base_url` 指向 `http://127.0.0.1:8000`
-- `tooling/configs/gateway.yaml.example` 默认 `auth.mode=disabled`，应保持本地直启和管理后台可用
+- `tooling/configs/gateway.yaml.example` 默认 `auth.mode=disabled`，应保持本地直启和管理后台可用；若切到 `oidc`，空库场景需同时说明 `auth.bootstrap_admin_email`
 - Docker Compose 应使用独立的 `tooling/configs/gateway.compose.yaml`，其中 `upstream.base_url` 指向容器服务名 `http://inference-api:8000`
 
 ## 5. 提交前检查

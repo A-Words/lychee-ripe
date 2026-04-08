@@ -34,6 +34,7 @@ chain:
 
 auth:
   mode: "disabled" # disabled | oidc
+  bootstrap_admin_email: "" # required for first startup with auth.mode=oidc on an empty users table
   oidc:
     issuer_url: "https://issuer.example.com"
     audience: "lychee-ripe"

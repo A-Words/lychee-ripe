@@ -99,6 +99,15 @@ func main() {
 		logger.Error("failed to seed default orchard data", "error", err)
 		os.Exit(1)
 	}
+	if err := service.EnsureBootstrapAdmin(
+		context.Background(),
+		domain.AuthMode(cfg.Auth.Mode),
+		cfg.Auth.BootstrapAdminEmail,
+		repo,
+	); err != nil {
+		logger.Error("failed to ensure oidc bootstrap admin", "error", err)
+		os.Exit(1)
+	}
 	batchSvc := service.NewBatchCreateService(repo, chainAdapter, cfg.Trace.Mode, logger)
 	traceSvc := service.NewTraceService(repo, chainAdapter, cfg.Trace.Mode)
 	reconcileSvc := service.NewReconcileService(repo, repo, chainAdapter, cfg.Trace.Mode, logger)

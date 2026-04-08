@@ -69,9 +69,9 @@ func (r *Repository) ResolvePrincipal(
 		if err := tx.Model(&UserModel{}).
 			Where("id = ?", user.ID).
 			Updates(map[string]any{
-				"display_name": user.DisplayName,
+				"display_name":  user.DisplayName,
 				"last_login_at": user.LastLoginAt,
-				"updated_at": user.UpdatedAt,
+				"updated_at":    user.UpdatedAt,
 			}).Error; err != nil {
 			return mapGormErr(err)
 		}
@@ -91,6 +91,14 @@ func (r *Repository) GetPrincipalByID(ctx context.Context, userID string) (domai
 		return domain.UserRecord{}, mapGormErr(err)
 	}
 	return userModelToDomain(user), nil
+}
+
+func (r *Repository) CountUsers(ctx context.Context) (int64, error) {
+	var count int64
+	if err := r.db.WithContext(ctx).Model(&UserModel{}).Count(&count).Error; err != nil {
+		return 0, mapGormErr(err)
+	}
+	return count, nil
 }
 
 func (r *Repository) ListUsers(ctx context.Context) ([]domain.UserRecord, error) {
