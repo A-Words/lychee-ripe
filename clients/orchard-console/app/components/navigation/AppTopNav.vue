@@ -38,18 +38,20 @@ async function handleAuthAction() {
       :ui="{ root: 'w-full' }"
     />
 
-    <div class="flex items-center gap-2">
-      <UBadge v-if="auth.principal" color="neutral" variant="soft">
-        {{ principalName }}
-      </UBadge>
-      <UButton
-        color="neutral"
-        variant="ghost"
-        icon="i-lucide-log-in"
-        :label="authActionLabel"
-        @click="handleAuthAction"
-      />
-    </div>
+    <template #right>
+      <div class="flex items-center gap-2" data-testid="top-nav-auth-actions">
+        <UBadge v-if="auth.principal" color="neutral" variant="soft">
+          {{ principalName }}
+        </UBadge>
+        <UButton
+          color="neutral"
+          variant="ghost"
+          icon="i-lucide-log-in"
+          :label="authActionLabel"
+          @click="handleAuthAction"
+        />
+      </div>
+    </template>
 
     <template #body>
       <UNavigationMenu
