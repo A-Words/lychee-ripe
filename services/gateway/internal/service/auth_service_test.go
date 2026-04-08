@@ -187,6 +187,40 @@ func TestUserAdminServiceUpdateUserReturnsServiceUnavailableOnRepositoryFailure(
 	}
 }
 
+func TestUserAdminServiceUpdateUserMapsConflictFromRepository(t *testing.T) {
+	t.Parallel()
+
+	now := time.Date(2026, 4, 9, 8, 0, 0, 0, time.UTC)
+	repo := &fakeUserAdminRepo{
+		user: domain.UserRecord{
+			ID:          "user-1",
+			Email:       "admin@example.com",
+			DisplayName: "Admin",
+			Role:        domain.UserRoleAdmin,
+			Status:      domain.UserStatusActive,
+			CreatedAt:   now,
+			UpdatedAt:   now,
+		},
+		updateErr: repository.ErrConflict,
+	}
+	svc := NewUserAdminService(repo)
+	svc.nowFn = func() time.Time { return now.Add(time.Minute) }
+
+	_, err := svc.UpdateUser(context.Background(), UserUpdateInput{
+		ID:          "user-1",
+		Email:       "duplicate@example.com",
+		DisplayName: "Admin",
+		Role:        domain.UserRoleAdmin,
+		Status:      domain.UserStatusActive,
+	})
+	if !errors.Is(err, ErrConflict) {
+		t.Fatalf("error = %v, want ErrConflict", err)
+	}
+	if !repo.updateCalled {
+		t.Fatal("expected repository update to be called")
+	}
+}
+
 type fakeUserAdminRepo struct {
 	user         domain.UserRecord
 	getErr       error

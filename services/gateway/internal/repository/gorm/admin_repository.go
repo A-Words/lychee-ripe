@@ -209,7 +209,7 @@ func (r *Repository) updateUserAtomicallyOnce(ctx context.Context, model UserMod
 		).
 		Updates(userUpdateAssignments(model))
 	if res.Error != nil {
-		return res.Error
+		return mapGormErr(res.Error)
 	}
 	if res.RowsAffected > 0 {
 		return nil
@@ -220,7 +220,7 @@ func (r *Repository) updateUserAtomicallyOnce(ctx context.Context, model UserMod
 		Model(&UserModel{}).
 		Where("id = ?", model.ID).
 		Count(&exists).Error; err != nil {
-		return err
+		return mapGormErr(err)
 	}
 	if exists == 0 {
 		return repository.ErrNotFound

@@ -140,21 +140,18 @@ func (v *Validator) Discover(ctx context.Context) (discoveryDocument, error) {
 
 func (v *Validator) getKey(ctx context.Context, kid string) (*rsa.PublicKey, error) {
 	v.mu.RLock()
-	if key, ok := v.keys[kid]; ok && time.Since(v.lastSynced) < jwksTTL {
-		v.mu.RUnlock()
-		return key, nil
-	}
+	cachedKey, kidKnown := v.keys[kid]
+	cacheFresh := time.Since(v.lastSynced) < jwksTTL
 	v.mu.RUnlock()
-
-	forceRefresh := false
-	v.mu.RLock()
-	_, kidKnown := v.keys[kid]
-	v.mu.RUnlock()
-	if !kidKnown {
-		forceRefresh = true
+	if kidKnown && cacheFresh {
+		return cachedKey, nil
 	}
 
+	forceRefresh := !kidKnown
 	if err := v.refreshKeys(ctx, forceRefresh); err != nil {
+		if kidKnown {
+			return cachedKey, nil
+		}
 		return nil, err
 	}
 

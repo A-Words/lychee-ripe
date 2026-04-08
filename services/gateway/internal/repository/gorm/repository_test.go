@@ -690,6 +690,52 @@ func TestUpdateUserAllowsDemotingAdminWhenAnotherActiveAdminExists(t *testing.T)
 	}
 }
 
+func TestUpdateUserMapsSQLiteUniqueEmailViolationToConflict(t *testing.T) {
+	t.Parallel()
+
+	ctx := context.Background()
+	repo, sqlDB := mustNewSQLiteRepo(t)
+	defer sqlDB.Close()
+
+	now := time.Now().UTC()
+	users := []UserModel{
+		{
+			ID:          "user-1",
+			Email:       "user-1@example.com",
+			DisplayName: "User 1",
+			Role:        string(domain.UserRoleOperator),
+			Status:      string(domain.UserStatusActive),
+			CreatedAt:   now,
+			UpdatedAt:   now,
+		},
+		{
+			ID:          "user-2",
+			Email:       "user-2@example.com",
+			DisplayName: "User 2",
+			Role:        string(domain.UserRoleOperator),
+			Status:      string(domain.UserStatusActive),
+			CreatedAt:   now,
+			UpdatedAt:   now,
+		},
+	}
+	if err := repo.db.WithContext(ctx).Create(&users).Error; err != nil {
+		t.Fatalf("seed users: %v", err)
+	}
+
+	_, err := repo.UpdateUser(ctx, domain.UserRecord{
+		ID:          users[0].ID,
+		Email:       users[1].Email,
+		DisplayName: users[0].DisplayName,
+		Role:        domain.UserRoleOperator,
+		Status:      domain.UserStatusActive,
+		CreatedAt:   users[0].CreatedAt,
+		UpdatedAt:   now.Add(time.Minute),
+	})
+	if !errors.Is(err, repository.ErrConflict) {
+		t.Fatalf("UpdateUser error = %v, want ErrConflict", err)
+	}
+}
+
 func TestUpdateUserConcurrentDemotionsPreserveActiveAdmin(t *testing.T) {
 	t.Parallel()
 

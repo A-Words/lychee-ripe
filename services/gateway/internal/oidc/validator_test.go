@@ -6,6 +6,7 @@ import (
 	"crypto/rsa"
 	"encoding/base64"
 	"encoding/json"
+	"errors"
 	"net/http"
 	"net/http/httptest"
 	"sync/atomic"
@@ -31,6 +32,51 @@ func TestValidatorGetKeyReturnsCachedKeyWithoutRefresh(t *testing.T) {
 	}
 	if got != &key.PublicKey {
 		t.Fatal("expected cached key to be returned")
+	}
+}
+
+func TestValidatorGetKeyFallsBackToCachedKeyWhenRefreshFails(t *testing.T) {
+	t.Parallel()
+
+	key := mustGenerateRSAKey(t)
+	validator := &Validator{
+		client: &http.Client{
+			Timeout: defaultTimeout,
+			Transport: roundTripFunc(func(*http.Request) (*http.Response, error) {
+				return nil, errors.New("jwks unavailable")
+			}),
+		},
+		keys:       map[string]*rsa.PublicKey{"known": &key.PublicKey},
+		lastSynced: time.Now().Add(-jwksTTL - time.Minute),
+		issuer:     "https://issuer.example.com",
+	}
+
+	got, err := validator.getKey(context.Background(), "known")
+	if err != nil {
+		t.Fatalf("getKey returned error: %v", err)
+	}
+	if got != &key.PublicKey {
+		t.Fatal("expected cached key to be returned when refresh fails")
+	}
+}
+
+func TestValidatorGetKeyReturnsRefreshErrorForUnknownKidWhenRefreshFails(t *testing.T) {
+	t.Parallel()
+
+	validator := &Validator{
+		client: &http.Client{
+			Timeout: defaultTimeout,
+			Transport: roundTripFunc(func(*http.Request) (*http.Response, error) {
+				return nil, errors.New("jwks unavailable")
+			}),
+		},
+		keys:       map[string]*rsa.PublicKey{},
+		lastSynced: time.Now().Add(-jwksTTL - time.Minute),
+		issuer:     "https://issuer.example.com",
+	}
+
+	if _, err := validator.getKey(context.Background(), "unknown"); err == nil {
+		t.Fatal("expected unknown kid refresh failure to return error")
 	}
 }
 
