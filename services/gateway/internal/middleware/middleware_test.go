@@ -99,6 +99,22 @@ func TestAuthRejectsAdminPathForOperator(t *testing.T) {
 	}
 }
 
+func TestAuthRejectsReconcilePathForOperator(t *testing.T) {
+	cfg := config.AuthConfig{Mode: config.AuthModeOIDC}
+	mw := Auth(cfg, fakeValidator{}, fakeResolver{principal: domain.Principal{Role: domain.UserRoleOperator, Status: domain.UserStatusActive}}, slog.Default())
+	handler := mw(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		w.WriteHeader(http.StatusOK)
+	}))
+
+	req := httptest.NewRequest(http.MethodPost, "/v1/batches/reconcile", nil)
+	req.Header.Set("Authorization", "Bearer token")
+	rec := httptest.NewRecorder()
+	handler.ServeHTTP(rec, req)
+	if rec.Code != http.StatusForbidden {
+		t.Errorf("expected 403 on reconcile path for operator, got %d", rec.Code)
+	}
+}
+
 func TestAuthRejectsUnknownProvisionedUser(t *testing.T) {
 	cfg := config.AuthConfig{Mode: config.AuthModeOIDC}
 	mw := Auth(cfg, fakeValidator{}, fakeResolver{err: service.ErrNotFound}, slog.Default())
