@@ -36,7 +36,7 @@ auth:
   mode: "disabled" # disabled | oidc
   bootstrap_admin_email: "" # required for first startup with auth.mode=oidc on an empty users table
   oidc:
-    issuer_url: "https://issuer.example.com"
+    issuer_url: "https://issuer.example.com" # the access_token presented to gateway must include an email claim for first-time user binding
     audience: "lychee-ripe"
 
 rate_limit:

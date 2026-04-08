@@ -49,6 +49,7 @@ paths:
     get:
       operationId: getCurrentPrincipal
       summary: Get the current authenticated principal
+      description: In `auth.mode=oidc`, the Bearer access token presented to the gateway must include an `email` claim for first-time binding to a pre-provisioned local user.
       tags: [auth]
       security:
         - OpenIdConnect: []
@@ -624,6 +625,7 @@ components:
   securitySchemes:
     OpenIdConnect:
       type: openIdConnect
+      description: The gateway treats `email` in the presented access token as a hard requirement for first-time binding of a pre-provisioned user account.
       openIdConnectUrl: https://issuer.example.com/.well-known/openid-configuration
     BearerAuth:
       type: http

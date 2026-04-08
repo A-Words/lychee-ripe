@@ -39,6 +39,8 @@ func (r *Repository) ResolvePrincipal(
 		switch {
 		case err == nil:
 		case errors.Is(err, gorm.ErrRecordNotFound):
+			// First-time binding is intentionally gated on the email claim carried by the
+			// presented access token so unknown subjects cannot create or bind local users.
 			if email == "" {
 				return repository.ErrNotFound
 			}

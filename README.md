@@ -200,7 +200,7 @@ bun run test:stack
 默认模型路径、网关默认配置与本地 sqlite 路径都已改成 repo-root 相对解析，直接从仓库根或各服务目录运行都可以。
 `tooling/configs/gateway.yaml.example` 默认面向本地直启，`upstream.base_url` 使用 `http://127.0.0.1:8000`。
 `tooling/configs/gateway*.yaml` 现在以 `trace.mode` 作为权威运行模式，默认值为 `database`；仅当 `trace.mode=blockchain` 时才要求配置 `chain.rpc_url`、`chain.chain_id`、`chain.contract_address` 与 `chain.private_key`。
-`tooling/configs/gateway*.yaml` 现在以 `auth.mode` 作为认证开关，默认值为 `disabled`；启用 OIDC 时需配置 `auth.oidc.issuer_url`、`auth.oidc.audience`。如果是首次在空库上启用 OIDC，还必须提供 `auth.bootstrap_admin_email`，用于预置首个本地管理员账号并在首次登录时绑定 OIDC `sub`。上述字段也可通过 `LYCHEE_AUTH_MODE`、`LYCHEE_AUTH_OIDC_ISSUER_URL`、`LYCHEE_AUTH_OIDC_AUDIENCE`、`LYCHEE_AUTH_BOOTSTRAP_ADMIN_EMAIL` 覆盖。
+`tooling/configs/gateway*.yaml` 现在以 `auth.mode` 作为认证开关，默认值为 `disabled`；启用 OIDC 时需配置 `auth.oidc.issuer_url`、`auth.oidc.audience`。如果是首次在空库上启用 OIDC，还必须提供 `auth.bootstrap_admin_email`，用于预置首个本地管理员账号并在首次登录时绑定 OIDC `sub`。首次绑定预创建用户时，网关把 `email in access_token` 作为硬要求：Bearer Token 必须自带 `email` claim，系统不会额外调用 `userinfo`，也不会读取前端单独传递的 `id_token` 来补齐邮箱。上述字段也可通过 `LYCHEE_AUTH_MODE`、`LYCHEE_AUTH_OIDC_ISSUER_URL`、`LYCHEE_AUTH_OIDC_AUDIENCE`、`LYCHEE_AUTH_BOOTSTRAP_ADMIN_EMAIL` 覆盖。
 Docker Compose 使用仓库自带的 `tooling/configs/gateway.compose.yaml`，其中容器内上游地址为 `http://inference-api:8000`。
 
 前端运行时认证配置：
@@ -226,6 +226,8 @@ NUXT_PUBLIC_AUTH_MODE=disabled
 LYCHEE_AUTH_MODE=oidc
 LYCHEE_AUTH_BOOTSTRAP_ADMIN_EMAIL=admin@example.com
 ```
+
+同时确认你的 IdP 会把 `email` 放进发给网关的 `access_token`。以 Keycloak 为例，需要检查对应 client scope / protocol mapper 的 `email` claim 已启用，并且 `Add to access token` 为开启状态；否则首次登录绑定预创建用户会被拒绝。
 
 ## Docker
 
