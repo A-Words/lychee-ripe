@@ -1,6 +1,6 @@
 <script setup lang="ts">
 import type { UserRole, UserStatus } from '~/types/auth'
-import type { Orchard, Plot, ResourceStatus, UserRecord } from '~/types/resources'
+import type { Orchard, Plot, UserRecord } from '~/types/resources'
 
 useSeoMeta({
   title: '管理后台',
@@ -33,6 +33,21 @@ const userForm = reactive({
   role: 'operator' as UserRole,
   status: 'active' as UserStatus
 })
+
+const resourceStatusOptions = [
+  { label: '启用', value: 'active' },
+  { label: '归档', value: 'archived' }
+]
+
+const userRoleOptions = [
+  { label: '管理员', value: 'admin' },
+  { label: '普通用户', value: 'operator' }
+]
+
+const userStatusOptions = [
+  { label: '启用', value: 'active' },
+  { label: '停用', value: 'disabled' }
+]
 
 async function loadAll() {
   loading.value = true
@@ -111,38 +126,35 @@ async function handleCreateUser() {
 
 async function toggleOrchardStatus(item: Orchard) {
   await runAdminMutation(async () => {
-    const nextStatus: ResourceStatus = item.status === 'active' ? 'archived' : 'active'
     await api.updateOrchard(item.orchard_id, {
       orchard_name: item.orchard_name,
-      status: nextStatus
+      status: item.status
     })
     await loadAll()
-  }, '更新果园状态失败')
+  }, '保存果园失败')
 }
 
 async function togglePlotStatus(item: Plot) {
   await runAdminMutation(async () => {
-    const nextStatus: ResourceStatus = item.status === 'active' ? 'archived' : 'active'
     await api.updatePlot(item.plot_id, {
       orchard_id: item.orchard_id,
       plot_name: item.plot_name,
-      status: nextStatus
+      status: item.status
     })
     await loadAll()
-  }, '更新地块状态失败')
+  }, '保存地块失败')
 }
 
 async function toggleUserStatus(item: UserRecord) {
   await runAdminMutation(async () => {
-    const nextStatus: UserStatus = item.status === 'active' ? 'disabled' : 'active'
     await api.updateUser(item.id, {
       email: item.email,
       display_name: item.display_name,
       role: item.role,
-      status: nextStatus
+      status: item.status
     })
     await loadAll()
-  }, '更新用户状态失败')
+  }, '保存用户失败')
 }
 
 onMounted(() => {
@@ -207,13 +219,13 @@ onMounted(() => {
           <UInput v-model="userForm.display_name" placeholder="显示名" />
           <USelect
             v-model="userForm.role"
-            :items="[{ label: '管理员', value: 'admin' }, { label: '普通用户', value: 'operator' }]"
+            :items="userRoleOptions"
             value-key="value"
             label-key="label"
           />
           <USelect
             v-model="userForm.status"
-            :items="[{ label: '启用', value: 'active' }, { label: '停用', value: 'disabled' }]"
+            :items="userStatusOptions"
             value-key="value"
             label-key="label"
           />
@@ -229,11 +241,17 @@ onMounted(() => {
             </h2>
           </template>
           <div v-for="item in orchards" :key="item.orchard_id" class="flex items-center justify-between gap-3 rounded border border-default p-3">
-            <div>
-              <p class="font-medium">{{ item.orchard_name }}</p>
-              <p class="text-xs text-muted">{{ item.orchard_id }} / {{ item.status }}</p>
+            <div class="min-w-0 flex-1 space-y-2">
+              <p class="text-xs text-muted">{{ item.orchard_id }}</p>
+              <UInput v-model="item.orchard_name" placeholder="果园名称" />
+              <USelect
+                v-model="item.status"
+                :items="resourceStatusOptions"
+                value-key="value"
+                label-key="label"
+              />
             </div>
-            <UButton size="sm" variant="outline" :label="item.status === 'active' ? '归档' : '启用'" @click="toggleOrchardStatus(item)" />
+            <UButton size="sm" variant="outline" label="保存" :loading="loading" @click="toggleOrchardStatus(item)" />
           </div>
         </UCard>
 
@@ -244,11 +262,18 @@ onMounted(() => {
             </h2>
           </template>
           <div v-for="item in plots" :key="item.plot_id" class="flex items-center justify-between gap-3 rounded border border-default p-3">
-            <div>
-              <p class="font-medium">{{ item.plot_name }}</p>
-              <p class="text-xs text-muted">{{ item.plot_id }} / {{ item.orchard_id }} / {{ item.status }}</p>
+            <div class="min-w-0 flex-1 space-y-2">
+              <p class="text-xs text-muted">{{ item.plot_id }}</p>
+              <UInput v-model="item.plot_name" placeholder="地块名称" />
+              <UInput v-model="item.orchard_id" placeholder="所属果园 ID" />
+              <USelect
+                v-model="item.status"
+                :items="resourceStatusOptions"
+                value-key="value"
+                label-key="label"
+              />
             </div>
-            <UButton size="sm" variant="outline" :label="item.status === 'active' ? '归档' : '启用'" @click="togglePlotStatus(item)" />
+            <UButton size="sm" variant="outline" label="保存" :loading="loading" @click="togglePlotStatus(item)" />
           </div>
         </UCard>
 
@@ -259,11 +284,24 @@ onMounted(() => {
             </h2>
           </template>
           <div v-for="item in users" :key="item.id" class="flex items-center justify-between gap-3 rounded border border-default p-3">
-            <div>
-              <p class="font-medium">{{ item.display_name || item.email }}</p>
-              <p class="text-xs text-muted">{{ item.email }} / {{ item.role }} / {{ item.status }}</p>
+            <div class="min-w-0 flex-1 space-y-2">
+              <p class="text-xs text-muted">{{ item.id }}</p>
+              <UInput v-model="item.display_name" placeholder="显示名" />
+              <UInput v-model="item.email" placeholder="user@example.com" />
+              <USelect
+                v-model="item.role"
+                :items="userRoleOptions"
+                value-key="value"
+                label-key="label"
+              />
+              <USelect
+                v-model="item.status"
+                :items="userStatusOptions"
+                value-key="value"
+                label-key="label"
+              />
             </div>
-            <UButton size="sm" variant="outline" :label="item.status === 'active' ? '停用' : '启用'" @click="toggleUserStatus(item)" />
+            <UButton size="sm" variant="outline" label="保存" :loading="loading" @click="toggleUserStatus(item)" />
           </div>
         </UCard>
       </div>

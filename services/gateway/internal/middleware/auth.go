@@ -132,12 +132,24 @@ func isAuthorized(path, method string, role domain.UserRole) bool {
 	case strings.HasPrefix(path, "/v1/infer/"),
 		path == "/v1/models/current",
 		(method == http.MethodPost && path == "/v1/batches"),
-		(method == http.MethodGet && strings.HasPrefix(path, "/v1/batches/") && path != "/v1/batches/reconcile"),
+		(method == http.MethodGet && isBatchItemPath(path)),
 		path == "/v1/dashboard/overview":
 		return true
 	default:
 		return false
 	}
+}
+
+func isBatchItemPath(path string) bool {
+	const prefix = "/v1/batches/"
+	if !strings.HasPrefix(path, prefix) {
+		return false
+	}
+	rest := strings.TrimSpace(strings.TrimPrefix(path, prefix))
+	if rest == "" || rest == "reconcile" || strings.Contains(rest, "/") {
+		return false
+	}
+	return true
 }
 
 func bearerToken(header string) string {
