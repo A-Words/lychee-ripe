@@ -70,6 +70,8 @@ func AutoMigrate(ctx context.Context, gdb *gorm.DB) error {
 		&repositorygorm.UserModel{},
 		&repositorygorm.OrchardModel{},
 		&repositorygorm.PlotModel{},
+		&repositorygorm.WebSessionModel{},
+		&repositorygorm.WebAuthStateModel{},
 	); err != nil {
 		return fmt.Errorf("auto migrate models: %w", err)
 	}

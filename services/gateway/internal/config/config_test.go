@@ -56,6 +56,12 @@ func TestDefaults(t *testing.T) {
 	if got := cfg.CORS.AllowedMethods; len(got) != 5 || got[0] != "GET" || got[1] != "POST" || got[2] != "PATCH" || got[3] != "DELETE" || got[4] != "OPTIONS" {
 		t.Errorf("unexpected default cors.allowed_methods: %#v", got)
 	}
+	if cfg.Auth.Web.CookieName != "lychee_session" {
+		t.Errorf("unexpected default auth.web.cookie_name: %q", cfg.Auth.Web.CookieName)
+	}
+	if cfg.CORS.AllowCredentials {
+		t.Error("cors.allow_credentials should default to false")
+	}
 }
 
 func TestLoad(t *testing.T) {
@@ -88,6 +94,12 @@ auth:
   oidc:
     issuer_url: "https://issuer.example.com"
     audience: "lychee-ripe"
+    web_client_id: "orchard-console-web"
+  web:
+    public_base_url: "http://127.0.0.1:9000"
+    app_base_url: "http://127.0.0.1:3000"
+    cookie_name: "lychee_session"
+    cookie_secure: false
 rate_limit:
   enabled: false
 trace:
@@ -146,6 +158,15 @@ trace:
 	}
 	if cfg.Auth.OIDC.Audience != "lychee-ripe" {
 		t.Errorf("auth.oidc.audience = %q", cfg.Auth.OIDC.Audience)
+	}
+	if cfg.Auth.OIDC.WebClientID != "orchard-console-web" {
+		t.Errorf("auth.oidc.web_client_id = %q", cfg.Auth.OIDC.WebClientID)
+	}
+	if cfg.Auth.Web.PublicBaseURL != "http://127.0.0.1:9000" {
+		t.Errorf("auth.web.public_base_url = %q", cfg.Auth.Web.PublicBaseURL)
+	}
+	if cfg.Auth.Web.AppBaseURL != "http://127.0.0.1:3000" {
+		t.Errorf("auth.web.app_base_url = %q", cfg.Auth.Web.AppBaseURL)
 	}
 	if cfg.RateLimit.Enabled {
 		t.Error("rate_limit should be disabled")
@@ -297,7 +318,12 @@ auth:
 	t.Setenv("LYCHEE_AUTH_MODE", "oidc")
 	t.Setenv("LYCHEE_AUTH_OIDC_ISSUER_URL", "https://issuer.override.example.com")
 	t.Setenv("LYCHEE_AUTH_OIDC_AUDIENCE", "lychee-ripe-override")
+	t.Setenv("LYCHEE_AUTH_OIDC_WEB_CLIENT_ID", "web-client-override")
 	t.Setenv("LYCHEE_AUTH_BOOTSTRAP_ADMIN_EMAIL", "bootstrap@example.com")
+	t.Setenv("LYCHEE_AUTH_WEB_PUBLIC_BASE_URL", "https://gateway.example.com")
+	t.Setenv("LYCHEE_AUTH_WEB_APP_BASE_URL", "https://app.example.com")
+	t.Setenv("LYCHEE_AUTH_WEB_COOKIE_NAME", "session_cookie")
+	t.Setenv("LYCHEE_AUTH_WEB_COOKIE_SECURE", "true")
 
 	cfg, err := Load(cfgPath)
 	if err != nil {
@@ -313,8 +339,23 @@ auth:
 	if cfg.Auth.OIDC.Audience != "lychee-ripe-override" {
 		t.Fatalf("auth.oidc.audience = %q", cfg.Auth.OIDC.Audience)
 	}
+	if cfg.Auth.OIDC.WebClientID != "web-client-override" {
+		t.Fatalf("auth.oidc.web_client_id = %q", cfg.Auth.OIDC.WebClientID)
+	}
 	if cfg.Auth.BootstrapAdminEmail != "bootstrap@example.com" {
 		t.Fatalf("auth.bootstrap_admin_email = %q", cfg.Auth.BootstrapAdminEmail)
+	}
+	if cfg.Auth.Web.PublicBaseURL != "https://gateway.example.com" {
+		t.Fatalf("auth.web.public_base_url = %q", cfg.Auth.Web.PublicBaseURL)
+	}
+	if cfg.Auth.Web.AppBaseURL != "https://app.example.com" {
+		t.Fatalf("auth.web.app_base_url = %q", cfg.Auth.Web.AppBaseURL)
+	}
+	if cfg.Auth.Web.CookieName != "session_cookie" {
+		t.Fatalf("auth.web.cookie_name = %q", cfg.Auth.Web.CookieName)
+	}
+	if !cfg.Auth.Web.CookieSecure {
+		t.Fatal("auth.web.cookie_secure = false, want true")
 	}
 }
 

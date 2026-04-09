@@ -7,8 +7,10 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
+	"io"
 	"math/big"
 	"net/http"
+	"net/url"
 	"strings"
 	"sync"
 	"time"
@@ -53,6 +55,22 @@ type discoveryDocument struct {
 	AuthorizationEndpoint string `json:"authorization_endpoint"`
 	TokenEndpoint         string `json:"token_endpoint"`
 	EndSessionEndpoint    string `json:"end_session_endpoint"`
+}
+
+type DiscoveryDocument = discoveryDocument
+
+type AuthorizationCodeExchange struct {
+	ClientID     string
+	Code         string
+	CodeVerifier string
+	RedirectURI  string
+}
+
+type TokenResponse struct {
+	AccessToken string `json:"access_token"`
+	IDToken     string `json:"id_token"`
+	TokenType   string `json:"token_type"`
+	ExpiresIn   int64  `json:"expires_in"`
 }
 
 type jwksDocument struct {
@@ -119,10 +137,53 @@ func (v *Validator) Validate(ctx context.Context, rawToken string) (domain.Ident
 		Subject:     claims.Subject,
 		Email:       strings.ToLower(strings.TrimSpace(claims.Email)),
 		DisplayName: strings.TrimSpace(claims.Name),
+		ExpiresAt:   claimsExpiry(claims),
 	}, nil
 }
 
-func (v *Validator) Discover(ctx context.Context) (discoveryDocument, error) {
+func (v *Validator) ExchangeAuthorizationCode(ctx context.Context, input AuthorizationCodeExchange) (TokenResponse, error) {
+	doc, err := v.Discover(ctx)
+	if err != nil {
+		return TokenResponse{}, fmt.Errorf("%w: discover oidc config: %v", ErrUnavailable, err)
+	}
+	if strings.TrimSpace(doc.TokenEndpoint) == "" {
+		return TokenResponse{}, fmt.Errorf("%w: token endpoint missing from discovery document", ErrUnavailable)
+	}
+
+	form := url.Values{
+		"grant_type":    {"authorization_code"},
+		"client_id":     {strings.TrimSpace(input.ClientID)},
+		"code":          {strings.TrimSpace(input.Code)},
+		"code_verifier": {strings.TrimSpace(input.CodeVerifier)},
+		"redirect_uri":  {strings.TrimSpace(input.RedirectURI)},
+	}
+	req, err := http.NewRequestWithContext(ctx, http.MethodPost, doc.TokenEndpoint, strings.NewReader(form.Encode()))
+	if err != nil {
+		return TokenResponse{}, fmt.Errorf("%w: build token request: %v", ErrUnavailable, err)
+	}
+	req.Header.Set("Content-Type", "application/x-www-form-urlencoded")
+
+	resp, err := v.client.Do(req)
+	if err != nil {
+		return TokenResponse{}, fmt.Errorf("%w: exchange authorization code: %v", ErrUnavailable, err)
+	}
+	defer resp.Body.Close()
+	if resp.StatusCode != http.StatusOK {
+		body, _ := io.ReadAll(io.LimitReader(resp.Body, 1024))
+		return TokenResponse{}, fmt.Errorf("%w: token endpoint returned %d: %s", ErrUnavailable, resp.StatusCode, strings.TrimSpace(string(body)))
+	}
+
+	var token TokenResponse
+	if err := json.NewDecoder(resp.Body).Decode(&token); err != nil {
+		return TokenResponse{}, fmt.Errorf("%w: decode token response: %v", ErrUnavailable, err)
+	}
+	if strings.TrimSpace(token.AccessToken) == "" {
+		return TokenResponse{}, fmt.Errorf("%w: token response missing access_token", ErrUnavailable)
+	}
+	return token, nil
+}
+
+func (v *Validator) Discover(ctx context.Context) (DiscoveryDocument, error) {
 	req, err := http.NewRequestWithContext(ctx, http.MethodGet, v.issuer+discoveryPath, nil)
 	if err != nil {
 		return discoveryDocument{}, err
@@ -238,4 +299,12 @@ func jwkToPublicKey(key jwkKey) (*rsa.PublicKey, error) {
 		return nil, fmt.Errorf("invalid rsa jwk")
 	}
 	return &rsa.PublicKey{N: n, E: e}, nil
+}
+
+func claimsExpiry(claims *Claims) *time.Time {
+	if claims == nil || claims.ExpiresAt == nil {
+		return nil
+	}
+	expiresAt := claims.ExpiresAt.Time.UTC()
+	return &expiresAt
 }

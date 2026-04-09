@@ -41,6 +41,12 @@ auth:
   oidc:
     issuer_url: "https://issuer.example.com" # the access_token presented to gateway must include an email claim for first-time user binding
     audience: "lychee-ripe"
+    web_client_id: "orchard-console-web"
+  web:
+    public_base_url: "http://127.0.0.1:9000" # gateway external url used for /v1/auth/callback
+    app_base_url: "http://127.0.0.1:3000" # orchard-console external url used for post-login redirect
+    cookie_name: "lychee_session"
+    cookie_secure: false # set true behind https
 
 rate_limit:
   enabled: true
@@ -52,7 +58,7 @@ rate_limit:
 cors:
   enabled: true
   allowed_origins:
-    - "*"
+    - "http://127.0.0.1:3000"
   allowed_methods:
     - "GET"
     - "POST"
@@ -62,6 +68,7 @@ cors:
   allowed_headers:
     - "Content-Type"
     - "Authorization"
+  allow_credentials: true
   max_age_s: 3600
 
 logging:

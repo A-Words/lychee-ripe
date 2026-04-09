@@ -12,11 +12,22 @@ export type PendingLoginState = {
 
 export type StorageLike = Pick<Storage, 'getItem' | 'setItem' | 'removeItem'>
 
-export function getAuthStorage(isTauri: boolean): StorageLike | null {
+export function getPrincipalStorage(isTauri: boolean): StorageLike | null {
   if (!hasStorage('localStorage') || !hasStorage('sessionStorage')) {
     return null
   }
   return isTauri ? globalThis.localStorage : globalThis.sessionStorage
+}
+
+export function getSessionStorage(isTauri: boolean): StorageLike | null {
+  if (!hasStorage('localStorage')) {
+    return null
+  }
+  return isTauri ? globalThis.localStorage : null
+}
+
+export function getAuthStorage(isTauri: boolean): StorageLike | null {
+  return getPrincipalStorage(isTauri)
 }
 
 export function clearLegacyWebAuthStorage() {
@@ -26,6 +37,9 @@ export function clearLegacyWebAuthStorage() {
   globalThis.localStorage.removeItem(AUTH_SESSION_KEY)
   globalThis.localStorage.removeItem(AUTH_PRINCIPAL_KEY)
   globalThis.localStorage.removeItem(AUTH_PENDING_KEY)
+  if (hasStorage('sessionStorage')) {
+    globalThis.sessionStorage.removeItem(AUTH_SESSION_KEY)
+  }
 }
 
 export function loadStoredSession(storage: StorageLike | null): AuthSession | null {

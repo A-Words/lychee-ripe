@@ -43,7 +43,7 @@ async function handleLogin() {
               登录 Lychee Ripe
             </h1>
             <p class="text-sm text-toned">
-              {{ isDisabledMode ? '当前为开发旁路模式，将直接以管理员身份进入系统。' : '使用标准 OIDC/OAuth2 流程登录。' }}
+              {{ isDisabledMode ? '当前为开发旁路模式，将直接以管理员身份进入系统。' : 'Web 端将跳转到 Gateway 托管的 OIDC 登录。' }}
             </p>
           </div>
 

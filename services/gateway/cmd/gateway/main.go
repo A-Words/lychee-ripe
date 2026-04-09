@@ -127,6 +127,7 @@ func main() {
 			os.Exit(1)
 		}
 	}
+	webAuthSvc := service.NewWebAuthService(repo, validator, authSvc, cfg.Auth)
 
 	appCtx, appCancel := context.WithCancel(context.Background())
 	defer appCancel()
@@ -137,6 +138,9 @@ func main() {
 	// Compose the middleware chain.
 	mux := http.NewServeMux()
 	mux.HandleFunc("GET /healthz", handler.Health(cfg.Upstream, logger))
+	mux.HandleFunc("GET /v1/auth/login", handler.GetLogin(webAuthSvc))
+	mux.HandleFunc("GET /v1/auth/callback", handler.GetCallback(webAuthSvc))
+	mux.HandleFunc("POST /v1/auth/logout", handler.PostLogout(webAuthSvc))
 	mux.HandleFunc("GET /v1/auth/me", handler.GetCurrentPrincipal())
 	mux.HandleFunc("POST /v1/batches", handler.CreateBatch(batchSvc, logger))
 	mux.HandleFunc("GET /v1/batches/{batch_id}", handler.GetBatch(batchSvc, logger))
@@ -159,7 +163,7 @@ func main() {
 	// Apply middleware (outermost runs first).
 	// Order: RequestID → Logging → CORS → RateLimit → Auth → handler
 	var h http.Handler = mux
-	h = middleware.Auth(cfg.Auth, validator, authSvc, logger)(h)
+	h = middleware.Auth(cfg.Auth, validator, authSvc, webAuthSvc, logger)(h)
 	h = middleware.RateLimit(cfg.RateLimit, logger)(h)
 	h = middleware.CORS(cfg.CORS)(h)
 	h = middleware.Logging(logger)(h)

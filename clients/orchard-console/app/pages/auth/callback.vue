@@ -1,19 +1,15 @@
 <script setup lang="ts">
 useSeoMeta({
   title: '登录回调',
-  description: '正在完成 OIDC 登录。'
+  description: '正在恢复登录状态。'
 })
 
-const route = useRoute()
 const auth = useAuth()
 const errorMessage = ref('')
 
 onMounted(async () => {
   try {
-    const target = await auth.handleWebCallback({
-      code: typeof route.query.code === 'string' ? route.query.code : null,
-      state: typeof route.query.state === 'string' ? route.query.state : null
-    })
+    const target = await auth.handleWebCallback()
     await navigateTo(target || '/dashboard')
   } catch (error) {
     errorMessage.value = error instanceof Error ? error.message : '登录回调失败'
@@ -30,7 +26,7 @@ onMounted(async () => {
             正在完成登录
           </h1>
           <p v-if="!errorMessage" class="text-sm text-toned">
-            请稍候，正在交换令牌并加载当前用户信息。
+            请稍候，正在同步当前会话并加载用户信息。
           </p>
           <UAlert
             v-else

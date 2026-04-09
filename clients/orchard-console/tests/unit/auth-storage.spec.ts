@@ -7,6 +7,8 @@ import {
   clearPendingLoginState,
   clearStoredAuth,
   getAuthStorage,
+  getPrincipalStorage,
+  getSessionStorage,
   loadPendingLoginState,
   loadStoredPrincipal,
   loadStoredSession,
@@ -52,28 +54,31 @@ describe('auth storage helpers', () => {
     vi.unstubAllGlobals()
   })
 
-  it('uses sessionStorage for web auth and localStorage for tauri auth', () => {
+  it('uses sessionStorage for web principal cache and localStorage for tauri auth', () => {
     const local = createMemoryStorage()
     const session = createMemoryStorage()
     vi.stubGlobal('localStorage', local)
     vi.stubGlobal('sessionStorage', session)
 
     expect(getAuthStorage(false)).toBe(session)
+    expect(getPrincipalStorage(false)).toBe(session)
+    expect(getSessionStorage(false)).toBeNull()
     expect(getAuthStorage(true)).toBe(local)
+    expect(getPrincipalStorage(true)).toBe(local)
+    expect(getSessionStorage(true)).toBe(local)
   })
 
-  it('stores web auth session and principal outside localStorage', () => {
+  it('stores web principal cache outside localStorage and does not expose a web token store', () => {
     const local = createMemoryStorage()
     const session = createMemoryStorage()
     vi.stubGlobal('localStorage', local)
     vi.stubGlobal('sessionStorage', session)
 
-    const storage = getAuthStorage(false)
-    saveStoredSession(storage, SESSION)
-    saveStoredPrincipal(storage, PRINCIPAL)
+    const principalStorage = getPrincipalStorage(false)
+    saveStoredPrincipal(principalStorage, PRINCIPAL)
 
-    expect(loadStoredSession(storage)).toEqual(SESSION)
-    expect(loadStoredPrincipal(storage)).toEqual(PRINCIPAL)
+    expect(loadStoredPrincipal(principalStorage)).toEqual(PRINCIPAL)
+    expect(getSessionStorage(false)).toBeNull()
     expect(local.getItem(AUTH_SESSION_KEY)).toBeNull()
     expect(local.getItem(AUTH_PRINCIPAL_KEY)).toBeNull()
   })
@@ -93,6 +98,7 @@ describe('auth storage helpers', () => {
     expect(local.getItem(AUTH_SESSION_KEY)).toBeNull()
     expect(local.getItem(AUTH_PRINCIPAL_KEY)).toBeNull()
     expect(local.getItem(AUTH_PENDING_KEY)).toBeNull()
+    expect(session.getItem(AUTH_SESSION_KEY)).toBeNull()
   })
 
   it('stores pending PKCE state per state value', () => {

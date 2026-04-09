@@ -124,3 +124,27 @@ type PlotModel struct {
 }
 
 func (PlotModel) TableName() string { return "plots" }
+
+type WebSessionModel struct {
+	ID            uint      `gorm:"primaryKey;autoIncrement"`
+	SessionIDHash string    `gorm:"column:session_id_hash;type:text;not null;uniqueIndex"`
+	UserID        string    `gorm:"column:user_id;type:text;not null;index"`
+	IDToken       *string   `gorm:"column:id_token;type:text"`
+	ExpiresAt     time.Time `gorm:"column:expires_at;not null;index"`
+	CreatedAt     time.Time `gorm:"column:created_at;not null"`
+	UpdatedAt     time.Time `gorm:"column:updated_at;not null"`
+}
+
+func (WebSessionModel) TableName() string { return "web_sessions" }
+
+type WebAuthStateModel struct {
+	ID           uint      `gorm:"primaryKey;autoIncrement"`
+	State        string    `gorm:"column:state;type:text;not null;uniqueIndex"`
+	CodeVerifier string    `gorm:"column:code_verifier;type:text;not null"`
+	RedirectPath string    `gorm:"column:redirect_path;type:text;not null"`
+	ExpiresAt    time.Time `gorm:"column:expires_at;not null;index"`
+	CreatedAt    time.Time `gorm:"column:created_at;not null"`
+	UpdatedAt    time.Time `gorm:"column:updated_at;not null"`
+}
+
+func (WebAuthStateModel) TableName() string { return "web_auth_states" }

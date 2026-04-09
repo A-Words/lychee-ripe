@@ -13,6 +13,7 @@ import (
 
 type AuthUserRepository interface {
 	ResolvePrincipal(ctx context.Context, identity domain.IdentityClaims, mode domain.AuthMode, now time.Time) (domain.Principal, error)
+	GetUserByOIDCSubject(ctx context.Context, subject string) (domain.UserRecord, error)
 }
 
 type UserAdminRepository interface {
@@ -50,6 +51,22 @@ func (s *AuthService) ResolvePrincipal(ctx context.Context, identity domain.Iden
 		}
 	}
 	return principal, nil
+}
+
+func (s *AuthService) GetUserByOIDCSubject(ctx context.Context, subject string) (domain.UserRecord, error) {
+	if s.repo == nil {
+		return domain.UserRecord{}, ErrServiceUnavailable
+	}
+	user, err := s.repo.GetUserByOIDCSubject(ctx, subject)
+	if err != nil {
+		switch {
+		case errors.Is(err, repository.ErrNotFound):
+			return domain.UserRecord{}, ErrNotFound
+		default:
+			return domain.UserRecord{}, ErrServiceUnavailable
+		}
+	}
+	return user, nil
 }
 
 type UserAdminService struct {

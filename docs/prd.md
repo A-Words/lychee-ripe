@@ -167,11 +167,11 @@ stateDiagram-v2
 
 | 方法 | 路径 | 鉴权 | 说明 |
 | --- | --- | --- | --- |
-| POST | `/v1/batches` | 需要 Bearer Token | 创建批次 |
-| GET | `/v1/batches/{batch_id}` | 需要 Bearer Token | 查询批次详情 |
+| POST | `/v1/batches` | 需要 Gateway Session Cookie 或 Bearer Token | 创建批次 |
+| GET | `/v1/batches/{batch_id}` | 需要 Gateway Session Cookie 或 Bearer Token | 查询批次详情 |
 | GET | `/v1/trace/{trace_code}` | 公开 | 公开溯源查询 |
-| GET | `/v1/dashboard/overview` | 需要 Bearer Token | 看板聚合接口 |
-| POST | `/v1/batches/reconcile` | 需要 Bearer Token（管理员） | blockchain 模式下手动补链 |
+| GET | `/v1/dashboard/overview` | 需要 Gateway Session Cookie 或 Bearer Token | 看板聚合接口 |
+| POST | `/v1/batches/reconcile` | 需要 Gateway Session Cookie 或 Bearer Token（管理员） | blockchain 模式下手动补链 |
 
 接口约束：
 
@@ -234,7 +234,7 @@ stateDiagram-v2
 
 | 场景 | HTTP 状态码 | 说明 |
 | --- | --- | --- |
-| 缺少或错误 Bearer Token | 401 / 403 | unauthorized |
+| 缺少或错误 Gateway Session / Bearer Token | 401 / 403 | unauthorized |
 | 请求参数非法 | 400 | invalid request |
 | 批次不存在 | 404 | batch not found |
 | 重复提交冲突 | 409 | duplicated batch |

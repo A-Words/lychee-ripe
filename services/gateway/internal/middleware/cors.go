@@ -34,6 +34,9 @@ func CORS(cfg config.CORSConfig) func(http.Handler) http.Handler {
 				w.Header().Set("Access-Control-Allow-Origin", origin)
 				w.Header().Set("Vary", "Origin")
 			}
+			if cfg.AllowCredentials {
+				w.Header().Set("Access-Control-Allow-Credentials", "true")
+			}
 
 			w.Header().Set("Access-Control-Allow-Methods", methods)
 			w.Header().Set("Access-Control-Allow-Headers", headers)

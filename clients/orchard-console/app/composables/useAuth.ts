@@ -1,16 +1,13 @@
-import type { AuthMode, AuthSession, OIDCDiscoveryDocument, Principal } from '~/types/auth'
+import type { AuthMode, AuthSession, Principal } from '~/types/auth'
 import {
   clearLegacyWebAuthStorage,
-  clearPendingLoginState,
   clearStoredAuth,
-  getAuthStorage,
-  loadPendingLoginState,
+  getPrincipalStorage,
+  getSessionStorage,
   loadStoredPrincipal,
   loadStoredSession,
-  savePendingLoginState,
   saveStoredPrincipal,
-  saveStoredSession,
-  type PendingLoginState
+  saveStoredSession
 } from '~/utils/auth-storage'
 import { resolveAuthenticatedRequest, resolveBootstrapPrincipal } from '~/utils/auth-session'
 import { toWebSocketBase } from '~/utils/ws-url'
@@ -52,15 +49,18 @@ export function useAuth() {
         }
 
         session.value = loadSession()
-        if (!session.value?.accessToken) {
-          clearSession()
-          initialized.value = true
-          return
+        principal.value = loadPrincipal()
+
+        if (isTauriRuntime()) {
+          if (!session.value?.accessToken) {
+            clearSession()
+            initialized.value = true
+            return
+          }
         }
 
-        principal.value = loadPrincipal()
         try {
-          const nextPrincipal = await fetchPrincipal(session.value.accessToken)
+          const nextPrincipal = await fetchPrincipal(session.value?.accessToken)
           setPrincipal(nextPrincipal)
         } catch (error) {
           const decision = resolveBootstrapPrincipal(principal.value, error)
@@ -69,6 +69,7 @@ export function useAuth() {
             clearSession()
           }
         }
+
         initialized.value = true
       } finally {
         initializing.value = false
@@ -88,78 +89,51 @@ export function useAuth() {
       await startTauriLogin(redirectPath)
       return
     }
-    await startWebLogin(redirectPath)
+    startWebLogin(redirectPath)
   }
 
-  async function handleWebCallback(query: { code?: string | null, state?: string | null }) {
-    const code = query.code?.trim()
-    const state = query.state?.trim()
-    const pending = state ? loadPendingState(state) : null
-    if (!code || !state || !pending || pending.state !== state) {
-      if (state) {
-        clearPendingState(state)
-      }
-      throw new Error('invalid callback state')
-    }
-
-    const discovery = await fetchDiscovery()
-    const redirectUri = String(config.public.oidcWebRedirectUri || '').trim()
-    const token = await exchangeAuthorizationCode({
-      tokenEndpoint: discovery.token_endpoint,
-      clientId: String(config.public.oidcWebClientId || '').trim(),
-      code,
-      codeVerifier: pending.codeVerifier,
-      redirectUri
-    })
-
-    const nextPrincipal = await fetchPrincipal(token.accessToken)
-    setAuthenticatedState(token, nextPrincipal)
-    initialized.value = true
-
-    const target = pending.redirectPath || '/dashboard'
-    clearPendingState(state)
-    return target
+  async function handleWebCallback() {
+    await init(true)
+    return isAuthenticated.value ? '/dashboard' : '/login'
   }
 
   async function logout() {
-    const currentSession = session.value
+    const isTauri = isTauriRuntime()
+    const currentMode = mode.value
+
     clearSession()
-    principal.value = mode.value === 'disabled' ? buildDisabledPrincipal() : null
+    principal.value = currentMode === 'disabled' ? buildDisabledPrincipal() : null
     initialized.value = true
 
-    if (!import.meta.client || mode.value === 'disabled') {
+    if (!import.meta.client || currentMode === 'disabled') {
       return
     }
 
-    if (isTauriRuntime()) {
+    if (isTauri) {
       await navigateTo('/login')
       return
     }
 
     try {
-      const discovery = await fetchDiscovery()
-      if (discovery.end_session_endpoint && currentSession?.idToken) {
-        const url = new URL(discovery.end_session_endpoint)
-        url.searchParams.set('id_token_hint', currentSession.idToken)
-        const postLogout = String(config.public.oidcWebPostLogoutRedirectUri || '').trim()
-        if (postLogout) {
-          url.searchParams.set('post_logout_redirect_uri', postLogout)
-        }
-        window.location.href = url.toString()
+      const response = await $fetch<{ redirect_url?: string }>('/v1/auth/logout', {
+        method: 'POST',
+        baseURL: gatewayBase.value,
+        credentials: 'include'
+      })
+      const redirectURL = String(response.redirect_url || '').trim()
+      if (redirectURL) {
+        window.location.href = redirectURL
         return
       }
     } catch {
-      // fall through to local redirect
+      // local state is already cleared; fall through to login page
     }
 
     await navigateTo('/login')
   }
 
   function authHeaders(): Record<string, string> {
-    if (mode.value === 'disabled') {
-      return {}
-    }
-    if (!session.value?.accessToken) {
+    if (mode.value !== 'oidc' || !isTauriRuntime() || !session.value?.accessToken) {
       return {}
     }
     return {
@@ -169,16 +143,8 @@ export function useAuth() {
 
   async function gatewayFetch<T>(path: string, options: Record<string, any> = {}) {
     await init()
-    const headers = {
-      ...(options.headers as Record<string, string> | undefined),
-      ...authHeaders()
-    }
     try {
-      return await $fetch<T>(path, {
-        ...options,
-        baseURL: gatewayBase.value,
-        headers
-      })
+      return await $fetch<T>(path, buildGatewayOptions(options))
     } catch (error) {
       handleAuthenticatedRequestFailure(error)
       throw error
@@ -187,16 +153,8 @@ export function useAuth() {
 
   async function gatewayFetchRaw<T>(path: string, options: Record<string, any> = {}) {
     await init()
-    const headers = {
-      ...(options.headers as Record<string, string> | undefined),
-      ...authHeaders()
-    }
     try {
-      return await $fetch.raw<T>(path, {
-        ...options,
-        baseURL: gatewayBase.value,
-        headers
-      })
+      return await $fetch.raw<T>(path, buildGatewayOptions(options))
     } catch (error) {
       handleAuthenticatedRequestFailure(error)
       throw error
@@ -205,7 +163,7 @@ export function useAuth() {
 
   function websocketUrl(path: string) {
     const base = `${toWebSocketBase(gatewayBase.value)}${path}`
-    if (mode.value === 'disabled' || !session.value?.accessToken) {
+    if (mode.value !== 'oidc' || !isTauriRuntime() || !session.value?.accessToken) {
       return base
     }
     const url = new URL(base)
@@ -216,7 +174,8 @@ export function useAuth() {
   function clearSession() {
     session.value = null
     principal.value = null
-    clearStoredAuth(getStorage())
+    clearStoredAuth(getSessionStore())
+    clearStoredAuth(getPrincipalStore())
     if (!isTauriRuntime()) {
       clearLegacyWebAuthStorage()
     }
@@ -252,30 +211,26 @@ export function useAuth() {
     clearSession
   }
 
-  async function startWebLogin(redirectPath: string) {
-    const discovery = await fetchDiscovery()
-    const clientId = String(config.public.oidcWebClientId || '').trim()
-    const redirectUri = String(config.public.oidcWebRedirectUri || '').trim()
-    const scope = String(config.public.oidcScope || 'openid profile email').trim()
-    if (!clientId || !redirectUri) {
-      throw new Error('missing oidc web configuration')
+  function buildGatewayOptions(options: Record<string, any>) {
+    const headers = {
+      ...(options.headers as Record<string, string> | undefined),
+      ...authHeaders()
     }
+    return {
+      ...options,
+      baseURL: gatewayBase.value,
+      headers,
+      credentials: mode.value === 'oidc' && !isTauriRuntime() ? 'include' : options.credentials
+    }
+  }
 
-    const state = randomString()
-    const codeVerifier = randomString(64)
-    const codeChallenge = await pkceChallenge(codeVerifier)
-    savePendingState({ state, codeVerifier, redirectPath })
-
-    const url = new URL(discovery.authorization_endpoint)
-    url.searchParams.set('client_id', clientId)
-    url.searchParams.set('response_type', 'code')
-    url.searchParams.set('scope', scope)
-    url.searchParams.set('redirect_uri', redirectUri)
-    url.searchParams.set('state', state)
-    url.searchParams.set('code_challenge', codeChallenge)
-    url.searchParams.set('code_challenge_method', 'S256')
-
-    window.location.href = url.toString()
+  function startWebLogin(redirectPath: string) {
+    if (!import.meta.client) {
+      return
+    }
+    const target = new URL('/v1/auth/login', ensureTrailingSlash(gatewayBase.value))
+    target.searchParams.set('redirect', normalizeRedirectPath(redirectPath))
+    window.location.href = target.toString()
   }
 
   async function startTauriLogin(redirectPath: string) {
@@ -301,65 +256,26 @@ export function useAuth() {
     await navigateTo(redirectPath)
   }
 
-  async function fetchDiscovery(): Promise<OIDCDiscoveryDocument> {
-    const issuer = String(config.public.oidcIssuerUrl || '').trim().replace(/\/+$/, '')
-    if (!issuer) {
-      throw new Error('missing oidc issuer')
+  async function fetchPrincipal(accessToken?: string) {
+    const headers: Record<string, string> = {}
+    if (accessToken) {
+      headers.Authorization = `Bearer ${accessToken}`
     }
-    return await $fetch<OIDCDiscoveryDocument>(`${issuer}/.well-known/openid-configuration`)
-  }
-
-  async function fetchPrincipal(accessToken: string) {
     return await $fetch<Principal>('/v1/auth/me', {
       baseURL: gatewayBase.value,
-      headers: {
-        Authorization: `Bearer ${accessToken}`
-      }
+      headers,
+      credentials: accessToken ? undefined : 'include'
     })
-  }
-
-  async function exchangeAuthorizationCode(input: {
-    tokenEndpoint: string
-    clientId: string
-    code: string
-    codeVerifier: string
-    redirectUri: string
-  }): Promise<AuthSession> {
-    const form = new URLSearchParams({
-      grant_type: 'authorization_code',
-      client_id: input.clientId,
-      code: input.code,
-      code_verifier: input.codeVerifier,
-      redirect_uri: input.redirectUri
-    })
-
-    const response = await $fetch<{
-      access_token: string
-      id_token?: string
-      expires_in?: number
-    }>(input.tokenEndpoint, {
-      method: 'POST',
-      body: form,
-      headers: {
-        'Content-Type': 'application/x-www-form-urlencoded'
-      }
-    })
-
-    return {
-      accessToken: response.access_token,
-      idToken: response.id_token,
-      expiresAt: response.expires_in ? Date.now() + response.expires_in * 1000 : undefined
-    }
   }
 
   function setSession(nextSession: AuthSession) {
     session.value = nextSession
-    saveStoredSession(getStorage(), nextSession)
+    saveStoredSession(getSessionStore(), nextSession)
   }
 
   function setPrincipal(nextPrincipal: Principal) {
     principal.value = nextPrincipal
-    saveStoredPrincipal(getStorage(), nextPrincipal)
+    saveStoredPrincipal(getPrincipalStore(), nextPrincipal)
   }
 
   function setAuthenticatedState(nextSession: AuthSession, nextPrincipal: Principal) {
@@ -384,28 +300,20 @@ function buildDisabledPrincipal(): Principal {
   }
 }
 
-function getStorage() {
-  return getAuthStorage(isTauriRuntime())
+function getPrincipalStore() {
+  return getPrincipalStorage(isTauriRuntime())
+}
+
+function getSessionStore() {
+  return getSessionStorage(isTauriRuntime())
 }
 
 function loadSession(): AuthSession | null {
-  return loadStoredSession(getStorage())
+  return loadStoredSession(getSessionStore())
 }
 
 function loadPrincipal(): Principal | null {
-  return loadStoredPrincipal(getStorage())
-}
-
-function savePendingState(state: PendingLoginState) {
-  savePendingLoginState(getStorage(), state)
-}
-
-function loadPendingState(state: string) {
-  return loadPendingLoginState(getStorage(), state)
-}
-
-function clearPendingState(state: string) {
-  clearPendingLoginState(getStorage(), state)
+  return loadStoredPrincipal(getPrincipalStore())
 }
 
 function isTauriRuntime() {
@@ -415,20 +323,14 @@ function isTauriRuntime() {
   return typeof window !== 'undefined' && ('__TAURI_INTERNALS__' in window || '__TAURI__' in window)
 }
 
-function randomString(length = 43) {
-  const alphabet = 'ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789-._~'
-  const buffer = new Uint8Array(length)
-  crypto.getRandomValues(buffer)
-  return Array.from(buffer, (item) => alphabet[item % alphabet.length]).join('')
+function ensureTrailingSlash(base: string) {
+  return base.endsWith('/') ? base : `${base}/`
 }
 
-async function pkceChallenge(verifier: string) {
-  const data = new TextEncoder().encode(verifier)
-  const digest = await crypto.subtle.digest('SHA-256', data)
-  return base64UrlEncode(new Uint8Array(digest))
-}
-
-function base64UrlEncode(input: Uint8Array) {
-  const binary = Array.from(input, (item) => String.fromCharCode(item)).join('')
-  return btoa(binary).replace(/\+/g, '-').replace(/\//g, '_').replace(/=+$/g, '')
+function normalizeRedirectPath(raw: string) {
+  const trimmed = String(raw || '').trim()
+  if (!trimmed || !trimmed.startsWith('/') || trimmed.startsWith('//')) {
+    return '/dashboard'
+  }
+  return trimmed
 }

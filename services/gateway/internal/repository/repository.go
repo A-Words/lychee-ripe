@@ -47,9 +47,18 @@ type UserRepository interface {
 	CountUsers(ctx context.Context) (int64, error)
 	ResolvePrincipal(ctx context.Context, identity domain.IdentityClaims, mode domain.AuthMode, now time.Time) (domain.Principal, error)
 	GetPrincipalByID(ctx context.Context, userID string) (domain.UserRecord, error)
+	GetUserByOIDCSubject(ctx context.Context, subject string) (domain.UserRecord, error)
 	ListUsers(ctx context.Context) ([]domain.UserRecord, error)
 	CreateUser(ctx context.Context, user domain.UserRecord) (domain.UserRecord, error)
 	UpdateUser(ctx context.Context, user domain.UserRecord) (domain.UserRecord, error)
+}
+
+type WebSessionRepository interface {
+	CreateWebAuthState(ctx context.Context, state domain.WebAuthStateRecord) (domain.WebAuthStateRecord, error)
+	ConsumeWebAuthState(ctx context.Context, state string, now time.Time) (domain.WebAuthStateRecord, error)
+	CreateWebSession(ctx context.Context, session domain.WebSessionRecord) (domain.WebSessionRecord, error)
+	GetWebSession(ctx context.Context, sessionIDHash string, now time.Time) (domain.WebSessionRecord, error)
+	DeleteWebSession(ctx context.Context, sessionIDHash string) error
 }
 
 type OrchardRepository interface {

@@ -87,6 +87,7 @@ type AuthConfig struct {
 	Mode                AuthModeConfig `yaml:"mode"`
 	BootstrapAdminEmail string         `yaml:"bootstrap_admin_email"`
 	OIDC                OIDCConfig     `yaml:"oidc"`
+	Web                 WebAuthConfig  `yaml:"web"`
 }
 
 type AuthModeConfig string
@@ -97,8 +98,16 @@ const (
 )
 
 type OIDCConfig struct {
-	IssuerURL string `yaml:"issuer_url"`
-	Audience  string `yaml:"audience"`
+	IssuerURL   string `yaml:"issuer_url"`
+	Audience    string `yaml:"audience"`
+	WebClientID string `yaml:"web_client_id"`
+}
+
+type WebAuthConfig struct {
+	PublicBaseURL string `yaml:"public_base_url"`
+	AppBaseURL    string `yaml:"app_base_url"`
+	CookieName    string `yaml:"cookie_name"`
+	CookieSecure  bool   `yaml:"cookie_secure"`
 }
 
 // RateLimitConfig defines token-bucket rate limiting settings.
@@ -111,11 +120,12 @@ type RateLimitConfig struct {
 
 // CORSConfig defines cross-origin request settings.
 type CORSConfig struct {
-	Enabled        bool     `yaml:"enabled"`
-	AllowedOrigins []string `yaml:"allowed_origins"`
-	AllowedMethods []string `yaml:"allowed_methods"`
-	AllowedHeaders []string `yaml:"allowed_headers"`
-	MaxAgeS        int      `yaml:"max_age_s"`
+	Enabled          bool     `yaml:"enabled"`
+	AllowedOrigins   []string `yaml:"allowed_origins"`
+	AllowedMethods   []string `yaml:"allowed_methods"`
+	AllowedHeaders   []string `yaml:"allowed_headers"`
+	AllowCredentials bool     `yaml:"allow_credentials"`
+	MaxAgeS          int      `yaml:"max_age_s"`
 }
 
 // LoggingConfig defines structured logging settings.
@@ -242,6 +252,10 @@ func Defaults() Config {
 		},
 		Auth: AuthConfig{
 			Mode: AuthModeDisabled,
+			Web: WebAuthConfig{
+				CookieName:   "lychee_session",
+				CookieSecure: false,
+			},
 		},
 		RateLimit: RateLimitConfig{
 			Enabled:           true,
@@ -250,11 +264,12 @@ func Defaults() Config {
 			ExcludePaths:      []string{"/healthz"},
 		},
 		CORS: CORSConfig{
-			Enabled:        true,
-			AllowedOrigins: []string{"*"},
-			AllowedMethods: []string{"GET", "POST", "PATCH", "DELETE", "OPTIONS"},
-			AllowedHeaders: []string{"Content-Type", "Authorization", "X-API-Key"},
-			MaxAgeS:        3600,
+			Enabled:          true,
+			AllowedOrigins:   []string{"*"},
+			AllowedMethods:   []string{"GET", "POST", "PATCH", "DELETE", "OPTIONS"},
+			AllowedHeaders:   []string{"Content-Type", "Authorization", "X-API-Key"},
+			AllowCredentials: false,
+			MaxAgeS:          3600,
 		},
 		Logging: LoggingConfig{
 			Level:  "info",
@@ -396,8 +411,35 @@ func (c *Config) Validate() error {
 		if strings.TrimSpace(c.Auth.OIDC.Audience) == "" {
 			return fmt.Errorf("auth.oidc.audience is required when auth.mode=oidc")
 		}
+		if strings.TrimSpace(c.Auth.OIDC.WebClientID) == "" {
+			return fmt.Errorf("auth.oidc.web_client_id is required when auth.mode=oidc")
+		}
+		if strings.TrimSpace(c.Auth.Web.PublicBaseURL) == "" {
+			return fmt.Errorf("auth.web.public_base_url is required when auth.mode=oidc")
+		}
+		if !isAbsoluteURL(c.Auth.Web.PublicBaseURL) {
+			return fmt.Errorf("auth.web.public_base_url must be a valid absolute url")
+		}
+		if strings.TrimSpace(c.Auth.Web.AppBaseURL) == "" {
+			return fmt.Errorf("auth.web.app_base_url is required when auth.mode=oidc")
+		}
+		if !isAbsoluteURL(c.Auth.Web.AppBaseURL) {
+			return fmt.Errorf("auth.web.app_base_url must be a valid absolute url")
+		}
 	default:
 		return fmt.Errorf("auth.mode must be one of disabled|oidc, got %q", c.Auth.Mode)
+	}
+
+	if strings.TrimSpace(c.Auth.Web.CookieName) == "" {
+		c.Auth.Web.CookieName = "lychee_session"
+	}
+
+	if c.CORS.AllowCredentials {
+		for _, origin := range c.CORS.AllowedOrigins {
+			if strings.TrimSpace(origin) == "*" {
+				return fmt.Errorf("cors.allowed_origins cannot contain * when cors.allow_credentials=true")
+			}
+		}
 	}
 
 	return nil
@@ -416,10 +458,33 @@ func applyEnvOverrides(cfg *Config) {
 	if value := strings.TrimSpace(os.Getenv("LYCHEE_AUTH_OIDC_AUDIENCE")); value != "" {
 		cfg.Auth.OIDC.Audience = value
 	}
+	if value := strings.TrimSpace(os.Getenv("LYCHEE_AUTH_OIDC_WEB_CLIENT_ID")); value != "" {
+		cfg.Auth.OIDC.WebClientID = value
+	}
 	if value := strings.TrimSpace(os.Getenv("LYCHEE_AUTH_BOOTSTRAP_ADMIN_EMAIL")); value != "" {
 		cfg.Auth.BootstrapAdminEmail = value
+	}
+	if value := strings.TrimSpace(os.Getenv("LYCHEE_AUTH_WEB_PUBLIC_BASE_URL")); value != "" {
+		cfg.Auth.Web.PublicBaseURL = value
+	}
+	if value := strings.TrimSpace(os.Getenv("LYCHEE_AUTH_WEB_APP_BASE_URL")); value != "" {
+		cfg.Auth.Web.AppBaseURL = value
+	}
+	if value := strings.TrimSpace(os.Getenv("LYCHEE_AUTH_WEB_COOKIE_NAME")); value != "" {
+		cfg.Auth.Web.CookieName = value
+	}
+	if value := strings.TrimSpace(os.Getenv("LYCHEE_AUTH_WEB_COOKIE_SECURE")); value != "" {
+		cfg.Auth.Web.CookieSecure = strings.EqualFold(value, "true") || value == "1"
 	}
 	if value := strings.TrimSpace(os.Getenv("LYCHEE_SEED_DEFAULT_RESOURCES_ENABLED")); value != "" {
 		cfg.Seed.DefaultResourcesEnabled = strings.EqualFold(value, "true") || value == "1"
 	}
+	if value := strings.TrimSpace(os.Getenv("LYCHEE_CORS_ALLOW_CREDENTIALS")); value != "" {
+		cfg.CORS.AllowCredentials = strings.EqualFold(value, "true") || value == "1"
+	}
+}
+
+func isAbsoluteURL(raw string) bool {
+	parsed, err := url.Parse(strings.TrimSpace(raw))
+	return err == nil && parsed != nil && parsed.Scheme != "" && parsed.Host != ""
 }

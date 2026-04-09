@@ -25,10 +25,15 @@ type TokenValidator interface {
 	Validate(ctx context.Context, rawToken string) (domain.IdentityClaims, error)
 }
 
+type SessionResolver interface {
+	ResolveSessionPrincipal(ctx context.Context, sessionID string) (domain.Principal, error)
+}
+
 func Auth(
 	cfg config.AuthConfig,
 	validator TokenValidator,
 	resolver AuthResolver,
+	sessionResolver SessionResolver,
 	logger *slog.Logger,
 ) func(http.Handler) http.Handler {
 	if logger == nil {
@@ -59,6 +64,31 @@ func Auth(
 		return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 			if isPublicPath(r.URL.Path) {
 				next.ServeHTTP(w, r)
+				return
+			}
+			if sessionID := sessionCookieValue(r, cfg.Web.CookieName); sessionID != "" {
+				if sessionResolver == nil {
+					writeAuthError(w, http.StatusServiceUnavailable, "auth_unavailable", "auth unavailable")
+					return
+				}
+				principal, err := sessionResolver.ResolveSessionPrincipal(r.Context(), sessionID)
+				if err != nil {
+					switch {
+					case errors.Is(err, service.ErrNotFound):
+						writeAuthError(w, http.StatusUnauthorized, "unauthorized", "invalid session")
+					case errors.Is(err, service.ErrInvalidRequest):
+						writeAuthError(w, http.StatusForbidden, "forbidden", "user is disabled")
+					default:
+						logger.Error("auth: resolve session principal failed", "error", err)
+						writeAuthError(w, http.StatusServiceUnavailable, "auth_unavailable", "auth unavailable")
+					}
+					return
+				}
+				if !isAuthorized(r, principal.Role) {
+					writeAuthError(w, http.StatusForbidden, "forbidden", "insufficient role")
+					return
+				}
+				next.ServeHTTP(w, stripCookie(r.WithContext(WithPrincipal(r.Context(), principal)), cfg.Web.CookieName))
 				return
 			}
 			token := bearerToken(r.Header.Get("Authorization"))
@@ -126,6 +156,40 @@ func stripQueryToken(r *http.Request, key string) *http.Request {
 	return cloned
 }
 
+func stripCookie(r *http.Request, cookieName string) *http.Request {
+	if r == nil {
+		return r
+	}
+	cookieName = strings.TrimSpace(cookieName)
+	if cookieName == "" {
+		return r
+	}
+	header := strings.TrimSpace(r.Header.Get("Cookie"))
+	if header == "" {
+		return r
+	}
+	parts := strings.Split(header, ";")
+	filtered := make([]string, 0, len(parts))
+	for _, part := range parts {
+		piece := strings.TrimSpace(part)
+		if piece == "" {
+			continue
+		}
+		if strings.HasPrefix(piece, cookieName+"=") {
+			continue
+		}
+		filtered = append(filtered, piece)
+	}
+
+	cloned := r.Clone(r.Context())
+	if len(filtered) == 0 {
+		cloned.Header.Del("Cookie")
+		return cloned
+	}
+	cloned.Header.Set("Cookie", strings.Join(filtered, "; "))
+	return cloned
+}
+
 func WithPrincipal(ctx context.Context, principal domain.Principal) context.Context {
 	return context.WithValue(ctx, principalContextKey{}, principal)
 }
@@ -137,7 +201,7 @@ func GetPrincipal(ctx context.Context) (domain.Principal, bool) {
 
 func isPublicPath(path string) bool {
 	switch path {
-	case "/healthz", "/v1/health":
+	case "/healthz", "/v1/health", "/v1/auth/login", "/v1/auth/callback", "/v1/auth/logout":
 		return true
 	}
 	return strings.HasPrefix(path, "/v1/trace/")
@@ -201,6 +265,18 @@ func bearerToken(header string) string {
 		return ""
 	}
 	return strings.TrimSpace(strings.TrimPrefix(header, prefix))
+}
+
+func sessionCookieValue(r *http.Request, cookieName string) string {
+	cookieName = strings.TrimSpace(cookieName)
+	if r == nil || cookieName == "" {
+		return ""
+	}
+	cookie, err := r.Cookie(cookieName)
+	if err != nil {
+		return ""
+	}
+	return strings.TrimSpace(cookie.Value)
 }
 
 func writeAuthError(w http.ResponseWriter, statusCode int, code, message string) {

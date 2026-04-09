@@ -34,6 +34,7 @@ type IdentityClaims struct {
 	Subject     string
 	Email       string
 	DisplayName string
+	ExpiresAt   *time.Time
 }
 
 type Principal struct {
@@ -55,4 +56,22 @@ type UserRecord struct {
 	LastLoginAt *time.Time
 	CreatedAt   time.Time
 	UpdatedAt   time.Time
+}
+
+type WebSessionRecord struct {
+	SessionIDHash string
+	UserID        string
+	IDToken       *string
+	ExpiresAt     time.Time
+	CreatedAt     time.Time
+	UpdatedAt     time.Time
+}
+
+type WebAuthStateRecord struct {
+	State        string
+	CodeVerifier string
+	RedirectPath string
+	ExpiresAt    time.Time
+	CreatedAt    time.Time
+	UpdatedAt    time.Time
 }

@@ -37,30 +37,30 @@ func (r *Repository) ResolvePrincipal(
 	var principal domain.Principal
 	resolveOnce := func() error {
 		return r.db.WithContext(ctx).Transaction(func(tx *gorm.DB) error {
-		var user UserModel
-		err := tx.Where("oidc_subject = ?", subject).First(&user).Error
-		switch {
-		case err == nil:
-		case errors.Is(err, gorm.ErrRecordNotFound):
-			// First-time binding is intentionally gated on the email claim carried by the
-			// presented access token so unknown subjects cannot create or bind local users.
-			if email == "" {
-				return repository.ErrNotFound
+			var user UserModel
+			err := tx.Where("oidc_subject = ?", subject).First(&user).Error
+			switch {
+			case err == nil:
+			case errors.Is(err, gorm.ErrRecordNotFound):
+				// First-time binding is intentionally gated on the email claim carried by the
+				// presented access token so unknown subjects cannot create or bind local users.
+				if email == "" {
+					return repository.ErrNotFound
+				}
+				bound, err := bindPrincipalByEmail(tx, email, subject, displayName, now)
+				if err != nil {
+					return err
+				}
+				user = bound
+			default:
+				return mapGormErr(err)
 			}
-			bound, err := bindPrincipalByEmail(tx, email, subject, displayName, now)
-			if err != nil {
-				return err
-			}
-			user = bound
-		default:
-			return mapGormErr(err)
-		}
 
-		if user.Status != string(domain.UserStatusActive) {
-			return repository.ErrInvalidState
-		}
-		principal = userModelToPrincipal(user, mode)
-		return nil
+			if user.Status != string(domain.UserStatusActive) {
+				return repository.ErrInvalidState
+			}
+			principal = userModelToPrincipal(user, mode)
+			return nil
 		})
 	}
 	var err error
@@ -84,8 +84,8 @@ func bindPrincipalByEmail(
 	now time.Time,
 ) (UserModel, error) {
 	updates := map[string]any{
-		"oidc_subject": subject,
-		"updated_at":   normalizeTime(now),
+		"oidc_subject":  subject,
+		"updated_at":    normalizeTime(now),
 		"last_login_at": timePtr(normalizeTime(now)),
 	}
 	if displayName != "" {
@@ -122,6 +122,14 @@ func bindPrincipalByEmail(
 func (r *Repository) GetPrincipalByID(ctx context.Context, userID string) (domain.UserRecord, error) {
 	var user UserModel
 	if err := r.db.WithContext(ctx).Where("id = ?", strings.TrimSpace(userID)).First(&user).Error; err != nil {
+		return domain.UserRecord{}, mapGormErr(err)
+	}
+	return userModelToDomain(user), nil
+}
+
+func (r *Repository) GetUserByOIDCSubject(ctx context.Context, subject string) (domain.UserRecord, error) {
+	var user UserModel
+	if err := r.db.WithContext(ctx).Where("oidc_subject = ?", strings.TrimSpace(subject)).First(&user).Error; err != nil {
 		return domain.UserRecord{}, mapGormErr(err)
 	}
 	return userModelToDomain(user), nil

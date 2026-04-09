@@ -37,9 +37,16 @@ chain:
 
 auth:
   mode: "disabled" # disabled | oidc
+  bootstrap_admin_email: ""
   oidc:
     issuer_url: "https://issuer.example.com"
     audience: "lychee-ripe"
+    web_client_id: "orchard-console-web"
+  web:
+    public_base_url: "http://127.0.0.1:9000"
+    app_base_url: "http://127.0.0.1:3000"
+    cookie_name: "lychee_session"
+    cookie_secure: false
 
 rate_limit:
   enabled: true
@@ -51,7 +58,7 @@ rate_limit:
 cors:
   enabled: true
   allowed_origins:
-    - "*"
+    - "http://127.0.0.1:3000"
   allowed_methods:
     - "GET"
     - "POST"
@@ -61,6 +68,7 @@ cors:
   allowed_headers:
     - "Content-Type"
     - "Authorization"
+  allow_credentials: true
   max_age_s: 3600
 
 logging:

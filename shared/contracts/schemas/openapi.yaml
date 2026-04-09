@@ -49,10 +49,11 @@ paths:
     get:
       operationId: getCurrentPrincipal
       summary: Get the current authenticated principal
-      description: In `auth.mode=oidc`, the Bearer access token presented to the gateway must include an `email` claim for first-time binding to a pre-provisioned local user.
+      description: In `auth.mode=oidc`, Web clients may authenticate with the gateway-managed session cookie, while native clients may continue to use a Bearer access token. First-time binding of a pre-provisioned local user still requires the presented access token to include an `email` claim.
       tags: [auth]
       security:
-        - OpenIdConnect: []
+        - CookieAuth: []
+        - BearerAuth: []
       responses:
         "200":
           description: Current principal
@@ -79,13 +80,90 @@ paths:
               schema:
                 $ref: "#/components/schemas/ErrorResponse"
 
+  /v1/auth/login:
+    get:
+      operationId: beginWebLogin
+      summary: Start gateway-managed Web OIDC login
+      tags: [auth]
+      security: []
+      parameters:
+        - name: redirect
+          in: query
+          required: false
+          schema:
+            type: string
+          description: Optional in-app relative path to redirect to after login. Defaults to `/dashboard`.
+      responses:
+        "302":
+          description: Redirects the browser to the OIDC authorization endpoint.
+        "503":
+          description: Authentication infrastructure unavailable
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ErrorResponse"
+
+  /v1/auth/callback:
+    get:
+      operationId: completeWebLogin
+      summary: Complete gateway-managed Web OIDC login
+      tags: [auth]
+      security: []
+      parameters:
+        - name: code
+          in: query
+          required: true
+          schema:
+            type: string
+        - name: state
+          in: query
+          required: true
+          schema:
+            type: string
+      responses:
+        "302":
+          description: Sets the gateway session cookie and redirects back to the app.
+        "400":
+          description: Invalid or expired login callback state
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ErrorResponse"
+        "503":
+          description: Authentication infrastructure unavailable
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ErrorResponse"
+
+  /v1/auth/logout:
+    post:
+      operationId: logoutWebSession
+      summary: Clear the gateway-managed Web session
+      tags: [auth]
+      security:
+        - CookieAuth: []
+      responses:
+        "200":
+          description: Session cleared
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/LogoutResponse"
+        "503":
+          description: Authentication infrastructure unavailable
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ErrorResponse"
+
   /v1/models/current:
     get:
       operationId: currentModel
       summary: Current loaded model info (proxied)
       tags: [v1]
       security:
-        - OpenIdConnect: []
+        - CookieAuth: []
         - BearerAuth: []
       responses:
         "200":
@@ -119,7 +197,7 @@ paths:
       summary: Single image inference (proxied)
       tags: [v1]
       security:
-        - OpenIdConnect: []
+        - CookieAuth: []
         - BearerAuth: []
       requestBody:
         required: true
@@ -176,7 +254,7 @@ paths:
       summary: WebSocket streaming inference (proxied)
       tags: [v1]
       security:
-        - OpenIdConnect: []
+        - CookieAuth: []
         - BearerAuth: []
       description: >
         WebSocket endpoint. Send binary frames (image bytes) to receive per-frame
@@ -202,7 +280,8 @@ paths:
       summary: Create a harvest batch in database or blockchain trace mode
       tags: [batch]
       security:
-        - OpenIdConnect: []
+        - CookieAuth: []
+        - BearerAuth: []
       requestBody:
         required: true
         content:
@@ -259,7 +338,8 @@ paths:
       summary: Get batch detail by batch id within the current trace mode
       tags: [batch]
       security:
-        - OpenIdConnect: []
+        - CookieAuth: []
+        - BearerAuth: []
       parameters:
         - $ref: "#/components/parameters/BatchID"
       responses:
@@ -328,7 +408,8 @@ paths:
       summary: Get dashboard aggregate metrics filtered by the current trace mode
       tags: [dashboard]
       security:
-        - OpenIdConnect: []
+        - CookieAuth: []
+        - BearerAuth: []
       responses:
         "200":
           description: Dashboard overview scoped to the current trace mode
@@ -361,7 +442,8 @@ paths:
       summary: Trigger manual reconcile for pending blockchain anchor batches
       tags: [batch]
       security:
-        - OpenIdConnect: []
+        - CookieAuth: []
+        - BearerAuth: []
       requestBody:
         required: false
         content:
@@ -418,7 +500,8 @@ paths:
       summary: List orchards
       tags: [admin]
       security:
-        - OpenIdConnect: []
+        - CookieAuth: []
+        - BearerAuth: []
       parameters:
         - name: include_archived
           in: query
@@ -438,7 +521,8 @@ paths:
       summary: Create orchard
       tags: [admin]
       security:
-        - OpenIdConnect: []
+        - CookieAuth: []
+        - BearerAuth: []
       requestBody:
         required: true
         content:
@@ -459,7 +543,8 @@ paths:
       summary: Update orchard
       tags: [admin]
       security:
-        - OpenIdConnect: []
+        - CookieAuth: []
+        - BearerAuth: []
       parameters:
         - name: orchard_id
           in: path
@@ -484,7 +569,8 @@ paths:
       summary: Archive orchard
       tags: [admin]
       security:
-        - OpenIdConnect: []
+        - CookieAuth: []
+        - BearerAuth: []
       parameters:
         - name: orchard_id
           in: path
@@ -505,7 +591,8 @@ paths:
       summary: List plots
       tags: [admin]
       security:
-        - OpenIdConnect: []
+        - CookieAuth: []
+        - BearerAuth: []
       parameters:
         - name: orchard_id
           in: query
@@ -531,7 +618,8 @@ paths:
       summary: Create plot
       tags: [admin]
       security:
-        - OpenIdConnect: []
+        - CookieAuth: []
+        - BearerAuth: []
       requestBody:
         required: true
         content:
@@ -552,7 +640,8 @@ paths:
       summary: Update plot
       tags: [admin]
       security:
-        - OpenIdConnect: []
+        - CookieAuth: []
+        - BearerAuth: []
       parameters:
         - name: plot_id
           in: path
@@ -577,7 +666,8 @@ paths:
       summary: Archive plot
       tags: [admin]
       security:
-        - OpenIdConnect: []
+        - CookieAuth: []
+        - BearerAuth: []
       parameters:
         - name: plot_id
           in: path
@@ -598,7 +688,8 @@ paths:
       summary: List provisioned users
       tags: [admin]
       security:
-        - OpenIdConnect: []
+        - CookieAuth: []
+        - BearerAuth: []
       responses:
         "200":
           description: User list
@@ -611,7 +702,8 @@ paths:
       summary: Create provisioned user
       tags: [admin]
       security:
-        - OpenIdConnect: []
+        - CookieAuth: []
+        - BearerAuth: []
       requestBody:
         required: true
         content:
@@ -632,7 +724,8 @@ paths:
       summary: Update provisioned user
       tags: [admin]
       security:
-        - OpenIdConnect: []
+        - CookieAuth: []
+        - BearerAuth: []
       parameters:
         - name: user_id
           in: path
@@ -655,6 +748,10 @@ paths:
 
 components:
   securitySchemes:
+    CookieAuth:
+      type: apiKey
+      in: cookie
+      name: lychee_session
     OpenIdConnect:
       type: openIdConnect
       description: The gateway treats `email` in the presented access token as a hard requirement for first-time binding of a pre-provisioned user account.
@@ -680,6 +777,13 @@ components:
       description: Public trace code.
 
   schemas:
+    LogoutResponse:
+      type: object
+      properties:
+        redirect_url:
+          type: string
+          format: uri
+
     TraceMode:
       type: string
       enum: [database, blockchain]
