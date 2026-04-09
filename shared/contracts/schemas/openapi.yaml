@@ -66,6 +66,18 @@ paths:
             application/json:
               schema:
                 $ref: "#/components/schemas/ErrorResponse"
+        "403":
+          description: User is not provisioned or is disabled
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ErrorResponse"
+        "503":
+          description: Authentication infrastructure unavailable
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ErrorResponse"
 
   /v1/models/current:
     get:
@@ -1343,7 +1355,7 @@ components:
 
     OrchardUpdateRequest:
       type: object
-      required: [orchard_name, status]
+      required: [orchard_name]
       properties:
         orchard_name:
           type: string
@@ -1365,7 +1377,6 @@ components:
 
     PlotUpdateRequest:
       type: object
-      required: [orchard_id, plot_name, status]
       properties:
         orchard_id:
           type: string

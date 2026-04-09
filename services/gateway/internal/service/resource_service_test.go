@@ -266,6 +266,33 @@ func TestPlotServiceCreateRejectsUnknownOrchard(t *testing.T) {
 	}
 }
 
+func TestPlotServiceCreateRejectsActivePlotUnderArchivedOrchard(t *testing.T) {
+	t.Parallel()
+
+	repo := &fakePlotRepo{
+		orchards: map[string]domain.OrchardRecord{
+			"orchard-1": {
+				OrchardID:   "orchard-1",
+				OrchardName: "Archived Orchard",
+				Status:      domain.ResourceStatusArchived,
+				CreatedAt:   time.Now().UTC(),
+				UpdatedAt:   time.Now().UTC(),
+			},
+		},
+	}
+	svc := NewPlotService(repo)
+
+	_, err := svc.Create(context.Background(), PlotInput{
+		PlotID:    "plot-1",
+		OrchardID: "orchard-1",
+		PlotName:  "A1",
+		Status:    domain.ResourceStatusActive,
+	})
+	if !errors.Is(err, ErrInvalidRequest) {
+		t.Fatalf("error = %v, want ErrInvalidRequest", err)
+	}
+}
+
 func TestPlotServiceUpdateRejectsMovingToUnknownOrchard(t *testing.T) {
 	t.Parallel()
 
@@ -298,6 +325,48 @@ func TestPlotServiceUpdateRejectsMovingToUnknownOrchard(t *testing.T) {
 	}
 	if repo.updateCalled {
 		t.Fatal("expected invalid orchard move to be rejected before repository update")
+	}
+}
+
+func TestPlotServiceUpdateRejectsActivePlotUnderArchivedOrchard(t *testing.T) {
+	t.Parallel()
+
+	repo := &fakePlotRepo{
+		record: domain.PlotRecord{
+			PlotID:    "plot-1",
+			OrchardID: "orchard-1",
+			PlotName:  "A1",
+			Status:    domain.ResourceStatusActive,
+			CreatedAt: time.Now().UTC(),
+			UpdatedAt: time.Now().UTC(),
+		},
+		orchards: map[string]domain.OrchardRecord{
+			"orchard-1": {
+				OrchardID:   "orchard-1",
+				OrchardName: "Active Orchard",
+				Status:      domain.ResourceStatusActive,
+				CreatedAt:   time.Now().UTC(),
+				UpdatedAt:   time.Now().UTC(),
+			},
+			"orchard-2": {
+				OrchardID:   "orchard-2",
+				OrchardName: "Archived Orchard",
+				Status:      domain.ResourceStatusArchived,
+				CreatedAt:   time.Now().UTC(),
+				UpdatedAt:   time.Now().UTC(),
+			},
+		},
+	}
+	svc := NewPlotService(repo)
+
+	_, err := svc.Update(context.Background(), "plot-1", PlotInput{
+		OrchardID: "orchard-2",
+	})
+	if !errors.Is(err, ErrInvalidRequest) {
+		t.Fatalf("error = %v, want ErrInvalidRequest", err)
+	}
+	if repo.updateCalled {
+		t.Fatal("expected archived orchard move to be rejected before repository update")
 	}
 }
 

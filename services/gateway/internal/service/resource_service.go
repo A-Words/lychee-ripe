@@ -159,7 +159,7 @@ func (s *PlotService) Create(ctx context.Context, input PlotInput) (domain.PlotR
 	if err != nil {
 		return domain.PlotRecord{}, err
 	}
-	if err := s.ensureOrchardExists(ctx, record.OrchardID); err != nil {
+	if err := s.ensureOrchardAcceptsPlot(ctx, record.OrchardID, record.Status); err != nil {
 		return domain.PlotRecord{}, err
 	}
 	created, err := s.repo.CreatePlot(ctx, record)
@@ -195,7 +195,7 @@ func (s *PlotService) Update(ctx context.Context, plotID string, input PlotInput
 		return domain.PlotRecord{}, err
 	}
 	current.Status = status
-	if err := s.ensureOrchardExists(ctx, current.OrchardID); err != nil {
+	if err := s.ensureOrchardAcceptsPlot(ctx, current.OrchardID, current.Status); err != nil {
 		return domain.PlotRecord{}, err
 	}
 	updated, err := s.repo.UpdatePlot(ctx, current)
@@ -219,12 +219,16 @@ func (s *OrchardService) ensureNoActivePlots(ctx context.Context, orchardID stri
 	return nil
 }
 
-func (s *PlotService) ensureOrchardExists(ctx context.Context, orchardID string) error {
-	if _, err := s.repo.GetOrchard(ctx, strings.TrimSpace(orchardID)); err != nil {
+func (s *PlotService) ensureOrchardAcceptsPlot(ctx context.Context, orchardID string, plotStatus domain.ResourceStatus) error {
+	orchard, err := s.repo.GetOrchard(ctx, strings.TrimSpace(orchardID))
+	if err != nil {
 		if errors.Is(err, repository.ErrNotFound) {
 			return fmt.Errorf("%w: orchard_id does not reference an existing orchard", ErrInvalidRequest)
 		}
 		return ErrServiceUnavailable
+	}
+	if orchard.Status == domain.ResourceStatusArchived && plotStatus == domain.ResourceStatusActive {
+		return fmt.Errorf("%w: active plots cannot belong to archived orchards", ErrInvalidRequest)
 	}
 	return nil
 }
