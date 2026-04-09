@@ -9,7 +9,9 @@ import {
   saveStoredPrincipal,
   saveStoredSession
 } from '~/utils/auth-storage'
+import { buildAppPath, inferAppBasePath } from '~/utils/app-path'
 import { resolveAuthenticatedRequest, resolveBootstrapPrincipal } from '~/utils/auth-session'
+import { buildURLUnderBase } from '~/utils/base-url'
 import { toWebSocketBase } from '~/utils/ws-url'
 
 let initPromise: Promise<void> | null = null
@@ -17,6 +19,7 @@ let initPromise: Promise<void> | null = null
 export function useAuth() {
   const config = useRuntimeConfig()
   const gatewayBase = useGatewayBase()
+  const route = useRoute()
   const mode = computed<AuthMode>(() => normalizeAuthMode(config.public.authMode))
   const principal = useState<Principal | null>('auth.principal', () => null)
   const session = useState<AuthSession | null>('auth.session', () => null)
@@ -25,6 +28,9 @@ export function useAuth() {
 
   const isAuthenticated = computed(() => mode.value === 'disabled' || Boolean(principal.value))
   const isAdmin = computed(() => mode.value === 'disabled' || principal.value?.role === 'admin')
+  const appBasePath = computed(() =>
+    import.meta.client ? inferAppBasePath(window.location.pathname, route.path) : ''
+  )
 
   async function init(force = false) {
     if (initialized.value && !force) {
@@ -110,7 +116,7 @@ export function useAuth() {
     }
 
     if (isTauri) {
-      await navigateTo('/login')
+      await navigateTo(buildAppPath(appBasePath.value, '/login'))
       return
     }
 
@@ -129,7 +135,7 @@ export function useAuth() {
       // local state is already cleared; fall through to login page
     }
 
-    await navigateTo('/login')
+    await navigateTo(buildAppPath(appBasePath.value, '/login'))
   }
 
   function authHeaders(): Record<string, string> {
@@ -228,7 +234,7 @@ export function useAuth() {
     if (!import.meta.client) {
       return
     }
-    const target = new URL('/v1/auth/login', ensureTrailingSlash(gatewayBase.value))
+    const target = buildURLUnderBase(gatewayBase.value, '/v1/auth/login')
     target.searchParams.set('redirect', normalizeRedirectPath(redirectPath))
     window.location.href = target.toString()
   }
@@ -321,10 +327,6 @@ function isTauriRuntime() {
     return false
   }
   return typeof window !== 'undefined' && ('__TAURI_INTERNALS__' in window || '__TAURI__' in window)
-}
-
-function ensureTrailingSlash(base: string) {
-  return base.endsWith('/') ? base : `${base}/`
 }
 
 function normalizeRedirectPath(raw: string) {

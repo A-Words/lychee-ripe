@@ -1,16 +1,23 @@
 <script setup lang="ts">
+import { buildAppPath, inferAppBasePath } from '~/utils/app-path'
+
 useSeoMeta({
   title: '登录回调',
   description: '正在恢复登录状态。'
 })
 
+const route = useRoute()
 const auth = useAuth()
 const errorMessage = ref('')
+const appBasePath = computed(() =>
+  import.meta.client ? inferAppBasePath(window.location.pathname, route.path) : ''
+)
+const loginPath = computed(() => buildAppPath(appBasePath.value, '/login'))
 
 onMounted(async () => {
   try {
     const target = await auth.handleWebCallback()
-    await navigateTo(target || '/dashboard')
+    await navigateTo(buildAppPath(appBasePath.value, target || '/dashboard'))
   } catch (error) {
     errorMessage.value = error instanceof Error ? error.message : '登录回调失败'
   }
@@ -35,7 +42,7 @@ onMounted(async () => {
             icon="i-lucide-alert-circle"
             :description="errorMessage"
           />
-          <UButton v-if="errorMessage" to="/login" label="返回登录页" />
+          <UButton v-if="errorMessage" :to="loginPath" label="返回登录页" />
         </div>
       </UCard>
     </div>

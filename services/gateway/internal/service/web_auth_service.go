@@ -322,7 +322,7 @@ func resolveAppRedirect(appBaseURL string, redirectPath string) string {
 	if err != nil || base == nil {
 		return redirectPath
 	}
-	target, err := base.Parse(normalizeRedirectPath(redirectPath))
+	target, err := resolveURLUnderBase(base, normalizeRedirectPath(redirectPath))
 	if err != nil {
 		return base.String()
 	}
@@ -331,6 +331,27 @@ func resolveAppRedirect(appBaseURL string, redirectPath string) string {
 
 func (s *WebAuthService) callbackURL() string {
 	return resolveAppRedirect(s.cfg.Web.PublicBaseURL, "/v1/auth/callback")
+}
+
+func resolveURLUnderBase(base *url.URL, absolutePath string) (*url.URL, error) {
+	if base == nil {
+		return nil, errors.New("base url is required")
+	}
+	relativeTarget, err := url.Parse(strings.TrimLeft(strings.TrimSpace(absolutePath), "/"))
+	if err != nil {
+		return nil, err
+	}
+
+	baseCopy := *base
+	trimmedPath := strings.TrimRight(baseCopy.Path, "/")
+	if trimmedPath == "" {
+		baseCopy.Path = "/"
+	} else {
+		baseCopy.Path = trimmedPath + "/"
+	}
+	baseCopy.RawPath = ""
+
+	return baseCopy.ResolveReference(relativeTarget), nil
 }
 
 func hashOpaqueToken(value string) string {

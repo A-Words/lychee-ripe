@@ -1,6 +1,7 @@
 import { resolveAuthGuardDecision } from '~/utils/auth-guard'
+import { buildAppPath, inferAppBasePath } from '~/utils/app-path'
 
-export default defineNuxtRouteMiddleware(async (to) => {
+export default defineNuxtRouteMiddleware(async (to, from) => {
   if (import.meta.server) {
     // This early return is only safe because the app is locked to ssr: false
     // and browser auth is restored on the client from gateway cookies plus
@@ -11,6 +12,7 @@ export default defineNuxtRouteMiddleware(async (to) => {
 
   const auth = useAuth()
   await auth.init()
+  const appBasePath = inferAppBasePath(window.location.pathname, [from.path, to.path])
 
   const decision = resolveAuthGuardDecision({
     path: to.path,
@@ -26,7 +28,7 @@ export default defineNuxtRouteMiddleware(async (to) => {
 
   if (decision.kind === 'login') {
     return navigateTo({
-      path: '/login',
+      path: buildAppPath(appBasePath, '/login'),
       query: {
         redirect: decision.redirect
       }
@@ -34,6 +36,6 @@ export default defineNuxtRouteMiddleware(async (to) => {
   }
 
   if (decision.kind === 'dashboard') {
-    return navigateTo('/dashboard')
+    return navigateTo(buildAppPath(appBasePath, '/dashboard'))
   }
 })

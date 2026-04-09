@@ -1,4 +1,5 @@
 <script setup lang="ts">
+import { buildAppPath, inferAppBasePath } from '~/utils/app-path'
 import { buildTopNavItems } from '~/utils/top-nav-items'
 
 const route = useRoute()
@@ -9,6 +10,14 @@ onMounted(() => {
 })
 
 const navItems = computed(() => buildTopNavItems(route.path, auth.isAdmin.value))
+const appBasePath = computed(() =>
+  import.meta.client ? inferAppBasePath(window.location.pathname, route.path) : ''
+)
+const titleTo = computed(() => buildAppPath(appBasePath.value, '/'))
+const resolvedNavItems = computed(() => navItems.value.map((item) => ({
+  ...item,
+  to: buildAppPath(appBasePath.value, item.to)
+})))
 const principalName = computed(() => auth.principal.value?.display_name || '')
 
 const authActionLabel = computed(() => auth.isAuthenticated.value ? '退出登录' : '登录')
@@ -25,12 +34,12 @@ async function handleAuthAction() {
 <template>
   <UHeader
     title="Lychee Ripe"
-    to="/"
+    :to="titleTo"
     mode="slideover"
     :toggle="{ color: 'neutral', variant: 'ghost' }"
   >
     <UNavigationMenu
-      :items="navItems"
+      :items="resolvedNavItems"
       orientation="horizontal"
       color="neutral"
       variant="pill"
@@ -55,7 +64,7 @@ async function handleAuthAction() {
 
     <template #body>
       <UNavigationMenu
-        :items="navItems"
+        :items="resolvedNavItems"
         orientation="vertical"
         color="neutral"
         variant="pill"
