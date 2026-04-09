@@ -561,6 +561,58 @@ func TestResolvePrincipalBindsActivePreProvisionedUser(t *testing.T) {
 	}
 }
 
+func TestResolvePrincipalDoesNotRewriteLoginMetadataForBoundUser(t *testing.T) {
+	t.Parallel()
+
+	ctx := context.Background()
+	repo, sqlDB := mustNewSQLiteRepo(t)
+	defer sqlDB.Close()
+
+	now := time.Now().UTC()
+	firstLogin := now.Add(time.Minute)
+	secondRequest := now.Add(2 * time.Minute)
+	subject := "oidc-sub-2"
+	initialLoginAt := firstLogin
+	user := UserModel{
+		ID:          "user-3",
+		Email:       "bound@example.com",
+		DisplayName: "Bound User",
+		OIDCSubject: &subject,
+		Role:        string(domain.UserRoleOperator),
+		Status:      string(domain.UserStatusActive),
+		LastLoginAt: &initialLoginAt,
+		CreatedAt:   now,
+		UpdatedAt:   firstLogin,
+	}
+	if err := repo.db.WithContext(ctx).Create(&user).Error; err != nil {
+		t.Fatalf("seed user: %v", err)
+	}
+
+	claims := domain.IdentityClaims{
+		Subject:     subject,
+		Email:       user.Email,
+		DisplayName: "New Display Name",
+	}
+	principal, err := repo.ResolvePrincipal(ctx, claims, domain.AuthModeOIDC, secondRequest)
+	if err != nil {
+		t.Fatalf("ResolvePrincipal returned error: %v", err)
+	}
+	if principal.DisplayName != user.DisplayName {
+		t.Fatalf("principal display_name = %q, want %q", principal.DisplayName, user.DisplayName)
+	}
+
+	var stored UserModel
+	if err := repo.db.WithContext(ctx).Where("id = ?", user.ID).First(&stored).Error; err != nil {
+		t.Fatalf("reload user: %v", err)
+	}
+	if stored.LastLoginAt == nil || !stored.LastLoginAt.Equal(initialLoginAt) {
+		t.Fatalf("last_login_at = %v, want %v", stored.LastLoginAt, initialLoginAt)
+	}
+	if stored.DisplayName != user.DisplayName {
+		t.Fatalf("display_name = %q, want %q", stored.DisplayName, user.DisplayName)
+	}
+}
+
 func TestResolvePrincipalDoesNotBindDisabledPreProvisionedUser(t *testing.T) {
 	t.Parallel()
 

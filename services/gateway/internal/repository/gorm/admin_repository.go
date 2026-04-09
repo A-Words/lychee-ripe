@@ -67,21 +67,6 @@ func (r *Repository) ResolvePrincipal(
 		if user.Status != string(domain.UserStatusActive) {
 			return repository.ErrInvalidState
 		}
-		user.LastLoginAt = timePtr(normalizeTime(now))
-		if displayName != "" {
-			user.DisplayName = displayName
-		}
-		user.UpdatedAt = normalizeTime(now)
-		if err := tx.Model(&UserModel{}).
-			Where("id = ?", user.ID).
-			Updates(map[string]any{
-				"display_name":  user.DisplayName,
-				"last_login_at": user.LastLoginAt,
-				"updated_at":    user.UpdatedAt,
-			}).Error; err != nil {
-			return mapGormErr(err)
-		}
-
 		principal = userModelToPrincipal(user, mode)
 		return nil
 	})

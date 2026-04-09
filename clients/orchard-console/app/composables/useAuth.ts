@@ -1,5 +1,5 @@
 import type { AuthMode, AuthSession, OIDCDiscoveryDocument, Principal } from '~/types/auth'
-import { resolveBootstrapPrincipal } from '~/utils/auth-session'
+import { resolveAuthenticatedRequest, resolveBootstrapPrincipal } from '~/utils/auth-session'
 import { toWebSocketBase } from '~/utils/ws-url'
 
 const AUTH_SESSION_KEY = 'lychee-ripe.auth.session'
@@ -164,11 +164,16 @@ export function useAuth() {
       ...(options.headers as Record<string, string> | undefined),
       ...authHeaders()
     }
-    return await $fetch<T>(path, {
-      ...options,
-      baseURL: gatewayBase.value,
-      headers
-    })
+    try {
+      return await $fetch<T>(path, {
+        ...options,
+        baseURL: gatewayBase.value,
+        headers
+      })
+    } catch (error) {
+      handleAuthenticatedRequestFailure(error)
+      throw error
+    }
   }
 
   async function gatewayFetchRaw<T>(path: string, options: Record<string, any> = {}) {
@@ -177,11 +182,16 @@ export function useAuth() {
       ...(options.headers as Record<string, string> | undefined),
       ...authHeaders()
     }
-    return await $fetch.raw<T>(path, {
-      ...options,
-      baseURL: gatewayBase.value,
-      headers
-    })
+    try {
+      return await $fetch.raw<T>(path, {
+        ...options,
+        baseURL: gatewayBase.value,
+        headers
+      })
+    } catch (error) {
+      handleAuthenticatedRequestFailure(error)
+      throw error
+    }
   }
 
   function websocketUrl(path: string) {
@@ -200,6 +210,17 @@ export function useAuth() {
     if (import.meta.client) {
       localStorage.removeItem(AUTH_SESSION_KEY)
       localStorage.removeItem(AUTH_PRINCIPAL_KEY)
+    }
+  }
+
+  function handleAuthenticatedRequestFailure(error: unknown) {
+    if (mode.value !== 'oidc') {
+      return
+    }
+
+    const decision = resolveAuthenticatedRequest(error)
+    if (decision.clearPersistedAuth) {
+      clearSession()
     }
   }
 

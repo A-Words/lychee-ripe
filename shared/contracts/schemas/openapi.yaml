@@ -487,6 +487,19 @@ paths:
       tags: [admin]
       security:
         - OpenIdConnect: []
+      parameters:
+        - name: orchard_id
+          in: query
+          required: false
+          schema:
+            type: string
+          description: Filter plots by orchard id.
+        - name: include_archived
+          in: query
+          required: false
+          schema:
+            type: boolean
+          description: Include archived plots in the response.
       responses:
         "200":
           description: Plot list

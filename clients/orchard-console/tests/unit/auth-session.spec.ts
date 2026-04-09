@@ -1,5 +1,10 @@
 import { describe, expect, it } from 'vitest'
-import { getErrorStatusCode, resolveBootstrapPrincipal, shouldClearSessionForPrincipalError } from '../../app/utils/auth-session'
+import {
+  getErrorStatusCode,
+  resolveAuthenticatedRequest,
+  resolveBootstrapPrincipal,
+  shouldClearSessionForPrincipalError
+} from '../../app/utils/auth-session'
 import type { Principal } from '../../app/types/auth'
 
 const CACHED_PRINCIPAL: Principal = {
@@ -47,5 +52,20 @@ describe('auth session bootstrap helpers', () => {
     expect(shouldClearSessionForPrincipalError({ status: 403 })).toBe(true)
     expect(shouldClearSessionForPrincipalError({ status: 503 })).toBe(false)
     expect(shouldClearSessionForPrincipalError({})).toBe(false)
+  })
+
+  it('clears persisted auth only for explicit auth rejection in later authenticated requests', () => {
+    expect(resolveAuthenticatedRequest({ status: 401 })).toEqual({
+      clearPersistedAuth: true
+    })
+    expect(resolveAuthenticatedRequest({ response: { status: 403 } })).toEqual({
+      clearPersistedAuth: true
+    })
+    expect(resolveAuthenticatedRequest({ status: 503 })).toEqual({
+      clearPersistedAuth: false
+    })
+    expect(resolveAuthenticatedRequest(new Error('network hiccup'))).toEqual({
+      clearPersistedAuth: false
+    })
   })
 })

@@ -5,6 +5,10 @@ type AuthBootstrapDecision = {
   clearPersistedAuth: boolean
 }
 
+type AuthRequestDecision = {
+  clearPersistedAuth: boolean
+}
+
 export function resolveBootstrapPrincipal(cachedPrincipal: Principal | null, error: unknown): AuthBootstrapDecision {
   if (shouldClearSessionForPrincipalError(error)) {
     return {
@@ -22,6 +26,12 @@ export function resolveBootstrapPrincipal(cachedPrincipal: Principal | null, err
 export function shouldClearSessionForPrincipalError(error: unknown) {
   const statusCode = getErrorStatusCode(error)
   return statusCode === 401 || statusCode === 403
+}
+
+export function resolveAuthenticatedRequest(error: unknown): AuthRequestDecision {
+  return {
+    clearPersistedAuth: shouldClearSessionForPrincipalError(error)
+  }
 }
 
 export function getErrorStatusCode(error: unknown) {
