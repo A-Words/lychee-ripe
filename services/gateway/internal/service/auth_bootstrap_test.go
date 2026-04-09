@@ -13,7 +13,7 @@ import (
 func TestEnsureBootstrapAdminSkipsWhenAuthDisabled(t *testing.T) {
 	t.Parallel()
 
-	repo := &fakeBootstrapAdminRepo{countUsers: 0}
+	repo := &fakeBootstrapAdminRepo{countActiveAdmins: 0}
 	if err := EnsureBootstrapAdmin(context.Background(), domain.AuthModeDisabled, "", repo); err != nil {
 		t.Fatalf("EnsureBootstrapAdmin returned error: %v", err)
 	}
@@ -25,7 +25,7 @@ func TestEnsureBootstrapAdminSkipsWhenAuthDisabled(t *testing.T) {
 func TestEnsureBootstrapAdminFailsWithoutBootstrapEmail(t *testing.T) {
 	t.Parallel()
 
-	repo := &fakeBootstrapAdminRepo{countUsers: 0}
+	repo := &fakeBootstrapAdminRepo{countActiveAdmins: 0}
 	err := EnsureBootstrapAdmin(context.Background(), domain.AuthModeOIDC, "", repo)
 	if !errors.Is(err, ErrInvalidRequest) {
 		t.Fatalf("error = %v, want ErrInvalidRequest", err)
@@ -35,7 +35,7 @@ func TestEnsureBootstrapAdminFailsWithoutBootstrapEmail(t *testing.T) {
 func TestEnsureBootstrapAdminCreatesAdminForFreshOIDCStore(t *testing.T) {
 	t.Parallel()
 
-	repo := &fakeBootstrapAdminRepo{countUsers: 0}
+	repo := &fakeBootstrapAdminRepo{countActiveAdmins: 0}
 	if err := EnsureBootstrapAdmin(context.Background(), domain.AuthModeOIDC, "Admin@Example.com", repo); err != nil {
 		t.Fatalf("EnsureBootstrapAdmin returned error: %v", err)
 	}
@@ -65,10 +65,10 @@ func TestEnsureBootstrapAdminCreatesAdminForFreshOIDCStore(t *testing.T) {
 	}
 }
 
-func TestEnsureBootstrapAdminSkipsExistingUsers(t *testing.T) {
+func TestEnsureBootstrapAdminSkipsWhenActiveAdminAlreadyExists(t *testing.T) {
 	t.Parallel()
 
-	repo := &fakeBootstrapAdminRepo{countUsers: 2}
+	repo := &fakeBootstrapAdminRepo{countActiveAdmins: 1}
 	if err := EnsureBootstrapAdmin(context.Background(), domain.AuthModeOIDC, "admin@example.com", repo); err != nil {
 		t.Fatalf("EnsureBootstrapAdmin returned error: %v", err)
 	}
@@ -77,12 +77,24 @@ func TestEnsureBootstrapAdminSkipsExistingUsers(t *testing.T) {
 	}
 }
 
+func TestEnsureBootstrapAdminCreatesAdminWhenNoActiveAdminExists(t *testing.T) {
+	t.Parallel()
+
+	repo := &fakeBootstrapAdminRepo{countActiveAdmins: 0}
+	if err := EnsureBootstrapAdmin(context.Background(), domain.AuthModeOIDC, "admin@example.com", repo); err != nil {
+		t.Fatalf("EnsureBootstrapAdmin returned error: %v", err)
+	}
+	if repo.createCallCount != 1 {
+		t.Fatalf("createCallCount = %d, want 1", repo.createCallCount)
+	}
+}
+
 func TestEnsureBootstrapAdminTreatsCreateConflictAsInitialized(t *testing.T) {
 	t.Parallel()
 
 	repo := &fakeBootstrapAdminRepo{
-		countUsers:    0,
-		createUserErr: repository.ErrConflict,
+		countActiveAdminsSequence: []int64{0, 1},
+		createUserErr:            repository.ErrConflict,
 	}
 	if err := EnsureBootstrapAdmin(context.Background(), domain.AuthModeOIDC, "admin@example.com", repo); err != nil {
 		t.Fatalf("EnsureBootstrapAdmin returned error: %v", err)
@@ -92,16 +104,38 @@ func TestEnsureBootstrapAdminTreatsCreateConflictAsInitialized(t *testing.T) {
 	}
 }
 
-type fakeBootstrapAdminRepo struct {
-	countUsers      int64
-	countUsersErr   error
-	createUserErr   error
-	createCallCount int
-	created         domain.UserRecord
+func TestEnsureBootstrapAdminRejectsConflictWhenStillNoActiveAdmin(t *testing.T) {
+	t.Parallel()
+
+	repo := &fakeBootstrapAdminRepo{
+		countActiveAdminsSequence: []int64{0, 0},
+		createUserErr:            repository.ErrConflict,
+	}
+	err := EnsureBootstrapAdmin(context.Background(), domain.AuthModeOIDC, "admin@example.com", repo)
+	if !errors.Is(err, ErrInvalidRequest) {
+		t.Fatalf("error = %v, want ErrInvalidRequest", err)
+	}
 }
 
-func (f *fakeBootstrapAdminRepo) CountUsers(_ context.Context) (int64, error) {
-	return f.countUsers, f.countUsersErr
+type fakeBootstrapAdminRepo struct {
+	countActiveAdmins         int64
+	countActiveAdminsSequence []int64
+	countActiveAdminsErr      error
+	createUserErr             error
+	createCallCount           int
+	created                   domain.UserRecord
+}
+
+func (f *fakeBootstrapAdminRepo) CountActiveAdmins(_ context.Context) (int64, error) {
+	if f.countActiveAdminsErr != nil {
+		return 0, f.countActiveAdminsErr
+	}
+	if len(f.countActiveAdminsSequence) > 0 {
+		value := f.countActiveAdminsSequence[0]
+		f.countActiveAdminsSequence = f.countActiveAdminsSequence[1:]
+		return value, nil
+	}
+	return f.countActiveAdmins, nil
 }
 
 func (f *fakeBootstrapAdminRepo) CreateUser(_ context.Context, user domain.UserRecord) (domain.UserRecord, error) {

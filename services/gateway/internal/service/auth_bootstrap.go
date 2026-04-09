@@ -12,7 +12,7 @@ import (
 )
 
 type BootstrapAdminRepo interface {
-	CountUsers(ctx context.Context) (int64, error)
+	CountActiveAdmins(ctx context.Context) (int64, error)
 	CreateUser(ctx context.Context, user domain.UserRecord) (domain.UserRecord, error)
 }
 
@@ -26,9 +26,9 @@ func EnsureBootstrapAdmin(
 		return nil
 	}
 
-	count, err := repo.CountUsers(ctx)
+	count, err := repo.CountActiveAdmins(ctx)
 	if err != nil {
-		return fmt.Errorf("%w: count users: %v", ErrServiceUnavailable, err)
+		return fmt.Errorf("%w: count active admins: %v", ErrServiceUnavailable, err)
 	}
 	if count > 0 {
 		return nil
@@ -36,7 +36,7 @@ func EnsureBootstrapAdmin(
 
 	email := strings.ToLower(strings.TrimSpace(bootstrapAdminEmail))
 	if email == "" {
-		return fmt.Errorf("%w: auth.bootstrap_admin_email is required when auth.mode=oidc and users table is empty", ErrInvalidRequest)
+		return fmt.Errorf("%w: auth.bootstrap_admin_email is required when auth.mode=oidc and no active admin exists", ErrInvalidRequest)
 	}
 
 	now := time.Now().UTC()
@@ -51,7 +51,14 @@ func EnsureBootstrapAdmin(
 
 	if _, err := repo.CreateUser(ctx, user); err != nil {
 		if errors.Is(err, repository.ErrConflict) {
-			return nil
+			count, countErr := repo.CountActiveAdmins(ctx)
+			if countErr != nil {
+				return fmt.Errorf("%w: verify bootstrap admin after conflict: %v", ErrServiceUnavailable, countErr)
+			}
+			if count > 0 {
+				return nil
+			}
+			return fmt.Errorf("%w: bootstrap admin email conflicts with an existing non-active-admin user", ErrInvalidRequest)
 		}
 		return fmt.Errorf("%w: create bootstrap admin: %v", ErrServiceUnavailable, err)
 	}

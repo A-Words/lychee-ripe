@@ -3,6 +3,7 @@ package service
 import (
 	"context"
 	"errors"
+	"fmt"
 	"strings"
 	"time"
 
@@ -15,6 +16,7 @@ type OrchardRepo interface {
 	CreateOrchard(ctx context.Context, orchard domain.OrchardRecord) (domain.OrchardRecord, error)
 	UpdateOrchard(ctx context.Context, orchard domain.OrchardRecord) (domain.OrchardRecord, error)
 	GetOrchard(ctx context.Context, orchardID string) (domain.OrchardRecord, error)
+	CountActivePlots(ctx context.Context, orchardID string) (int64, error)
 }
 
 type PlotRepo interface {
@@ -22,6 +24,7 @@ type PlotRepo interface {
 	CreatePlot(ctx context.Context, plot domain.PlotRecord) (domain.PlotRecord, error)
 	UpdatePlot(ctx context.Context, plot domain.PlotRecord) (domain.PlotRecord, error)
 	GetPlot(ctx context.Context, plotID string) (domain.PlotRecord, error)
+	GetOrchard(ctx context.Context, orchardID string) (domain.OrchardRecord, error)
 }
 
 type SeedRepo interface {
@@ -92,6 +95,7 @@ func (s *OrchardService) Update(ctx context.Context, orchardID string, input Orc
 		}
 		return domain.OrchardRecord{}, ErrServiceUnavailable
 	}
+	previousStatus := current.Status
 	current.OrchardName = strings.TrimSpace(input.OrchardName)
 	if input.Status != "" {
 		current.Status = input.Status
@@ -103,6 +107,11 @@ func (s *OrchardService) Update(ctx context.Context, orchardID string, input Orc
 	status, err := normalizeResourceStatus(current.Status)
 	if err != nil {
 		return domain.OrchardRecord{}, err
+	}
+	if previousStatus != domain.ResourceStatusArchived && status == domain.ResourceStatusArchived {
+		if err := s.ensureNoActivePlots(ctx, current.OrchardID); err != nil {
+			return domain.OrchardRecord{}, err
+		}
 	}
 	current.Status = status
 	updated, err := s.repo.UpdateOrchard(ctx, current)
@@ -122,6 +131,11 @@ func (s *OrchardService) Archive(ctx context.Context, orchardID string) (domain.
 			return domain.OrchardRecord{}, ErrNotFound
 		}
 		return domain.OrchardRecord{}, ErrServiceUnavailable
+	}
+	if current.Status != domain.ResourceStatusArchived {
+		if err := s.ensureNoActivePlots(ctx, current.OrchardID); err != nil {
+			return domain.OrchardRecord{}, err
+		}
 	}
 	current.Status = domain.ResourceStatusArchived
 	current.UpdatedAt = s.nowFn()
@@ -143,6 +157,9 @@ func (s *PlotService) List(ctx context.Context, orchardID string, includeArchive
 func (s *PlotService) Create(ctx context.Context, input PlotInput) (domain.PlotRecord, error) {
 	record, err := normalizePlotInput(input, s.nowFn(), true)
 	if err != nil {
+		return domain.PlotRecord{}, err
+	}
+	if err := s.ensureOrchardExists(ctx, record.OrchardID); err != nil {
 		return domain.PlotRecord{}, err
 	}
 	created, err := s.repo.CreatePlot(ctx, record)
@@ -178,6 +195,9 @@ func (s *PlotService) Update(ctx context.Context, plotID string, input PlotInput
 		return domain.PlotRecord{}, err
 	}
 	current.Status = status
+	if err := s.ensureOrchardExists(ctx, current.OrchardID); err != nil {
+		return domain.PlotRecord{}, err
+	}
 	updated, err := s.repo.UpdatePlot(ctx, current)
 	if err != nil {
 		if errors.Is(err, repository.ErrNotFound) {
@@ -186,6 +206,27 @@ func (s *PlotService) Update(ctx context.Context, plotID string, input PlotInput
 		return domain.PlotRecord{}, ErrServiceUnavailable
 	}
 	return updated, nil
+}
+
+func (s *OrchardService) ensureNoActivePlots(ctx context.Context, orchardID string) error {
+	count, err := s.repo.CountActivePlots(ctx, strings.TrimSpace(orchardID))
+	if err != nil {
+		return ErrServiceUnavailable
+	}
+	if count > 0 {
+		return fmt.Errorf("%w: orchard has active plots; archive or move plots first", ErrInvalidRequest)
+	}
+	return nil
+}
+
+func (s *PlotService) ensureOrchardExists(ctx context.Context, orchardID string) error {
+	if _, err := s.repo.GetOrchard(ctx, strings.TrimSpace(orchardID)); err != nil {
+		if errors.Is(err, repository.ErrNotFound) {
+			return fmt.Errorf("%w: orchard_id does not reference an existing orchard", ErrInvalidRequest)
+		}
+		return ErrServiceUnavailable
+	}
+	return nil
 }
 
 func (s *PlotService) Archive(ctx context.Context, plotID string) (domain.PlotRecord, error) {
