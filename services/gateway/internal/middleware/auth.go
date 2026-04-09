@@ -63,6 +63,9 @@ func Auth(
 			token := bearerToken(r.Header.Get("Authorization"))
 			if token == "" && strings.HasPrefix(r.URL.Path, "/v1/infer/stream") {
 				token = strings.TrimSpace(r.URL.Query().Get("access_token"))
+				if token != "" {
+					r = stripQueryToken(r, "access_token")
+				}
 			}
 			if token == "" {
 				writeAuthError(w, http.StatusUnauthorized, "unauthorized", "missing bearer token")
@@ -102,6 +105,24 @@ func Auth(
 			next.ServeHTTP(w, r.WithContext(WithPrincipal(r.Context(), principal)))
 		})
 	}
+}
+
+func stripQueryToken(r *http.Request, key string) *http.Request {
+	if r == nil || r.URL == nil {
+		return r
+	}
+	query := r.URL.Query()
+	if strings.TrimSpace(query.Get(key)) == "" {
+		return r
+	}
+
+	cloned := r.Clone(r.Context())
+	nextURL := *r.URL
+	query.Del(key)
+	nextURL.RawQuery = query.Encode()
+	cloned.URL = &nextURL
+	cloned.RequestURI = nextURL.RequestURI()
+	return cloned
 }
 
 func WithPrincipal(ctx context.Context, principal domain.Principal) context.Context {

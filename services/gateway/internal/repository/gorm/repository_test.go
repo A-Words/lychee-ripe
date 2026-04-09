@@ -658,6 +658,105 @@ func TestResolvePrincipalDoesNotBindDisabledPreProvisionedUser(t *testing.T) {
 	}
 }
 
+func TestResolvePrincipalConcurrentFirstBindPreservesSingleSubjectSQLite(t *testing.T) {
+	t.Parallel()
+
+	ctx := context.Background()
+	dbPath := filepath.Join(t.TempDir(), "gateway-resolve-principal.db")
+	cfg := config.DBConfig{
+		Driver:           "sqlite",
+		DSN:              dbPath,
+		MaxOpenConns:     10,
+		MaxIdleConns:     5,
+		ConnMaxLifetimeS: 300,
+		SQLite: config.SQLiteDBConfig{
+			JournalMode:   "WAL",
+			BusyTimeoutMS: 5000,
+		},
+	}
+	repoA, sqlDBA := mustNewRepoWithConfig(t, cfg)
+	defer sqlDBA.Close()
+	repoB, sqlDBB := mustNewRepoWithConfig(t, cfg)
+	defer sqlDBB.Close()
+
+	now := time.Now().UTC()
+	user := UserModel{
+		ID:          "user-concurrent",
+		Email:       "operator@example.com",
+		DisplayName: "Provisioned Operator",
+		Role:        string(domain.UserRoleOperator),
+		Status:      string(domain.UserStatusActive),
+		CreatedAt:   now,
+		UpdatedAt:   now,
+	}
+	if err := repoA.db.WithContext(ctx).Create(&user).Error; err != nil {
+		t.Fatalf("seed user: %v", err)
+	}
+
+	claims := []domain.IdentityClaims{
+		{Subject: "oidc-sub-1", Email: user.Email, DisplayName: "OIDC User 1"},
+		{Subject: "oidc-sub-2", Email: user.Email, DisplayName: "OIDC User 2"},
+	}
+	repos := []*Repository{repoA, repoB}
+
+	start := make(chan struct{})
+	var wg sync.WaitGroup
+	var successCount atomic.Int32
+	var notFoundCount atomic.Int32
+	errCh := make(chan error, len(claims))
+
+	for idx := range claims {
+		repo := repos[idx]
+		claim := claims[idx]
+		wg.Add(1)
+		go func() {
+			defer wg.Done()
+			<-start
+			_, err := repo.ResolvePrincipal(ctx, claim, domain.AuthModeOIDC, now.Add(time.Minute))
+			switch {
+			case err == nil:
+				successCount.Add(1)
+			case errors.Is(err, repository.ErrNotFound):
+				notFoundCount.Add(1)
+			default:
+				errCh <- err
+			}
+		}()
+	}
+
+	close(start)
+	wg.Wait()
+	close(errCh)
+
+	for err := range errCh {
+		if err != nil {
+			t.Fatalf("unexpected concurrent resolve error: %v", err)
+		}
+	}
+
+	if successCount.Load() != 1 {
+		t.Fatalf("success count = %d, want 1", successCount.Load())
+	}
+	if notFoundCount.Load() != 1 {
+		t.Fatalf("not found count = %d, want 1", notFoundCount.Load())
+	}
+
+	var stored UserModel
+	if err := repoA.db.WithContext(ctx).Where("id = ?", user.ID).First(&stored).Error; err != nil {
+		t.Fatalf("reload user: %v", err)
+	}
+	if stored.OIDCSubject == nil {
+		t.Fatal("expected oidc_subject to be bound")
+	}
+	bound := *stored.OIDCSubject
+	if bound != claims[0].Subject && bound != claims[1].Subject {
+		t.Fatalf("bound oidc_subject = %q, want one of the concurrent subjects", bound)
+	}
+	if stored.LastLoginAt == nil {
+		t.Fatal("expected last_login_at to be set for the winning bind")
+	}
+}
+
 func TestUpdateUserRejectsDemotingLastActiveAdmin(t *testing.T) {
 	t.Parallel()
 

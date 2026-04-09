@@ -79,6 +79,35 @@ func TestIsWebSocket(t *testing.T) {
 	}
 }
 
+func TestSanitizedRequestURIRemovesAccessToken(t *testing.T) {
+	req := httptest.NewRequest(http.MethodGet, "/v1/infer/stream?access_token=secret&keep=1", nil)
+
+	got := sanitizedRequestURI(req)
+
+	if strings.Contains(got, "secret") {
+		t.Fatalf("sanitized request uri should not contain access token: %q", got)
+	}
+	if got != "/v1/infer/stream?keep=1" {
+		t.Fatalf("sanitized request uri = %q, want /v1/infer/stream?keep=1", got)
+	}
+}
+
+func TestStripSensitiveQueryParamRemovesAccessTokenInPlace(t *testing.T) {
+	req := httptest.NewRequest(http.MethodGet, "/v1/infer/stream?access_token=secret&keep=1", nil)
+
+	stripSensitiveQueryParam(req, "access_token")
+
+	if got := req.URL.Query().Get("access_token"); got != "" {
+		t.Fatalf("access_token should be removed, got %q", got)
+	}
+	if got := req.URL.Query().Get("keep"); got != "1" {
+		t.Fatalf("expected keep query to remain, got %q", got)
+	}
+	if strings.Contains(req.RequestURI, "secret") {
+		t.Fatalf("request uri should be sanitized, got %q", req.RequestURI)
+	}
+}
+
 func TestHTTPProxyForwarding(t *testing.T) {
 	upstream := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		w.Header().Set("Content-Type", "application/json")

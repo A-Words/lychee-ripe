@@ -35,7 +35,8 @@ func (r *Repository) ResolvePrincipal(
 	}
 
 	var principal domain.Principal
-	err := r.db.WithContext(ctx).Transaction(func(tx *gorm.DB) error {
+	resolveOnce := func() error {
+		return r.db.WithContext(ctx).Transaction(func(tx *gorm.DB) error {
 		var user UserModel
 		err := tx.Where("oidc_subject = ?", subject).First(&user).Error
 		switch {
@@ -46,21 +47,11 @@ func (r *Repository) ResolvePrincipal(
 			if email == "" {
 				return repository.ErrNotFound
 			}
-			if err := tx.Where("email = ? AND oidc_subject IS NULL", email).First(&user).Error; err != nil {
-				return mapGormErr(err)
+			bound, err := bindPrincipalByEmail(tx, email, subject, displayName, now)
+			if err != nil {
+				return err
 			}
-			if user.Status != string(domain.UserStatusActive) {
-				return repository.ErrInvalidState
-			}
-			user.OIDCSubject = &subject
-			if displayName != "" {
-				user.DisplayName = displayName
-			}
-			user.UpdatedAt = normalizeTime(now)
-			user.LastLoginAt = timePtr(normalizeTime(now))
-			if err := tx.Save(&user).Error; err != nil {
-				return mapGormErr(err)
-			}
+			user = bound
 		default:
 			return mapGormErr(err)
 		}
@@ -70,11 +61,62 @@ func (r *Repository) ResolvePrincipal(
 		}
 		principal = userModelToPrincipal(user, mode)
 		return nil
-	})
+		})
+	}
+	var err error
+	switch r.db.Dialector.Name() {
+	case "postgres":
+		err = resolveOnce()
+	default:
+		err = retrySQLiteBusy(ctx, resolveOnce)
+	}
 	if err != nil {
 		return domain.Principal{}, err
 	}
 	return principal, nil
+}
+
+func bindPrincipalByEmail(
+	tx *gorm.DB,
+	email string,
+	subject string,
+	displayName string,
+	now time.Time,
+) (UserModel, error) {
+	updates := map[string]any{
+		"oidc_subject": subject,
+		"updated_at":   normalizeTime(now),
+		"last_login_at": timePtr(normalizeTime(now)),
+	}
+	if displayName != "" {
+		updates["display_name"] = displayName
+	}
+
+	res := tx.Model(&UserModel{}).
+		Where("email = ? AND oidc_subject IS NULL AND status = ?", email, string(domain.UserStatusActive)).
+		Updates(updates)
+	if res.Error != nil {
+		return UserModel{}, mapGormErr(res.Error)
+	}
+	if res.RowsAffected > 0 {
+		var user UserModel
+		if err := tx.Where("oidc_subject = ?", subject).First(&user).Error; err != nil {
+			return UserModel{}, mapGormErr(err)
+		}
+		return user, nil
+	}
+
+	var existing UserModel
+	if err := tx.Where("email = ?", email).First(&existing).Error; err != nil {
+		return UserModel{}, mapGormErr(err)
+	}
+	if existing.Status != string(domain.UserStatusActive) {
+		return UserModel{}, repository.ErrInvalidState
+	}
+	if existing.OIDCSubject != nil && strings.TrimSpace(*existing.OIDCSubject) == subject {
+		return existing, nil
+	}
+	return UserModel{}, repository.ErrNotFound
 }
 
 func (r *Repository) GetPrincipalByID(ctx context.Context, userID string) (domain.UserRecord, error) {

@@ -86,6 +86,7 @@ func isWebSocket(r *http.Request) bool {
 // handleWebSocket tunnels a WebSocket connection to the upstream by hijacking
 // the client connection and dialing the upstream, then copying bytes bidirectionally.
 func (h *handler) handleWebSocket(w http.ResponseWriter, r *http.Request) {
+	stripSensitiveQueryParam(r, "access_token")
 
 	// Dial upstream, using TLS when the upstream scheme is HTTPS.
 	rawConn, err := net.DialTimeout("tcp", h.target.Host, h.timeout)
@@ -113,7 +114,7 @@ func (h *handler) handleWebSocket(w http.ResponseWriter, r *http.Request) {
 	r.Host = h.target.Host
 
 	if err := r.Write(upConn); err != nil {
-		h.logger.Error("ws: write request to upstream failed", "uri", r.URL.RequestURI(), "error", err)
+		h.logger.Error("ws: write request to upstream failed", "uri", sanitizedRequestURI(r), "error", err)
 		http.Error(w, `{"error":"upstream unavailable"}`, http.StatusBadGateway)
 		return
 	}
@@ -143,4 +144,28 @@ func (h *handler) handleWebSocket(w http.ResponseWriter, r *http.Request) {
 		done <- struct{}{}
 	}()
 	<-done
+}
+
+func stripSensitiveQueryParam(r *http.Request, key string) {
+	if r == nil || r.URL == nil {
+		return
+	}
+	query := r.URL.Query()
+	if strings.TrimSpace(query.Get(key)) == "" {
+		return
+	}
+	query.Del(key)
+	r.URL.RawQuery = query.Encode()
+	r.RequestURI = r.URL.RequestURI()
+}
+
+func sanitizedRequestURI(r *http.Request) string {
+	if r == nil || r.URL == nil {
+		return ""
+	}
+	clonedURL := *r.URL
+	query := clonedURL.Query()
+	query.Del("access_token")
+	clonedURL.RawQuery = query.Encode()
+	return clonedURL.RequestURI()
 }

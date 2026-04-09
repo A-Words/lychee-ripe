@@ -149,6 +149,27 @@ func TestAuthAllowsGetBatchForOperator(t *testing.T) {
 	}
 }
 
+func TestAuthStripsWebSocketAccessTokenBeforeForwarding(t *testing.T) {
+	cfg := config.AuthConfig{Mode: config.AuthModeOIDC}
+	mw := Auth(cfg, fakeValidator{}, fakeResolver{principal: domain.Principal{Role: domain.UserRoleOperator, Status: domain.UserStatusActive}}, slog.Default())
+	handler := mw(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		if got := r.URL.Query().Get("access_token"); got != "" {
+			t.Fatalf("access_token should be stripped before downstream handling, got %q", got)
+		}
+		if got := r.URL.Query().Get("keep"); got != "1" {
+			t.Fatalf("non-sensitive query parameter was lost, got %q", got)
+		}
+		w.WriteHeader(http.StatusOK)
+	}))
+
+	req := httptest.NewRequest(http.MethodGet, "/v1/infer/stream?access_token=token&keep=1", nil)
+	rec := httptest.NewRecorder()
+	handler.ServeHTTP(rec, req)
+	if rec.Code != http.StatusOK {
+		t.Errorf("expected 200 on websocket auth via query token, got %d", rec.Code)
+	}
+}
+
 func TestAuthRejectsNestedBatchPathForOperator(t *testing.T) {
 	cfg := config.AuthConfig{Mode: config.AuthModeOIDC}
 	mw := Auth(cfg, fakeValidator{}, fakeResolver{principal: domain.Principal{Role: domain.UserRoleOperator, Status: domain.UserStatusActive}}, slog.Default())
