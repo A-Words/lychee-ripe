@@ -88,8 +88,16 @@ func (s *WebAuthService) LoginBindingCookieName() string {
 	return s.CookieName() + "_login"
 }
 
+func (s *WebAuthService) LoginBindingCookiePath() string {
+	return s.callbackPath()
+}
+
 func (s *WebAuthService) LoginBindingCookieSameSite() HTTPSameSite {
 	return HTTPSameSiteLax
+}
+
+func (s *WebAuthService) LoginFailureRedirectURL(errorCode string) string {
+	return resolveAppRedirect(s.cfg.Web.AppBaseURL, loginErrorPath(errorCode))
 }
 
 func (s *WebAuthService) BeginLogin(ctx context.Context, redirectPath string) (BeginWebLoginResult, error) {
@@ -339,6 +347,35 @@ func resolveAppRedirect(appBaseURL string, redirectPath string) string {
 
 func (s *WebAuthService) callbackURL() string {
 	return resolveAppRedirect(s.cfg.Web.PublicBaseURL, "/v1/auth/callback")
+}
+
+func (s *WebAuthService) callbackPath() string {
+	callbackURL, err := url.Parse(s.callbackURL())
+	if err != nil || callbackURL == nil || strings.TrimSpace(callbackURL.Path) == "" {
+		return "/v1/auth/callback"
+	}
+	return callbackURL.Path
+}
+
+func loginErrorPath(errorCode string) string {
+	target := &url.URL{Path: "/login"}
+	query := target.Query()
+	query.Set("auth_error", normalizeLoginErrorCode(errorCode))
+	target.RawQuery = query.Encode()
+	return target.String()
+}
+
+func normalizeLoginErrorCode(errorCode string) string {
+	switch strings.TrimSpace(strings.ToLower(errorCode)) {
+	case "invalid_request":
+		return "invalid_request"
+	case "auth_unavailable":
+		return "auth_unavailable"
+	case "access_denied":
+		return "access_denied"
+	default:
+		return "login_failed"
+	}
 }
 
 func resolveURLUnderBase(base *url.URL, absolutePath string) (*url.URL, error) {

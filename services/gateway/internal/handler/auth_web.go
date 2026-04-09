@@ -18,7 +18,9 @@ type webAuthService interface {
 	CookieSecure() bool
 	CookieSameSite() service.HTTPSameSite
 	LoginBindingCookieName() string
+	LoginBindingCookiePath() string
 	LoginBindingCookieSameSite() service.HTTPSameSite
+	LoginFailureRedirectURL(errorCode string) string
 }
 
 type logoutResponse struct {
@@ -35,7 +37,7 @@ func GetLogin(svc webAuthService) http.HandlerFunc {
 		http.SetCookie(w, &http.Cookie{
 			Name:     svc.LoginBindingCookieName(),
 			Value:    result.BrowserBindingToken,
-			Path:     "/v1/auth/callback",
+			Path:     svc.LoginBindingCookiePath(),
 			HttpOnly: true,
 			SameSite: toHTTPSameSite(svc.LoginBindingCookieSameSite()),
 			Secure:   svc.CookieSecure(),
@@ -48,31 +50,36 @@ func GetCallback(svc webAuthService) http.HandlerFunc {
 	return func(w http.ResponseWriter, r *http.Request) {
 		code := strings.TrimSpace(r.URL.Query().Get("code"))
 		state := strings.TrimSpace(r.URL.Query().Get("state"))
-		if code == "" || state == "" {
-			writeError(w, r, http.StatusBadRequest, "invalid_request", "missing authorization code or state", nil)
-			return
-		}
 		browserBindingToken := ""
 		if cookie, err := r.Cookie(svc.LoginBindingCookieName()); err == nil {
 			browserBindingToken = strings.TrimSpace(cookie.Value)
 		}
 
-		result, err := svc.CompleteLogin(r.Context(), code, state, browserBindingToken)
 		http.SetCookie(w, &http.Cookie{
 			Name:     svc.LoginBindingCookieName(),
 			Value:    "",
-			Path:     "/v1/auth/callback",
+			Path:     svc.LoginBindingCookiePath(),
 			HttpOnly: true,
 			SameSite: toHTTPSameSite(svc.LoginBindingCookieSameSite()),
 			Secure:   svc.CookieSecure(),
 			MaxAge:   -1,
 		})
+		if callbackError := strings.TrimSpace(r.URL.Query().Get("error")); callbackError != "" {
+			redirectLoginFailure(w, r, svc, callbackError)
+			return
+		}
+		if code == "" || state == "" {
+			redirectLoginFailure(w, r, svc, "invalid_request")
+			return
+		}
+
+		result, err := svc.CompleteLogin(r.Context(), code, state, browserBindingToken)
 		if err != nil {
 			switch {
 			case errors.Is(err, service.ErrInvalidRequest), errors.Is(err, service.ErrNotFound):
-				writeError(w, r, http.StatusBadRequest, "invalid_request", err.Error(), nil)
+				redirectLoginFailure(w, r, svc, "invalid_request")
 			default:
-				writeError(w, r, http.StatusServiceUnavailable, "auth_unavailable", "auth unavailable", nil)
+				redirectLoginFailure(w, r, svc, "auth_unavailable")
 			}
 			return
 		}
@@ -87,6 +94,10 @@ func GetCallback(svc webAuthService) http.HandlerFunc {
 		})
 		http.Redirect(w, r, result.RedirectURL, http.StatusFound)
 	}
+}
+
+func redirectLoginFailure(w http.ResponseWriter, r *http.Request, svc webAuthService, errorCode string) {
+	http.Redirect(w, r, svc.LoginFailureRedirectURL(errorCode), http.StatusFound)
 }
 
 func PostLogout(svc webAuthService, corsCfg config.CORSConfig) http.HandlerFunc {

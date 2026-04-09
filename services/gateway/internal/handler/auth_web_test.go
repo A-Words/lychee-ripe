@@ -2,7 +2,6 @@ package handler
 
 import (
 	"context"
-	"errors"
 	"net/http"
 	"net/http/httptest"
 	"strings"
@@ -23,7 +22,9 @@ type fakeWebAuthService struct {
 	cookieSecure               bool
 	cookieSameSite             service.HTTPSameSite
 	loginBindingCookieName     string
+	loginBindingCookiePath     string
 	loginBindingCookieSameSite service.HTTPSameSite
+	loginFailureRedirectURL    string
 	lastBeginRedirectPath      string
 	lastCompleteCode           string
 	lastCompleteState          string
@@ -82,11 +83,25 @@ func (f *fakeWebAuthService) LoginBindingCookieName() string {
 	return f.loginBindingCookieName
 }
 
+func (f *fakeWebAuthService) LoginBindingCookiePath() string {
+	if f.loginBindingCookiePath == "" {
+		return "/v1/auth/callback"
+	}
+	return f.loginBindingCookiePath
+}
+
 func (f *fakeWebAuthService) LoginBindingCookieSameSite() service.HTTPSameSite {
 	if f.loginBindingCookieSameSite == "" {
 		return service.HTTPSameSiteLax
 	}
 	return f.loginBindingCookieSameSite
+}
+
+func (f *fakeWebAuthService) LoginFailureRedirectURL(errorCode string) string {
+	if f.loginFailureRedirectURL == "" {
+		return "/login?auth_error=" + errorCode
+	}
+	return f.loginFailureRedirectURL
 }
 
 func TestGetLoginSetsBrowserBindingCookieAndRedirects(t *testing.T) {
@@ -95,7 +110,8 @@ func TestGetLoginSetsBrowserBindingCookieAndRedirects(t *testing.T) {
 			AuthorizationURL:    "https://issuer.example.com/auth?state=abc",
 			BrowserBindingToken: "binding-token",
 		},
-		cookieSecure: true,
+		cookieSecure:           true,
+		loginBindingCookiePath: "/gateway/v1/auth/callback",
 	}
 
 	req := httptest.NewRequest(http.MethodGet, "/v1/auth/login?redirect=/admin", nil)
@@ -125,8 +141,8 @@ func TestGetLoginSetsBrowserBindingCookieAndRedirects(t *testing.T) {
 	if cookie.Value != "binding-token" {
 		t.Fatalf("cookie value = %q, want binding-token", cookie.Value)
 	}
-	if cookie.Path != "/v1/auth/callback" {
-		t.Fatalf("cookie path = %q, want /v1/auth/callback", cookie.Path)
+	if cookie.Path != "/gateway/v1/auth/callback" {
+		t.Fatalf("cookie path = %q, want /gateway/v1/auth/callback", cookie.Path)
 	}
 	if !cookie.HttpOnly {
 		t.Fatal("expected HttpOnly login binding cookie")
@@ -139,9 +155,10 @@ func TestGetLoginSetsBrowserBindingCookieAndRedirects(t *testing.T) {
 	}
 }
 
-func TestGetCallbackRejectsMissingBrowserBindingCookie(t *testing.T) {
+func TestGetCallbackRedirectsInvalidRequestBackToLogin(t *testing.T) {
 	svc := &fakeWebAuthService{
-		completeErr: errors.New("should not be used"),
+		loginBindingCookiePath:  "/gateway/v1/auth/callback",
+		loginFailureRedirectURL: "https://app.example.com/console/login?auth_error=invalid_request",
 	}
 
 	req := httptest.NewRequest(http.MethodGet, "/v1/auth/callback?code=code-1&state=state-1", nil)
@@ -150,8 +167,11 @@ func TestGetCallbackRejectsMissingBrowserBindingCookie(t *testing.T) {
 	svc.completeErr = service.ErrInvalidRequest
 	GetCallback(svc).ServeHTTP(rec, req)
 
-	if rec.Code != http.StatusBadRequest {
-		t.Fatalf("status = %d, want 400", rec.Code)
+	if rec.Code != http.StatusFound {
+		t.Fatalf("status = %d, want 302", rec.Code)
+	}
+	if location := rec.Header().Get("Location"); location != "https://app.example.com/console/login?auth_error=invalid_request" {
+		t.Fatalf("Location = %q", location)
 	}
 	if svc.lastCompleteBindingToken != "" {
 		t.Fatalf("binding token = %q, want empty", svc.lastCompleteBindingToken)
@@ -165,8 +185,32 @@ func TestGetCallbackRejectsMissingBrowserBindingCookie(t *testing.T) {
 	if cookies[0].Value != "" {
 		t.Fatalf("cleared binding cookie value = %q, want empty", cookies[0].Value)
 	}
+	if cookies[0].Path != "/gateway/v1/auth/callback" {
+		t.Fatalf("cleared binding cookie path = %q, want /gateway/v1/auth/callback", cookies[0].Path)
+	}
 	if got := rec.Header().Get("Set-Cookie"); got == "" || !containsAll(got, "lychee_session_login=", "Max-Age=0") {
 		t.Fatalf("Set-Cookie = %q, want cleared login binding cookie", got)
+	}
+}
+
+func TestGetCallbackRedirectsProviderErrorsBackToLogin(t *testing.T) {
+	svc := &fakeWebAuthService{
+		loginFailureRedirectURL: "https://app.example.com/login?auth_error=access_denied",
+	}
+
+	req := httptest.NewRequest(http.MethodGet, "/v1/auth/callback?error=access_denied&state=state-1", nil)
+	rec := httptest.NewRecorder()
+
+	GetCallback(svc).ServeHTTP(rec, req)
+
+	if rec.Code != http.StatusFound {
+		t.Fatalf("status = %d, want 302", rec.Code)
+	}
+	if location := rec.Header().Get("Location"); location != "https://app.example.com/login?auth_error=access_denied" {
+		t.Fatalf("Location = %q", location)
+	}
+	if svc.lastCompleteCode != "" || svc.lastCompleteState != "" {
+		t.Fatalf("complete login should not be called, got code=%q state=%q", svc.lastCompleteCode, svc.lastCompleteState)
 	}
 }
 
