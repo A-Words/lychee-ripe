@@ -10,6 +10,7 @@ import (
 
 	"github.com/lychee-ripe/gateway/internal/config"
 	"github.com/lychee-ripe/gateway/internal/domain"
+	"github.com/lychee-ripe/gateway/internal/oidc"
 	"github.com/lychee-ripe/gateway/internal/service"
 )
 
@@ -68,11 +69,16 @@ func Auth(
 				return
 			}
 			if validator == nil || resolver == nil {
-				writeAuthError(w, http.StatusUnauthorized, "auth_unavailable", "auth unavailable")
+				writeAuthError(w, http.StatusServiceUnavailable, "auth_unavailable", "auth unavailable")
 				return
 			}
 			identity, err := validator.Validate(r.Context(), token)
 			if err != nil {
+				if errors.Is(err, oidc.ErrUnavailable) {
+					logger.Error("auth: validate token failed", "error", err)
+					writeAuthError(w, http.StatusServiceUnavailable, "auth_unavailable", "auth unavailable")
+					return
+				}
 				writeAuthError(w, http.StatusUnauthorized, "unauthorized", "invalid bearer token")
 				return
 			}
@@ -85,7 +91,7 @@ func Auth(
 					writeAuthError(w, http.StatusForbidden, "forbidden", "user is disabled")
 				default:
 					logger.Error("auth: resolve principal failed", "error", err)
-					writeAuthError(w, http.StatusUnauthorized, "auth_unavailable", "auth unavailable")
+					writeAuthError(w, http.StatusServiceUnavailable, "auth_unavailable", "auth unavailable")
 				}
 				return
 			}

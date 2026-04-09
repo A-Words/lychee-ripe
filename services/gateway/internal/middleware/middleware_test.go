@@ -3,6 +3,7 @@ package middleware
 import (
 	"bufio"
 	"context"
+	"fmt"
 	"io"
 	"log/slog"
 	"net"
@@ -12,6 +13,7 @@ import (
 
 	"github.com/lychee-ripe/gateway/internal/config"
 	"github.com/lychee-ripe/gateway/internal/domain"
+	"github.com/lychee-ripe/gateway/internal/oidc"
 	"github.com/lychee-ripe/gateway/internal/service"
 )
 
@@ -192,6 +194,38 @@ func TestAuthRejectsUnknownProvisionedUser(t *testing.T) {
 	handler.ServeHTTP(rec, req)
 	if rec.Code != http.StatusForbidden {
 		t.Errorf("expected 403 for unknown user, got %d", rec.Code)
+	}
+}
+
+func TestAuthReturnsServiceUnavailableWhenValidatorUnavailable(t *testing.T) {
+	cfg := config.AuthConfig{Mode: config.AuthModeOIDC}
+	mw := Auth(cfg, fakeValidator{err: fmt.Errorf("%w: jwks offline", oidc.ErrUnavailable)}, fakeResolver{}, slog.Default())
+	handler := mw(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		w.WriteHeader(http.StatusOK)
+	}))
+
+	req := httptest.NewRequest(http.MethodGet, "/v1/auth/me", nil)
+	req.Header.Set("Authorization", "Bearer token")
+	rec := httptest.NewRecorder()
+	handler.ServeHTTP(rec, req)
+	if rec.Code != http.StatusServiceUnavailable {
+		t.Errorf("expected 503 for validator outage, got %d", rec.Code)
+	}
+}
+
+func TestAuthReturnsServiceUnavailableWhenResolverUnavailable(t *testing.T) {
+	cfg := config.AuthConfig{Mode: config.AuthModeOIDC}
+	mw := Auth(cfg, fakeValidator{}, fakeResolver{err: service.ErrServiceUnavailable}, slog.Default())
+	handler := mw(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		w.WriteHeader(http.StatusOK)
+	}))
+
+	req := httptest.NewRequest(http.MethodGet, "/v1/auth/me", nil)
+	req.Header.Set("Authorization", "Bearer token")
+	rec := httptest.NewRecorder()
+	handler.ServeHTTP(rec, req)
+	if rec.Code != http.StatusServiceUnavailable {
+		t.Errorf("expected 503 for resolver outage, got %d", rec.Code)
 	}
 }
 

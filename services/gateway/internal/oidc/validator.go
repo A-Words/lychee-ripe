@@ -27,6 +27,7 @@ const (
 var (
 	ErrMissingBearerToken = errors.New("missing bearer token")
 	ErrInvalidToken       = errors.New("invalid token")
+	ErrUnavailable        = errors.New("oidc unavailable")
 )
 
 type Validator struct {
@@ -102,7 +103,13 @@ func (v *Validator) Validate(ctx context.Context, rawToken string) (domain.Ident
 		}
 		return key, nil
 	}, jwt.WithAudience(v.audience), jwt.WithIssuer(v.issuer), jwt.WithValidMethods([]string{"RS256", "RS384", "RS512"}))
-	if err != nil || token == nil || !token.Valid {
+	if err != nil {
+		if errors.Is(err, ErrUnavailable) {
+			return domain.IdentityClaims{}, err
+		}
+		return domain.IdentityClaims{}, ErrInvalidToken
+	}
+	if token == nil || !token.Valid {
 		return domain.IdentityClaims{}, ErrInvalidToken
 	}
 	if strings.TrimSpace(claims.Subject) == "" {
@@ -173,24 +180,24 @@ func (v *Validator) refreshKeys(ctx context.Context, force bool) error {
 	}
 	doc, err := v.Discover(ctx)
 	if err != nil {
-		return err
+		return fmt.Errorf("%w: discover oidc config: %v", ErrUnavailable, err)
 	}
 	req, err := http.NewRequestWithContext(ctx, http.MethodGet, doc.JWKSURI, nil)
 	if err != nil {
-		return err
+		return fmt.Errorf("%w: build jwks request: %v", ErrUnavailable, err)
 	}
 	resp, err := v.client.Do(req)
 	if err != nil {
-		return err
+		return fmt.Errorf("%w: fetch jwks: %v", ErrUnavailable, err)
 	}
 	defer resp.Body.Close()
 	if resp.StatusCode != http.StatusOK {
-		return fmt.Errorf("jwks endpoint returned %d", resp.StatusCode)
+		return fmt.Errorf("%w: jwks endpoint returned %d", ErrUnavailable, resp.StatusCode)
 	}
 
 	var jwks jwksDocument
 	if err := json.NewDecoder(resp.Body).Decode(&jwks); err != nil {
-		return err
+		return fmt.Errorf("%w: decode jwks: %v", ErrUnavailable, err)
 	}
 
 	keys := make(map[string]*rsa.PublicKey, len(jwks.Keys))
@@ -205,7 +212,7 @@ func (v *Validator) refreshKeys(ctx context.Context, force bool) error {
 		keys[item.Kid] = key
 	}
 	if len(keys) == 0 {
-		return fmt.Errorf("no rsa keys available in jwks")
+		return fmt.Errorf("%w: no rsa keys available in jwks", ErrUnavailable)
 	}
 	v.keys = keys
 	v.jwksURI = doc.JWKSURI

@@ -1,7 +1,9 @@
 import type { AuthMode, AuthSession, OIDCDiscoveryDocument, Principal } from '~/types/auth'
+import { resolveBootstrapPrincipal } from '~/utils/auth-session'
 import { toWebSocketBase } from '~/utils/ws-url'
 
 const AUTH_SESSION_KEY = 'lychee-ripe.auth.session'
+const AUTH_PRINCIPAL_KEY = 'lychee-ripe.auth.principal'
 const AUTH_PENDING_KEY = 'lychee-ripe.auth.pending'
 
 type PendingLoginState = {
@@ -44,16 +46,21 @@ export function useAuth() {
 
         session.value = loadSession()
         if (!session.value?.accessToken) {
-          principal.value = null
+          clearSession()
           initialized.value = true
           return
         }
 
+        principal.value = loadPrincipal()
         try {
-          principal.value = await fetchPrincipal(session.value.accessToken)
-        } catch {
-          clearSession()
-          principal.value = null
+          const nextPrincipal = await fetchPrincipal(session.value.accessToken)
+          setPrincipal(nextPrincipal)
+        } catch (error) {
+          const decision = resolveBootstrapPrincipal(principal.value, error)
+          principal.value = decision.principal
+          if (decision.clearPersistedAuth) {
+            clearSession()
+          }
         }
         initialized.value = true
       } finally {
@@ -96,8 +103,8 @@ export function useAuth() {
       redirectUri
     })
 
-    setSession(token)
-    principal.value = await fetchPrincipal(token.accessToken)
+    const nextPrincipal = await fetchPrincipal(token.accessToken)
+    setAuthenticatedState(token, nextPrincipal)
     initialized.value = true
 
     const target = pending.redirectPath || '/dashboard'
@@ -189,8 +196,10 @@ export function useAuth() {
 
   function clearSession() {
     session.value = null
+    principal.value = null
     if (import.meta.client) {
       localStorage.removeItem(AUTH_SESSION_KEY)
+      localStorage.removeItem(AUTH_PRINCIPAL_KEY)
     }
   }
 
@@ -256,8 +265,8 @@ export function useAuth() {
       idToken: result.id_token,
       expiresAt: result.expires_in ? Date.now() + result.expires_in * 1000 : undefined
     }
-    setSession(authSession)
-    principal.value = await fetchPrincipal(authSession.accessToken)
+    const nextPrincipal = await fetchPrincipal(authSession.accessToken)
+    setAuthenticatedState(authSession, nextPrincipal)
     initialized.value = true
     await navigateTo(redirectPath)
   }
@@ -319,6 +328,18 @@ export function useAuth() {
       localStorage.setItem(AUTH_SESSION_KEY, JSON.stringify(nextSession))
     }
   }
+
+  function setPrincipal(nextPrincipal: Principal) {
+    principal.value = nextPrincipal
+    if (import.meta.client) {
+      localStorage.setItem(AUTH_PRINCIPAL_KEY, JSON.stringify(nextPrincipal))
+    }
+  }
+
+  function setAuthenticatedState(nextSession: AuthSession, nextPrincipal: Principal) {
+    setSession(nextSession)
+    setPrincipal(nextPrincipal)
+  }
 }
 
 function normalizeAuthMode(value: unknown): AuthMode {
@@ -349,6 +370,22 @@ function loadSession(): AuthSession | null {
     return JSON.parse(raw) as AuthSession
   } catch {
     localStorage.removeItem(AUTH_SESSION_KEY)
+    return null
+  }
+}
+
+function loadPrincipal(): Principal | null {
+  if (!import.meta.client) {
+    return null
+  }
+  const raw = localStorage.getItem(AUTH_PRINCIPAL_KEY)
+  if (!raw) {
+    return null
+  }
+  try {
+    return JSON.parse(raw) as Principal
+  } catch {
+    localStorage.removeItem(AUTH_PRINCIPAL_KEY)
     return null
   }
 }

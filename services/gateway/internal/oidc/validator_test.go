@@ -13,6 +13,7 @@ import (
 	"testing"
 	"time"
 
+	"github.com/golang-jwt/jwt/v5"
 	"github.com/lychee-ripe/gateway/internal/config"
 )
 
@@ -199,6 +200,45 @@ func TestValidatorRefreshKeysSkipsNetworkWhenCacheFreshAndNotForced(t *testing.T
 	}
 }
 
+func TestValidatorValidateReturnsUnavailableWhenDiscoveryFails(t *testing.T) {
+	t.Parallel()
+
+	signingKey := mustGenerateRSAKey(t)
+	rawToken := mustSignToken(t, signingKey, "unknown", "https://issuer.example.com", "orchard-console")
+	validator := &Validator{
+		client: &http.Client{
+			Timeout: defaultTimeout,
+			Transport: roundTripFunc(func(*http.Request) (*http.Response, error) {
+				return nil, errors.New("oidc offline")
+			}),
+		},
+		keys:     map[string]*rsa.PublicKey{},
+		issuer:   "https://issuer.example.com",
+		audience: "orchard-console",
+	}
+
+	_, err := validator.Validate(context.Background(), rawToken)
+	if !errors.Is(err, ErrUnavailable) {
+		t.Fatalf("error = %v, want ErrUnavailable", err)
+	}
+}
+
+func TestValidatorValidateReturnsInvalidTokenForMalformedToken(t *testing.T) {
+	t.Parallel()
+
+	validator := &Validator{
+		client:   &http.Client{Timeout: defaultTimeout},
+		keys:     map[string]*rsa.PublicKey{},
+		issuer:   "https://issuer.example.com",
+		audience: "orchard-console",
+	}
+
+	_, err := validator.Validate(context.Background(), "not-a-token")
+	if err != ErrInvalidToken {
+		t.Fatalf("error = %v, want ErrInvalidToken", err)
+	}
+}
+
 func mustGenerateRSAKey(t *testing.T) *rsa.PrivateKey {
 	t.Helper()
 	key, err := rsa.GenerateKey(rand.Reader, 2048)
@@ -237,4 +277,25 @@ type roundTripFunc func(*http.Request) (*http.Response, error)
 
 func (f roundTripFunc) RoundTrip(req *http.Request) (*http.Response, error) {
 	return f(req)
+}
+
+func mustSignToken(t *testing.T, key *rsa.PrivateKey, kid, issuer, audience string) string {
+	t.Helper()
+
+	token := jwt.NewWithClaims(jwt.SigningMethodRS256, jwt.MapClaims{
+		"sub":   "sub-1",
+		"email": "admin@example.com",
+		"name":  "Admin",
+		"iss":   issuer,
+		"aud":   audience,
+		"exp":   time.Now().Add(time.Hour).Unix(),
+		"iat":   time.Now().Add(-time.Minute).Unix(),
+	})
+	token.Header["kid"] = kid
+
+	raw, err := token.SignedString(key)
+	if err != nil {
+		t.Fatalf("SignedString returned error: %v", err)
+	}
+	return raw
 }
