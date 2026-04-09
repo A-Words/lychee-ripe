@@ -3,6 +3,7 @@ package service
 import (
 	"context"
 	"errors"
+	"fmt"
 	"testing"
 	"time"
 
@@ -169,8 +170,8 @@ func TestOrchardServiceArchiveRejectsWhenActivePlotsExist(t *testing.T) {
 	if !errors.Is(err, ErrInvalidRequest) {
 		t.Fatalf("error = %v, want ErrInvalidRequest", err)
 	}
-	if repo.updateCalled {
-		t.Fatal("expected archive to be rejected before repository update")
+	if !repo.archiveCalled {
+		t.Fatal("expected archive path to call guarded repository method")
 	}
 }
 
@@ -196,8 +197,8 @@ func TestOrchardServiceUpdateRejectsArchivingWhenActivePlotsExist(t *testing.T) 
 	if !errors.Is(err, ErrInvalidRequest) {
 		t.Fatalf("error = %v, want ErrInvalidRequest", err)
 	}
-	if repo.updateCalled {
-		t.Fatal("expected archiving update to be rejected before repository update")
+	if !repo.archiveCalled {
+		t.Fatal("expected archiving update to use guarded repository method")
 	}
 }
 
@@ -264,6 +265,9 @@ func TestPlotServiceCreateRejectsUnknownOrchard(t *testing.T) {
 	if !errors.Is(err, ErrInvalidRequest) {
 		t.Fatalf("error = %v, want ErrInvalidRequest", err)
 	}
+	if repo.createCalled {
+		t.Fatal("expected guarded create to reject missing orchard")
+	}
 }
 
 func TestPlotServiceCreateRejectsActivePlotUnderArchivedOrchard(t *testing.T) {
@@ -290,6 +294,9 @@ func TestPlotServiceCreateRejectsActivePlotUnderArchivedOrchard(t *testing.T) {
 	})
 	if !errors.Is(err, ErrInvalidRequest) {
 		t.Fatalf("error = %v, want ErrInvalidRequest", err)
+	}
+	if repo.createCalled {
+		t.Fatal("expected guarded create to reject archived orchard")
 	}
 }
 
@@ -324,7 +331,7 @@ func TestPlotServiceUpdateRejectsMovingToUnknownOrchard(t *testing.T) {
 		t.Fatalf("error = %v, want ErrInvalidRequest", err)
 	}
 	if repo.updateCalled {
-		t.Fatal("expected invalid orchard move to be rejected before repository update")
+		t.Fatal("expected guarded update to reject invalid orchard move")
 	}
 }
 
@@ -366,7 +373,7 @@ func TestPlotServiceUpdateRejectsActivePlotUnderArchivedOrchard(t *testing.T) {
 		t.Fatalf("error = %v, want ErrInvalidRequest", err)
 	}
 	if repo.updateCalled {
-		t.Fatal("expected archived orchard move to be rejected before repository update")
+		t.Fatal("expected guarded update to reject archived orchard move")
 	}
 }
 
@@ -402,6 +409,7 @@ func TestPlotServiceCreateAcceptsExistingOrchard(t *testing.T) {
 type fakeOrchardRepo struct {
 	record          domain.OrchardRecord
 	updateCalled    bool
+	archiveCalled   bool
 	activePlotCount int64
 }
 
@@ -420,6 +428,15 @@ func (f *fakeOrchardRepo) UpdateOrchard(_ context.Context, orchard domain.Orchar
 	return orchard, nil
 }
 
+func (f *fakeOrchardRepo) ArchiveOrchard(_ context.Context, orchard domain.OrchardRecord) (domain.OrchardRecord, error) {
+	f.archiveCalled = true
+	if f.activePlotCount > 0 {
+		return domain.OrchardRecord{}, fmt.Errorf("%w: orchard has active plots; archive or move plots first", repository.ErrInvalidState)
+	}
+	f.record = orchard
+	return orchard, nil
+}
+
 func (f *fakeOrchardRepo) GetOrchard(_ context.Context, orchardID string) (domain.OrchardRecord, error) {
 	if orchardID != f.record.OrchardID {
 		return domain.OrchardRecord{}, repository.ErrNotFound
@@ -427,15 +444,9 @@ func (f *fakeOrchardRepo) GetOrchard(_ context.Context, orchardID string) (domai
 	return f.record, nil
 }
 
-func (f *fakeOrchardRepo) CountActivePlots(_ context.Context, orchardID string) (int64, error) {
-	if orchardID != f.record.OrchardID {
-		return 0, repository.ErrNotFound
-	}
-	return f.activePlotCount, nil
-}
-
 type fakePlotRepo struct {
 	record       domain.PlotRecord
+	createCalled bool
 	updateCalled bool
 	orchards     map[string]domain.OrchardRecord
 }
@@ -449,7 +460,33 @@ func (f *fakePlotRepo) CreatePlot(_ context.Context, plot domain.PlotRecord) (do
 	return plot, nil
 }
 
+func (f *fakePlotRepo) CreatePlotGuarded(_ context.Context, plot domain.PlotRecord) (domain.PlotRecord, error) {
+	orchard, ok := f.orchards[plot.OrchardID]
+	if !ok {
+		return domain.PlotRecord{}, fmt.Errorf("%w: orchard_id does not reference an existing orchard", repository.ErrInvalidState)
+	}
+	if orchard.Status == domain.ResourceStatusArchived && plot.Status == domain.ResourceStatusActive {
+		return domain.PlotRecord{}, fmt.Errorf("%w: active plots cannot belong to archived orchards", repository.ErrInvalidState)
+	}
+	f.createCalled = true
+	f.record = plot
+	return plot, nil
+}
+
 func (f *fakePlotRepo) UpdatePlot(_ context.Context, plot domain.PlotRecord) (domain.PlotRecord, error) {
+	f.updateCalled = true
+	f.record = plot
+	return plot, nil
+}
+
+func (f *fakePlotRepo) UpdatePlotGuarded(_ context.Context, plot domain.PlotRecord) (domain.PlotRecord, error) {
+	orchard, ok := f.orchards[plot.OrchardID]
+	if !ok {
+		return domain.PlotRecord{}, fmt.Errorf("%w: orchard_id does not reference an existing orchard", repository.ErrInvalidState)
+	}
+	if orchard.Status == domain.ResourceStatusArchived && plot.Status == domain.ResourceStatusActive {
+		return domain.PlotRecord{}, fmt.Errorf("%w: active plots cannot belong to archived orchards", repository.ErrInvalidState)
+	}
 	f.updateCalled = true
 	f.record = plot
 	return plot, nil
@@ -460,11 +497,4 @@ func (f *fakePlotRepo) GetPlot(_ context.Context, plotID string) (domain.PlotRec
 		return domain.PlotRecord{}, repository.ErrNotFound
 	}
 	return f.record, nil
-}
-
-func (f *fakePlotRepo) GetOrchard(_ context.Context, orchardID string) (domain.OrchardRecord, error) {
-	if orchard, ok := f.orchards[orchardID]; ok {
-		return orchard, nil
-	}
-	return domain.OrchardRecord{}, repository.ErrNotFound
 }

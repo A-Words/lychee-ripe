@@ -15,16 +15,17 @@ type OrchardRepo interface {
 	ListOrchards(ctx context.Context, includeArchived bool) ([]domain.OrchardRecord, error)
 	CreateOrchard(ctx context.Context, orchard domain.OrchardRecord) (domain.OrchardRecord, error)
 	UpdateOrchard(ctx context.Context, orchard domain.OrchardRecord) (domain.OrchardRecord, error)
+	ArchiveOrchard(ctx context.Context, orchard domain.OrchardRecord) (domain.OrchardRecord, error)
 	GetOrchard(ctx context.Context, orchardID string) (domain.OrchardRecord, error)
-	CountActivePlots(ctx context.Context, orchardID string) (int64, error)
 }
 
 type PlotRepo interface {
 	ListPlots(ctx context.Context, orchardID string, includeArchived bool) ([]domain.PlotRecord, error)
 	CreatePlot(ctx context.Context, plot domain.PlotRecord) (domain.PlotRecord, error)
+	CreatePlotGuarded(ctx context.Context, plot domain.PlotRecord) (domain.PlotRecord, error)
 	UpdatePlot(ctx context.Context, plot domain.PlotRecord) (domain.PlotRecord, error)
+	UpdatePlotGuarded(ctx context.Context, plot domain.PlotRecord) (domain.PlotRecord, error)
 	GetPlot(ctx context.Context, plotID string) (domain.PlotRecord, error)
-	GetOrchard(ctx context.Context, orchardID string) (domain.OrchardRecord, error)
 }
 
 type SeedRepo interface {
@@ -108,16 +109,19 @@ func (s *OrchardService) Update(ctx context.Context, orchardID string, input Orc
 	if err != nil {
 		return domain.OrchardRecord{}, err
 	}
-	if previousStatus != domain.ResourceStatusArchived && status == domain.ResourceStatusArchived {
-		if err := s.ensureNoActivePlots(ctx, current.OrchardID); err != nil {
-			return domain.OrchardRecord{}, err
-		}
-	}
 	current.Status = status
-	updated, err := s.repo.UpdateOrchard(ctx, current)
+	var updated domain.OrchardRecord
+	if previousStatus != domain.ResourceStatusArchived && status == domain.ResourceStatusArchived {
+		updated, err = s.repo.ArchiveOrchard(ctx, current)
+	} else {
+		updated, err = s.repo.UpdateOrchard(ctx, current)
+	}
 	if err != nil {
 		if errors.Is(err, repository.ErrNotFound) {
 			return domain.OrchardRecord{}, ErrNotFound
+		}
+		if errors.Is(err, repository.ErrInvalidState) {
+			return domain.OrchardRecord{}, fmt.Errorf("%w: %v", ErrInvalidRequest, err)
 		}
 		return domain.OrchardRecord{}, ErrServiceUnavailable
 	}
@@ -132,15 +136,13 @@ func (s *OrchardService) Archive(ctx context.Context, orchardID string) (domain.
 		}
 		return domain.OrchardRecord{}, ErrServiceUnavailable
 	}
-	if current.Status != domain.ResourceStatusArchived {
-		if err := s.ensureNoActivePlots(ctx, current.OrchardID); err != nil {
-			return domain.OrchardRecord{}, err
-		}
-	}
 	current.Status = domain.ResourceStatusArchived
 	current.UpdatedAt = s.nowFn()
-	updated, err := s.repo.UpdateOrchard(ctx, current)
+	updated, err := s.repo.ArchiveOrchard(ctx, current)
 	if err != nil {
+		if errors.Is(err, repository.ErrInvalidState) {
+			return domain.OrchardRecord{}, fmt.Errorf("%w: %v", ErrInvalidRequest, err)
+		}
 		return domain.OrchardRecord{}, ErrServiceUnavailable
 	}
 	return updated, nil
@@ -159,13 +161,13 @@ func (s *PlotService) Create(ctx context.Context, input PlotInput) (domain.PlotR
 	if err != nil {
 		return domain.PlotRecord{}, err
 	}
-	if err := s.ensureOrchardAcceptsPlot(ctx, record.OrchardID, record.Status); err != nil {
-		return domain.PlotRecord{}, err
-	}
-	created, err := s.repo.CreatePlot(ctx, record)
+	created, err := s.repo.CreatePlotGuarded(ctx, record)
 	if err != nil {
 		if errors.Is(err, repository.ErrConflict) {
 			return domain.PlotRecord{}, ErrConflict
+		}
+		if errors.Is(err, repository.ErrInvalidState) {
+			return domain.PlotRecord{}, fmt.Errorf("%w: %v", ErrInvalidRequest, err)
 		}
 		return domain.PlotRecord{}, ErrServiceUnavailable
 	}
@@ -195,42 +197,17 @@ func (s *PlotService) Update(ctx context.Context, plotID string, input PlotInput
 		return domain.PlotRecord{}, err
 	}
 	current.Status = status
-	if err := s.ensureOrchardAcceptsPlot(ctx, current.OrchardID, current.Status); err != nil {
-		return domain.PlotRecord{}, err
-	}
-	updated, err := s.repo.UpdatePlot(ctx, current)
+	updated, err := s.repo.UpdatePlotGuarded(ctx, current)
 	if err != nil {
 		if errors.Is(err, repository.ErrNotFound) {
 			return domain.PlotRecord{}, ErrNotFound
 		}
+		if errors.Is(err, repository.ErrInvalidState) {
+			return domain.PlotRecord{}, fmt.Errorf("%w: %v", ErrInvalidRequest, err)
+		}
 		return domain.PlotRecord{}, ErrServiceUnavailable
 	}
 	return updated, nil
-}
-
-func (s *OrchardService) ensureNoActivePlots(ctx context.Context, orchardID string) error {
-	count, err := s.repo.CountActivePlots(ctx, strings.TrimSpace(orchardID))
-	if err != nil {
-		return ErrServiceUnavailable
-	}
-	if count > 0 {
-		return fmt.Errorf("%w: orchard has active plots; archive or move plots first", ErrInvalidRequest)
-	}
-	return nil
-}
-
-func (s *PlotService) ensureOrchardAcceptsPlot(ctx context.Context, orchardID string, plotStatus domain.ResourceStatus) error {
-	orchard, err := s.repo.GetOrchard(ctx, strings.TrimSpace(orchardID))
-	if err != nil {
-		if errors.Is(err, repository.ErrNotFound) {
-			return fmt.Errorf("%w: orchard_id does not reference an existing orchard", ErrInvalidRequest)
-		}
-		return ErrServiceUnavailable
-	}
-	if orchard.Status == domain.ResourceStatusArchived && plotStatus == domain.ResourceStatusActive {
-		return fmt.Errorf("%w: active plots cannot belong to archived orchards", ErrInvalidRequest)
-	}
-	return nil
 }
 
 func (s *PlotService) Archive(ctx context.Context, plotID string) (domain.PlotRecord, error) {

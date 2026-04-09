@@ -4,6 +4,7 @@ import (
 	"context"
 	"errors"
 	"fmt"
+	"sort"
 	"strings"
 	"time"
 
@@ -261,6 +262,26 @@ func isSQLiteBusy(err error) bool {
 	return strings.Contains(msg, "database is locked") || strings.Contains(msg, "sqlite_busy")
 }
 
+func retrySQLiteBusy(ctx context.Context, fn func() error) error {
+	var lastErr error
+	for attempt := 0; attempt < 5; attempt++ {
+		lastErr = fn()
+		if lastErr == nil {
+			return nil
+		}
+		if !isSQLiteBusy(lastErr) {
+			return lastErr
+		}
+
+		select {
+		case <-ctx.Done():
+			return fmt.Errorf("%w: %v", repository.ErrDBUnavailable, ctx.Err())
+		case <-time.After(time.Duration(attempt+1) * 25 * time.Millisecond):
+		}
+	}
+	return mapGormErr(lastErr)
+}
+
 func (r *Repository) ListOrchards(ctx context.Context, includeArchived bool) ([]domain.OrchardRecord, error) {
 	query := r.db.WithContext(ctx).Order("created_at ASC")
 	if !includeArchived {
@@ -297,6 +318,22 @@ func (r *Repository) UpdateOrchard(ctx context.Context, orchard domain.OrchardRe
 	}
 	if res.RowsAffected == 0 {
 		return domain.OrchardRecord{}, repository.ErrNotFound
+	}
+	return r.GetOrchard(ctx, model.OrchardID)
+}
+
+func (r *Repository) ArchiveOrchard(ctx context.Context, orchard domain.OrchardRecord) (domain.OrchardRecord, error) {
+	model := orchardModelFromDomain(orchard)
+
+	var err error
+	switch r.db.Dialector.Name() {
+	case "postgres":
+		err = r.archiveOrchardPostgres(ctx, model)
+	default:
+		err = retrySQLiteBusy(ctx, func() error { return r.archiveOrchardSQLite(ctx, model) })
+	}
+	if err != nil {
+		return domain.OrchardRecord{}, err
 	}
 	return r.GetOrchard(ctx, model.OrchardID)
 }
@@ -347,6 +384,22 @@ func (r *Repository) CreatePlot(ctx context.Context, plot domain.PlotRecord) (do
 	return plotModelToDomain(model), nil
 }
 
+func (r *Repository) CreatePlotGuarded(ctx context.Context, plot domain.PlotRecord) (domain.PlotRecord, error) {
+	model := plotModelFromDomain(plot)
+
+	var err error
+	switch r.db.Dialector.Name() {
+	case "postgres":
+		err = r.createPlotGuardedPostgres(ctx, model)
+	default:
+		err = retrySQLiteBusy(ctx, func() error { return r.createPlotGuardedSQLite(ctx, model) })
+	}
+	if err != nil {
+		return domain.PlotRecord{}, err
+	}
+	return r.GetPlot(ctx, model.PlotID)
+}
+
 func (r *Repository) UpdatePlot(ctx context.Context, plot domain.PlotRecord) (domain.PlotRecord, error) {
 	model := plotModelFromDomain(plot)
 	res := r.db.WithContext(ctx).Model(&PlotModel{}).Where("plot_id = ?", model.PlotID).Updates(map[string]any{
@@ -364,12 +417,171 @@ func (r *Repository) UpdatePlot(ctx context.Context, plot domain.PlotRecord) (do
 	return r.GetPlot(ctx, model.PlotID)
 }
 
+func (r *Repository) UpdatePlotGuarded(ctx context.Context, plot domain.PlotRecord) (domain.PlotRecord, error) {
+	model := plotModelFromDomain(plot)
+
+	var err error
+	switch r.db.Dialector.Name() {
+	case "postgres":
+		err = r.updatePlotGuardedPostgres(ctx, model)
+	default:
+		err = retrySQLiteBusy(ctx, func() error { return r.updatePlotGuardedSQLite(ctx, model) })
+	}
+	if err != nil {
+		return domain.PlotRecord{}, err
+	}
+	return r.GetPlot(ctx, model.PlotID)
+}
+
 func (r *Repository) GetPlot(ctx context.Context, plotID string) (domain.PlotRecord, error) {
 	var model PlotModel
 	if err := r.db.WithContext(ctx).Where("plot_id = ?", strings.TrimSpace(plotID)).First(&model).Error; err != nil {
 		return domain.PlotRecord{}, mapGormErr(err)
 	}
 	return plotModelToDomain(model), nil
+}
+
+func (r *Repository) archiveOrchardPostgres(ctx context.Context, model OrchardModel) error {
+	return r.db.WithContext(ctx).Transaction(func(tx *gorm.DB) error {
+		if _, err := lockOrchardByID(tx, model.OrchardID); err != nil {
+			return err
+		}
+		var count int64
+		if err := tx.Model(&PlotModel{}).
+			Where("orchard_id = ? AND status = ?", model.OrchardID, string(domain.ResourceStatusActive)).
+			Count(&count).Error; err != nil {
+			return mapGormErr(err)
+		}
+		if count > 0 {
+			return fmt.Errorf("%w: orchard has active plots; archive or move plots first", repository.ErrInvalidState)
+		}
+		return updateOrchardRecord(tx, model)
+	})
+}
+
+func (r *Repository) archiveOrchardSQLite(ctx context.Context, model OrchardModel) error {
+	res := r.db.WithContext(ctx).
+		Model(&OrchardModel{}).
+		Where("orchard_id = ?", model.OrchardID).
+		Where(
+			`NOT EXISTS (
+				SELECT 1 FROM plots
+				WHERE plots.orchard_id = orchards.orchard_id AND plots.status = ?
+			)`,
+			string(domain.ResourceStatusActive),
+		).
+		Updates(map[string]any{
+			"orchard_name": model.OrchardName,
+			"status":       model.Status,
+			"updated_at":   model.UpdatedAt,
+		})
+	if res.Error != nil {
+		return mapGormErr(res.Error)
+	}
+	if res.RowsAffected > 0 {
+		return nil
+	}
+	return classifyBlockedOrchardArchive(r.db.WithContext(ctx), model.OrchardID)
+}
+
+func (r *Repository) createPlotGuardedPostgres(ctx context.Context, model PlotModel) error {
+	return r.db.WithContext(ctx).Transaction(func(tx *gorm.DB) error {
+		target, err := lockOrchardByID(tx, model.OrchardID)
+		if err != nil {
+			if errors.Is(err, repository.ErrNotFound) {
+				return fmt.Errorf("%w: orchard_id does not reference an existing orchard", repository.ErrInvalidState)
+			}
+			return err
+		}
+		if target.Status == string(domain.ResourceStatusArchived) && model.Status == string(domain.ResourceStatusActive) {
+			return fmt.Errorf("%w: active plots cannot belong to archived orchards", repository.ErrInvalidState)
+		}
+		if err := tx.Create(&model).Error; err != nil {
+			return mapGormErr(err)
+		}
+		return nil
+	})
+}
+
+func (r *Repository) createPlotGuardedSQLite(ctx context.Context, model PlotModel) error {
+	res := r.db.WithContext(ctx).Exec(
+		`INSERT INTO plots (plot_id, orchard_id, plot_name, status, created_at, updated_at)
+		 SELECT ?, ?, ?, ?, ?, ?
+		 WHERE EXISTS (
+		 	SELECT 1 FROM orchards
+		 	WHERE orchard_id = ?
+		 	AND (? <> ? OR status = ?)
+		 )`,
+		model.PlotID,
+		model.OrchardID,
+		model.PlotName,
+		model.Status,
+		model.CreatedAt,
+		model.UpdatedAt,
+		model.OrchardID,
+		model.Status,
+		string(domain.ResourceStatusActive),
+		string(domain.ResourceStatusActive),
+	)
+	if res.Error != nil {
+		return mapGormErr(res.Error)
+	}
+	if res.RowsAffected > 0 {
+		return nil
+	}
+	return classifyBlockedPlotWrite(r.db.WithContext(ctx), "", model.OrchardID, model.Status)
+}
+
+func (r *Repository) updatePlotGuardedPostgres(ctx context.Context, model PlotModel) error {
+	return r.db.WithContext(ctx).Transaction(func(tx *gorm.DB) error {
+		current, err := lockPlotByID(tx, model.PlotID)
+		if err != nil {
+			return err
+		}
+
+		orchards, err := lockOrchards(tx, current.OrchardID, model.OrchardID)
+		if err != nil {
+			return err
+		}
+		target, ok := orchards[model.OrchardID]
+		if !ok {
+			return fmt.Errorf("%w: orchard_id does not reference an existing orchard", repository.ErrInvalidState)
+		}
+		if target.Status == string(domain.ResourceStatusArchived) && model.Status == string(domain.ResourceStatusActive) {
+			return fmt.Errorf("%w: active plots cannot belong to archived orchards", repository.ErrInvalidState)
+		}
+		return updatePlotRecord(tx, model)
+	})
+}
+
+func (r *Repository) updatePlotGuardedSQLite(ctx context.Context, model PlotModel) error {
+	res := r.db.WithContext(ctx).
+		Model(&PlotModel{}).
+		Where("plot_id = ?", model.PlotID).
+		Where(
+			`EXISTS (
+				SELECT 1 FROM orchards
+				WHERE orchard_id = ?
+				AND (? <> ? OR status = ?)
+			)`,
+			model.OrchardID,
+			model.Status,
+			string(domain.ResourceStatusActive),
+			string(domain.ResourceStatusActive),
+		).
+		Updates(map[string]any{
+			"orchard_id": model.OrchardID,
+			"plot_name":  model.PlotName,
+			"status":     model.Status,
+			"updated_at": model.UpdatedAt,
+		})
+	if res.Error != nil {
+		return mapGormErr(res.Error)
+	}
+	if res.RowsAffected > 0 {
+		return nil
+	}
+	return classifyBlockedPlotWrite(r.db.WithContext(ctx), model.PlotID, model.OrchardID, model.Status)
 }
 
 func (r *Repository) CountOrchards(ctx context.Context) (int64, error) {
@@ -482,6 +694,141 @@ func derefOrValue(value *string, fallback string) string {
 		return fallback
 	}
 	return strings.TrimSpace(*value)
+}
+
+func lockOrchardByID(tx *gorm.DB, orchardID string) (OrchardModel, error) {
+	var orchard OrchardModel
+	query := tx.Where("orchard_id = ?", strings.TrimSpace(orchardID))
+	if tx.Dialector.Name() == "postgres" {
+		query = query.Clauses(clause.Locking{Strength: "UPDATE"})
+	}
+	if err := query.First(&orchard).Error; err != nil {
+		return OrchardModel{}, mapGormErr(err)
+	}
+	return orchard, nil
+}
+
+func lockPlotByID(tx *gorm.DB, plotID string) (PlotModel, error) {
+	var plot PlotModel
+	query := tx.Where("plot_id = ?", strings.TrimSpace(plotID))
+	if tx.Dialector.Name() == "postgres" {
+		query = query.Clauses(clause.Locking{Strength: "UPDATE"})
+	}
+	if err := query.First(&plot).Error; err != nil {
+		return PlotModel{}, mapGormErr(err)
+	}
+	return plot, nil
+}
+
+func lockOrchards(tx *gorm.DB, orchardIDs ...string) (map[string]OrchardModel, error) {
+	unique := make(map[string]struct{}, len(orchardIDs))
+	ordered := make([]string, 0, len(orchardIDs))
+	for _, orchardID := range orchardIDs {
+		trimmed := strings.TrimSpace(orchardID)
+		if trimmed == "" {
+			continue
+		}
+		if _, ok := unique[trimmed]; ok {
+			continue
+		}
+		unique[trimmed] = struct{}{}
+		ordered = append(ordered, trimmed)
+	}
+	sort.Strings(ordered)
+	if len(ordered) == 0 {
+		return map[string]OrchardModel{}, nil
+	}
+
+	query := tx.Where("orchard_id IN ?", ordered).Order("orchard_id ASC")
+	if tx.Dialector.Name() == "postgres" {
+		query = query.Clauses(clause.Locking{Strength: "UPDATE"})
+	}
+	var orchards []OrchardModel
+	if err := query.Find(&orchards).Error; err != nil {
+		return nil, mapGormErr(err)
+	}
+
+	out := make(map[string]OrchardModel, len(orchards))
+	for _, orchard := range orchards {
+		out[orchard.OrchardID] = orchard
+	}
+	return out, nil
+}
+
+func updateOrchardRecord(tx *gorm.DB, model OrchardModel) error {
+	res := tx.Model(&OrchardModel{}).
+		Where("orchard_id = ?", model.OrchardID).
+		Updates(map[string]any{
+			"orchard_name": model.OrchardName,
+			"status":       model.Status,
+			"updated_at":   model.UpdatedAt,
+		})
+	if res.Error != nil {
+		return mapGormErr(res.Error)
+	}
+	if res.RowsAffected == 0 {
+		return repository.ErrNotFound
+	}
+	return nil
+}
+
+func updatePlotRecord(tx *gorm.DB, model PlotModel) error {
+	res := tx.Model(&PlotModel{}).
+		Where("plot_id = ?", model.PlotID).
+		Updates(map[string]any{
+			"orchard_id": model.OrchardID,
+			"plot_name":  model.PlotName,
+			"status":     model.Status,
+			"updated_at": model.UpdatedAt,
+		})
+	if res.Error != nil {
+		return mapGormErr(res.Error)
+	}
+	if res.RowsAffected == 0 {
+		return repository.ErrNotFound
+	}
+	return nil
+}
+
+func classifyBlockedOrchardArchive(db *gorm.DB, orchardID string) error {
+	var orchard OrchardModel
+	if err := db.Where("orchard_id = ?", strings.TrimSpace(orchardID)).First(&orchard).Error; err != nil {
+		return mapGormErr(err)
+	}
+	var count int64
+	if err := db.Model(&PlotModel{}).
+		Where("orchard_id = ? AND status = ?", strings.TrimSpace(orchardID), string(domain.ResourceStatusActive)).
+		Count(&count).Error; err != nil {
+		return mapGormErr(err)
+	}
+	if count > 0 {
+		return fmt.Errorf("%w: orchard has active plots; archive or move plots first", repository.ErrInvalidState)
+	}
+	return fmt.Errorf("%w: orchard archive precondition failed for %s", repository.ErrDBUnavailable, strings.TrimSpace(orchardID))
+}
+
+func classifyBlockedPlotWrite(db *gorm.DB, plotID string, orchardID string, plotStatus string) error {
+	if trimmedPlotID := strings.TrimSpace(plotID); trimmedPlotID != "" {
+		var plotCount int64
+		if err := db.Model(&PlotModel{}).Where("plot_id = ?", trimmedPlotID).Count(&plotCount).Error; err != nil {
+			return mapGormErr(err)
+		}
+		if plotCount == 0 {
+			return repository.ErrNotFound
+		}
+	}
+
+	var orchard OrchardModel
+	if err := db.Where("orchard_id = ?", strings.TrimSpace(orchardID)).First(&orchard).Error; err != nil {
+		if errors.Is(mapGormErr(err), repository.ErrNotFound) {
+			return fmt.Errorf("%w: orchard_id does not reference an existing orchard", repository.ErrInvalidState)
+		}
+		return mapGormErr(err)
+	}
+	if orchard.Status == string(domain.ResourceStatusArchived) && plotStatus == string(domain.ResourceStatusActive) {
+		return fmt.Errorf("%w: active plots cannot belong to archived orchards", repository.ErrInvalidState)
+	}
+	return fmt.Errorf("%w: plot write precondition failed for orchard %s", repository.ErrDBUnavailable, strings.TrimSpace(orchardID))
 }
 
 func validateUserRecord(user domain.UserRecord) error {

@@ -78,6 +78,9 @@ func promoteBootstrapAdminByEmail(
 		if strings.ToLower(strings.TrimSpace(user.Email)) != email {
 			continue
 		}
+		if user.OIDCSubject != nil && strings.TrimSpace(*user.OIDCSubject) != "" {
+			return fmt.Errorf("%w: bootstrap admin email belongs to a user already bound to another oidc subject", ErrInvalidRequest)
+		}
 		if strings.TrimSpace(user.DisplayName) == "" {
 			user.DisplayName = email
 		}

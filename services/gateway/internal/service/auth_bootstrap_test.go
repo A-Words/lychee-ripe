@@ -136,6 +136,36 @@ func TestEnsureBootstrapAdminPromotesExistingSameEmailUserWhenNoActiveAdminExist
 	}
 }
 
+func TestEnsureBootstrapAdminRejectsBoundSameEmailUser(t *testing.T) {
+	t.Parallel()
+
+	subject := "other-subject"
+	repo := &fakeBootstrapAdminRepo{
+		countActiveAdmins: 0,
+		createUserErr:     repository.ErrConflict,
+		users: []domain.UserRecord{
+			{
+				ID:          "user-1",
+				Email:       "admin@example.com",
+				DisplayName: "Bound Candidate",
+				OIDCSubject: &subject,
+				Role:        domain.UserRoleOperator,
+				Status:      domain.UserStatusDisabled,
+				CreatedAt:   time.Now().UTC(),
+				UpdatedAt:   time.Now().UTC(),
+			},
+		},
+	}
+
+	err := EnsureBootstrapAdmin(context.Background(), domain.AuthModeOIDC, "admin@example.com", repo)
+	if !errors.Is(err, ErrInvalidRequest) {
+		t.Fatalf("error = %v, want ErrInvalidRequest", err)
+	}
+	if repo.updateCallCount != 0 {
+		t.Fatalf("updateCallCount = %d, want 0", repo.updateCallCount)
+	}
+}
+
 func TestEnsureBootstrapAdminRejectsConflictWhenStillNoActiveAdmin(t *testing.T) {
 	t.Parallel()
 

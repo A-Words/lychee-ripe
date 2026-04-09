@@ -56,13 +56,16 @@ type OrchardRepository interface {
 	ListOrchards(ctx context.Context, includeArchived bool) ([]domain.OrchardRecord, error)
 	CreateOrchard(ctx context.Context, orchard domain.OrchardRecord) (domain.OrchardRecord, error)
 	UpdateOrchard(ctx context.Context, orchard domain.OrchardRecord) (domain.OrchardRecord, error)
+	ArchiveOrchard(ctx context.Context, orchard domain.OrchardRecord) (domain.OrchardRecord, error)
 	GetOrchard(ctx context.Context, orchardID string) (domain.OrchardRecord, error)
 }
 
 type PlotRepository interface {
 	ListPlots(ctx context.Context, orchardID string, includeArchived bool) ([]domain.PlotRecord, error)
 	CreatePlot(ctx context.Context, plot domain.PlotRecord) (domain.PlotRecord, error)
+	CreatePlotGuarded(ctx context.Context, plot domain.PlotRecord) (domain.PlotRecord, error)
 	UpdatePlot(ctx context.Context, plot domain.PlotRecord) (domain.PlotRecord, error)
+	UpdatePlotGuarded(ctx context.Context, plot domain.PlotRecord) (domain.PlotRecord, error)
 	GetPlot(ctx context.Context, plotID string) (domain.PlotRecord, error)
 }
 

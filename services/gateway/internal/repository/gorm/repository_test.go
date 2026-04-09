@@ -897,6 +897,326 @@ func TestUpdateUserConcurrentDemotionsPreserveActiveAdmin(t *testing.T) {
 	}
 }
 
+func TestArchiveOrchardRejectsWhenActivePlotsExistSQLite(t *testing.T) {
+	t.Parallel()
+
+	ctx := context.Background()
+	repo, sqlDB := mustNewSQLiteRepo(t)
+	defer sqlDB.Close()
+
+	now := time.Now().UTC()
+	orchard := OrchardModel{
+		OrchardID:   "orchard-1",
+		OrchardName: "Demo Orchard",
+		Status:      string(domain.ResourceStatusActive),
+		CreatedAt:   now,
+		UpdatedAt:   now,
+	}
+	plot := PlotModel{
+		PlotID:    "plot-1",
+		OrchardID: orchard.OrchardID,
+		PlotName:  "A1",
+		Status:    string(domain.ResourceStatusActive),
+		CreatedAt: now,
+		UpdatedAt: now,
+	}
+	if err := repo.db.WithContext(ctx).Create(&orchard).Error; err != nil {
+		t.Fatalf("seed orchard: %v", err)
+	}
+	if err := repo.db.WithContext(ctx).Create(&plot).Error; err != nil {
+		t.Fatalf("seed plot: %v", err)
+	}
+
+	_, err := repo.ArchiveOrchard(ctx, domain.OrchardRecord{
+		OrchardID:   orchard.OrchardID,
+		OrchardName: orchard.OrchardName,
+		Status:      domain.ResourceStatusArchived,
+		CreatedAt:   orchard.CreatedAt,
+		UpdatedAt:   now.Add(time.Minute),
+	})
+	if !errors.Is(err, repository.ErrInvalidState) {
+		t.Fatalf("ArchiveOrchard error = %v, want ErrInvalidState", err)
+	}
+}
+
+func TestCreatePlotGuardedRejectsUnknownOrchardSQLite(t *testing.T) {
+	t.Parallel()
+
+	ctx := context.Background()
+	repo, sqlDB := mustNewSQLiteRepo(t)
+	defer sqlDB.Close()
+
+	_, err := repo.CreatePlotGuarded(ctx, domain.PlotRecord{
+		PlotID:    "plot-1",
+		OrchardID: "missing-orchard",
+		PlotName:  "A1",
+		Status:    domain.ResourceStatusActive,
+		CreatedAt: time.Now().UTC(),
+		UpdatedAt: time.Now().UTC(),
+	})
+	if !errors.Is(err, repository.ErrInvalidState) {
+		t.Fatalf("CreatePlotGuarded error = %v, want ErrInvalidState", err)
+	}
+}
+
+func TestUpdatePlotGuardedRejectsActivePlotUnderArchivedOrchardSQLite(t *testing.T) {
+	t.Parallel()
+
+	ctx := context.Background()
+	repo, sqlDB := mustNewSQLiteRepo(t)
+	defer sqlDB.Close()
+
+	now := time.Now().UTC()
+	orchards := []OrchardModel{
+		{
+			OrchardID:   "orchard-active",
+			OrchardName: "Active Orchard",
+			Status:      string(domain.ResourceStatusActive),
+			CreatedAt:   now,
+			UpdatedAt:   now,
+		},
+		{
+			OrchardID:   "orchard-archived",
+			OrchardName: "Archived Orchard",
+			Status:      string(domain.ResourceStatusArchived),
+			CreatedAt:   now,
+			UpdatedAt:   now,
+		},
+	}
+	if err := repo.db.WithContext(ctx).Create(&orchards).Error; err != nil {
+		t.Fatalf("seed orchards: %v", err)
+	}
+	plot := PlotModel{
+		PlotID:    "plot-1",
+		OrchardID: "orchard-active",
+		PlotName:  "A1",
+		Status:    string(domain.ResourceStatusActive),
+		CreatedAt: now,
+		UpdatedAt: now,
+	}
+	if err := repo.db.WithContext(ctx).Create(&plot).Error; err != nil {
+		t.Fatalf("seed plot: %v", err)
+	}
+
+	_, err := repo.UpdatePlotGuarded(ctx, domain.PlotRecord{
+		PlotID:    plot.PlotID,
+		OrchardID: "orchard-archived",
+		PlotName:  plot.PlotName,
+		Status:    domain.ResourceStatusActive,
+		CreatedAt: plot.CreatedAt,
+		UpdatedAt: now.Add(time.Minute),
+	})
+	if !errors.Is(err, repository.ErrInvalidState) {
+		t.Fatalf("UpdatePlotGuarded error = %v, want ErrInvalidState", err)
+	}
+}
+
+func TestArchiveOrchardAndCreatePlotGuardedConcurrentPreserveInvariantSQLite(t *testing.T) {
+	t.Parallel()
+
+	ctx := context.Background()
+	dbPath := filepath.Join(t.TempDir(), "gateway-orchards.db")
+	cfg := config.DBConfig{
+		Driver:           "sqlite",
+		DSN:              dbPath,
+		MaxOpenConns:     10,
+		MaxIdleConns:     5,
+		ConnMaxLifetimeS: 300,
+		SQLite: config.SQLiteDBConfig{
+			JournalMode:   "WAL",
+			BusyTimeoutMS: 5000,
+		},
+	}
+	repoA, sqlDBA := mustNewRepoWithConfig(t, cfg)
+	defer sqlDBA.Close()
+	repoB, sqlDBB := mustNewRepoWithConfig(t, cfg)
+	defer sqlDBB.Close()
+
+	now := time.Now().UTC()
+	orchard := OrchardModel{
+		OrchardID:   "orchard-1",
+		OrchardName: "Demo Orchard",
+		Status:      string(domain.ResourceStatusActive),
+		CreatedAt:   now,
+		UpdatedAt:   now,
+	}
+	if err := repoA.db.WithContext(ctx).Create(&orchard).Error; err != nil {
+		t.Fatalf("seed orchard: %v", err)
+	}
+
+	start := make(chan struct{})
+	var wg sync.WaitGroup
+	errCh := make(chan error, 2)
+
+	wg.Add(1)
+	go func() {
+		defer wg.Done()
+		<-start
+		_, err := repoA.ArchiveOrchard(ctx, domain.OrchardRecord{
+			OrchardID:   orchard.OrchardID,
+			OrchardName: orchard.OrchardName,
+			Status:      domain.ResourceStatusArchived,
+			CreatedAt:   orchard.CreatedAt,
+			UpdatedAt:   now.Add(time.Minute),
+		})
+		if err != nil && !errors.Is(err, repository.ErrInvalidState) {
+			errCh <- fmt.Errorf("archive orchard: %w", err)
+		}
+	}()
+
+	wg.Add(1)
+	go func() {
+		defer wg.Done()
+		<-start
+		_, err := repoB.CreatePlotGuarded(ctx, domain.PlotRecord{
+			PlotID:    "plot-1",
+			OrchardID: orchard.OrchardID,
+			PlotName:  "A1",
+			Status:    domain.ResourceStatusActive,
+			CreatedAt: now.Add(time.Minute),
+			UpdatedAt: now.Add(time.Minute),
+		})
+		if err != nil && !errors.Is(err, repository.ErrInvalidState) {
+			errCh <- fmt.Errorf("create plot: %w", err)
+		}
+	}()
+
+	close(start)
+	wg.Wait()
+	close(errCh)
+
+	for err := range errCh {
+		if err != nil {
+			t.Fatalf("unexpected concurrent error: %v", err)
+		}
+	}
+
+	assertNoArchivedOrchardWithActivePlots(t, repoA, orchard.OrchardID)
+}
+
+func TestArchiveOrchardAndUpdatePlotGuardedConcurrentPreserveInvariantSQLite(t *testing.T) {
+	t.Parallel()
+
+	ctx := context.Background()
+	dbPath := filepath.Join(t.TempDir(), "gateway-orchards-move.db")
+	cfg := config.DBConfig{
+		Driver:           "sqlite",
+		DSN:              dbPath,
+		MaxOpenConns:     10,
+		MaxIdleConns:     5,
+		ConnMaxLifetimeS: 300,
+		SQLite: config.SQLiteDBConfig{
+			JournalMode:   "WAL",
+			BusyTimeoutMS: 5000,
+		},
+	}
+	repoA, sqlDBA := mustNewRepoWithConfig(t, cfg)
+	defer sqlDBA.Close()
+	repoB, sqlDBB := mustNewRepoWithConfig(t, cfg)
+	defer sqlDBB.Close()
+
+	now := time.Now().UTC()
+	orchards := []OrchardModel{
+		{
+			OrchardID:   "orchard-1",
+			OrchardName: "Target Orchard",
+			Status:      string(domain.ResourceStatusActive),
+			CreatedAt:   now,
+			UpdatedAt:   now,
+		},
+		{
+			OrchardID:   "orchard-2",
+			OrchardName: "Source Orchard",
+			Status:      string(domain.ResourceStatusActive),
+			CreatedAt:   now,
+			UpdatedAt:   now,
+		},
+	}
+	if err := repoA.db.WithContext(ctx).Create(&orchards).Error; err != nil {
+		t.Fatalf("seed orchards: %v", err)
+	}
+	plot := PlotModel{
+		PlotID:    "plot-1",
+		OrchardID: "orchard-2",
+		PlotName:  "A1",
+		Status:    string(domain.ResourceStatusActive),
+		CreatedAt: now,
+		UpdatedAt: now,
+	}
+	if err := repoA.db.WithContext(ctx).Create(&plot).Error; err != nil {
+		t.Fatalf("seed plot: %v", err)
+	}
+
+	start := make(chan struct{})
+	var wg sync.WaitGroup
+	errCh := make(chan error, 2)
+
+	wg.Add(1)
+	go func() {
+		defer wg.Done()
+		<-start
+		_, err := repoA.ArchiveOrchard(ctx, domain.OrchardRecord{
+			OrchardID:   "orchard-1",
+			OrchardName: "Target Orchard",
+			Status:      domain.ResourceStatusArchived,
+			CreatedAt:   now,
+			UpdatedAt:   now.Add(time.Minute),
+		})
+		if err != nil && !errors.Is(err, repository.ErrInvalidState) {
+			errCh <- fmt.Errorf("archive orchard: %w", err)
+		}
+	}()
+
+	wg.Add(1)
+	go func() {
+		defer wg.Done()
+		<-start
+		_, err := repoB.UpdatePlotGuarded(ctx, domain.PlotRecord{
+			PlotID:    plot.PlotID,
+			OrchardID: "orchard-1",
+			PlotName:  plot.PlotName,
+			Status:    domain.ResourceStatusActive,
+			CreatedAt: plot.CreatedAt,
+			UpdatedAt: now.Add(time.Minute),
+		})
+		if err != nil && !errors.Is(err, repository.ErrInvalidState) {
+			errCh <- fmt.Errorf("update plot: %w", err)
+		}
+	}()
+
+	close(start)
+	wg.Wait()
+	close(errCh)
+
+	for err := range errCh {
+		if err != nil {
+			t.Fatalf("unexpected concurrent error: %v", err)
+		}
+	}
+
+	assertNoArchivedOrchardWithActivePlots(t, repoA, "orchard-1")
+}
+
+func assertNoArchivedOrchardWithActivePlots(t *testing.T, repo *Repository, orchardID string) {
+	t.Helper()
+
+	ctx := context.Background()
+	var orchard OrchardModel
+	if err := repo.db.WithContext(ctx).Where("orchard_id = ?", orchardID).First(&orchard).Error; err != nil {
+		t.Fatalf("reload orchard: %v", err)
+	}
+	var activePlots int64
+	if err := repo.db.WithContext(ctx).
+		Model(&PlotModel{}).
+		Where("orchard_id = ? AND status = ?", orchardID, string(domain.ResourceStatusActive)).
+		Count(&activePlots).Error; err != nil {
+		t.Fatalf("count active plots: %v", err)
+	}
+	if orchard.Status == string(domain.ResourceStatusArchived) && activePlots > 0 {
+		t.Fatalf("invariant violated: orchard %s archived with %d active plots", orchardID, activePlots)
+	}
+}
+
 func mustNewSQLiteRepo(t *testing.T) (*Repository, *sql.DB) {
 	t.Helper()
 	cfg := config.DBConfig{
