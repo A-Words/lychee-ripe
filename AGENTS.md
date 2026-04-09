@@ -48,6 +48,7 @@
 - 预训练权重：`mlops/pretrained/yolo26n.pt`
 - 推理模型配置：`tooling/configs/model.yaml`
 - 网关配置：`tooling/configs/gateway.yaml`
+- 演示种子开关：`seed.default_resources_enabled` / `LYCHEE_SEED_DEFAULT_RESOURCES_ENABLED`
 - 对外契约：`shared/contracts/schemas/openapi.yaml`
 
 ## 3. 执行工作流
@@ -145,6 +146,7 @@
 - 前端禁止直连 `services/inference-api`，默认必须走 `services/gateway`
 - 任何行为改动，至少运行一次相关测试；若未执行，必须说明原因和风险
 - `tooling/configs/gateway.yaml.example` 应保持本地直启可用，默认 `upstream.base_url` 指向 `http://127.0.0.1:8000`
+- 网关代码默认不应向空库自动写入演示果园/地块；如需本地演示数据，应通过 `seed.default_resources_enabled` 显式开启
 - `tooling/configs/gateway.yaml.example` 默认 `auth.mode=disabled`，应保持本地直启和管理后台可用；若切到 `oidc`，空库场景需同时说明 `auth.bootstrap_admin_email`
 - Docker Compose 应使用独立的 `tooling/configs/gateway.compose.yaml`，其中 `upstream.base_url` 指向容器服务名 `http://inference-api:8000`
 

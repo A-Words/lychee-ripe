@@ -21,6 +21,9 @@ db:
     ssl_mode: "disable"
     schema: "public"
 
+seed:
+  default_resources_enabled: true # local demo orchard/plot seed data; disable for production
+
 trace:
   mode: "database" # database | blockchain
 

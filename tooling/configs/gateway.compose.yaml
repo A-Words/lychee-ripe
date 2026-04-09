@@ -21,6 +21,9 @@ db:
     ssl_mode: "disable"
     schema: "public"
 
+seed:
+  default_resources_enabled: false # compose/production-like deployments should not auto-insert demo resources
+
 trace:
   mode: "database" # database | blockchain
 

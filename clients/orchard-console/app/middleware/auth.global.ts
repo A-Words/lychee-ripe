@@ -2,6 +2,9 @@ import { resolveAuthGuardDecision } from '~/utils/auth-guard'
 
 export default defineNuxtRouteMiddleware(async (to) => {
   if (import.meta.server) {
+    // This early return is only safe because the app is locked to ssr: false
+    // and browser auth state lives in localStorage. If SSR is enabled later,
+    // auth storage and guard strategy must be redesigned first.
     return
   }
 

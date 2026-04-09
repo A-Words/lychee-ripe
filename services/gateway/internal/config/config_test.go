@@ -41,6 +41,9 @@ func TestDefaults(t *testing.T) {
 	if cfg.DB.Postgres.Schema != "public" {
 		t.Errorf("unexpected default postgres schema: %s", cfg.DB.Postgres.Schema)
 	}
+	if cfg.Seed.DefaultResourcesEnabled {
+		t.Error("seed.default_resources_enabled should default to false")
+	}
 	if cfg.Trace.Mode != "database" {
 		t.Errorf("unexpected default trace.mode: %s", cfg.Trace.Mode)
 	}
@@ -77,6 +80,8 @@ db:
   postgres:
     ssl_mode: "disable"
     schema: "public"
+seed:
+  default_resources_enabled: true
 auth:
   mode: "oidc"
   bootstrap_admin_email: "admin@example.com"
@@ -126,6 +131,9 @@ trace:
 	}
 	if cfg.DB.Postgres.Schema != "public" {
 		t.Errorf("db.postgres.schema = %q, want public", cfg.DB.Postgres.Schema)
+	}
+	if !cfg.Seed.DefaultResourcesEnabled {
+		t.Error("seed.default_resources_enabled = false, want true")
 	}
 	if cfg.Auth.Mode != AuthModeOIDC {
 		t.Errorf("auth.mode = %q, want oidc", cfg.Auth.Mode)
@@ -307,6 +315,28 @@ auth:
 	}
 	if cfg.Auth.BootstrapAdminEmail != "bootstrap@example.com" {
 		t.Fatalf("auth.bootstrap_admin_email = %q", cfg.Auth.BootstrapAdminEmail)
+	}
+}
+
+func TestLoadAppliesSeedEnvOverride(t *testing.T) {
+	dir := t.TempDir()
+	cfgPath := filepath.Join(dir, "gateway.yaml")
+	content := `
+seed:
+  default_resources_enabled: false
+`
+	if err := os.WriteFile(cfgPath, []byte(content), 0o644); err != nil {
+		t.Fatal(err)
+	}
+
+	t.Setenv("LYCHEE_SEED_DEFAULT_RESOURCES_ENABLED", "true")
+
+	cfg, err := Load(cfgPath)
+	if err != nil {
+		t.Fatalf("Load failed: %v", err)
+	}
+	if !cfg.Seed.DefaultResourcesEnabled {
+		t.Fatal("seed.default_resources_enabled = false, want true after env override")
 	}
 }
 

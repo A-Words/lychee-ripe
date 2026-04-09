@@ -95,9 +95,11 @@ func main() {
 	}
 
 	repo := repositorygorm.New(gdb)
-	if err := service.SeedDefaultResources(context.Background(), repo); err != nil {
-		logger.Error("failed to seed default orchard data", "error", err)
-		os.Exit(1)
+	if cfg.Seed.DefaultResourcesEnabled {
+		if err := service.SeedDefaultResources(context.Background(), repo); err != nil {
+			logger.Error("failed to seed default orchard data", "error", err)
+			os.Exit(1)
+		}
 	}
 	if err := service.EnsureBootstrapAdmin(
 		context.Background(),
@@ -185,6 +187,7 @@ func main() {
 			"chain_id", cfg.Chain.ChainID,
 			"chain_contract_address", cfg.Chain.ContractAddress,
 			"auth_mode", cfg.Auth.Mode,
+			"seed_default_resources_enabled", cfg.Seed.DefaultResourcesEnabled,
 			"rate_limit", cfg.RateLimit.Enabled,
 		)
 		if err := srv.ListenAndServe(); err != nil && err != http.ErrServerClosed {

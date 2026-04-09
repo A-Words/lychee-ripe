@@ -19,6 +19,7 @@ type Config struct {
 	Server    ServerConfig    `yaml:"server"`
 	Upstream  UpstreamConfig  `yaml:"upstream"`
 	DB        DBConfig        `yaml:"db"`
+	Seed      SeedConfig      `yaml:"seed"`
 	Trace     TraceConfig     `yaml:"trace"`
 	Chain     ChainConfig     `yaml:"chain"`
 	Auth      AuthConfig      `yaml:"auth"`
@@ -60,6 +61,10 @@ type SQLiteDBConfig struct {
 type PostgresDBConfig struct {
 	SSLMode string `yaml:"ssl_mode"`
 	Schema  string `yaml:"schema"`
+}
+
+type SeedConfig struct {
+	DefaultResourcesEnabled bool `yaml:"default_resources_enabled"`
 }
 
 // TraceConfig defines the gateway trace runtime mode.
@@ -224,6 +229,9 @@ func Defaults() Config {
 				SSLMode: "disable",
 				Schema:  "public",
 			},
+		},
+		Seed: SeedConfig{
+			DefaultResourcesEnabled: false,
 		},
 		Trace: TraceConfig{
 			Mode: domain.TraceModeDatabase,
@@ -410,5 +418,8 @@ func applyEnvOverrides(cfg *Config) {
 	}
 	if value := strings.TrimSpace(os.Getenv("LYCHEE_AUTH_BOOTSTRAP_ADMIN_EMAIL")); value != "" {
 		cfg.Auth.BootstrapAdminEmail = value
+	}
+	if value := strings.TrimSpace(os.Getenv("LYCHEE_SEED_DEFAULT_RESOURCES_ENABLED")); value != "" {
+		cfg.Seed.DefaultResourcesEnabled = strings.EqualFold(value, "true") || value == "1"
 	}
 }
