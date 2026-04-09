@@ -198,7 +198,15 @@ func (s *WebAuthService) CompleteLogin(ctx context.Context, code string, state s
 		return CompleteWebLoginResult{}, ErrServiceUnavailable
 	}
 
-	expiresAt := now.Add(time.Hour)
+	// Session expiry priority:
+	//   1. OIDC identity.ExpiresAt (from the access token exp claim)
+	//   2. OAuth token.ExpiresIn (from the token response)
+	//   3. Configured fallback (auth.web.session_ttl_s, default 3600s)
+	fallbackTTL := time.Duration(s.cfg.Web.SessionTTLS) * time.Second
+	if fallbackTTL <= 0 {
+		fallbackTTL = time.Hour
+	}
+	expiresAt := now.Add(fallbackTTL)
 	if identity.ExpiresAt != nil {
 		expiresAt = identity.ExpiresAt.UTC()
 	} else if token.ExpiresIn > 0 {

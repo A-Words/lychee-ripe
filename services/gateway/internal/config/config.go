@@ -111,6 +111,10 @@ type WebAuthConfig struct {
 	CookieName     string `yaml:"cookie_name"`
 	CookieSecure   bool   `yaml:"cookie_secure"`
 	CookieSameSite string `yaml:"cookie_same_site"`
+	// SessionTTLS is the fallback session duration in seconds when the OIDC
+	// token does not carry an explicit expiry (identity.ExpiresAt or
+	// token.ExpiresIn). Defaults to 3600 (1 hour).
+	SessionTTLS int `yaml:"session_ttl_s"`
 }
 
 // RateLimitConfig defines token-bucket rate limiting settings.
@@ -276,6 +280,7 @@ func Defaults() Config {
 				CookieName:     "lychee_session",
 				CookieSecure:   false,
 				CookieSameSite: "lax",
+				SessionTTLS:    3600,
 			},
 		},
 		RateLimit: RateLimitConfig{
@@ -451,6 +456,10 @@ func (c *Config) Validate() error {
 		return fmt.Errorf("auth.mode must be one of disabled|oidc, got %q", c.Auth.Mode)
 	}
 
+	if c.Auth.Web.SessionTTLS <= 0 {
+		c.Auth.Web.SessionTTLS = 3600
+	}
+
 	if strings.TrimSpace(c.Auth.Web.CookieName) == "" {
 		c.Auth.Web.CookieName = "lychee_session"
 	}
@@ -527,6 +536,11 @@ func applyEnvOverrides(cfg *Config) {
 	}
 	if value := strings.TrimSpace(os.Getenv("LYCHEE_AUTH_WEB_COOKIE_SAME_SITE")); value != "" {
 		cfg.Auth.Web.CookieSameSite = value
+	}
+	if value := strings.TrimSpace(os.Getenv("LYCHEE_AUTH_WEB_SESSION_TTL_S")); value != "" {
+		if ttl, err := strconv.Atoi(value); err == nil && ttl > 0 {
+			cfg.Auth.Web.SessionTTLS = ttl
+		}
 	}
 	if value := strings.TrimSpace(os.Getenv("LYCHEE_SEED_DEFAULT_RESOURCES_ENABLED")); value != "" {
 		cfg.Seed.DefaultResourcesEnabled = strings.EqualFold(value, "true") || value == "1"

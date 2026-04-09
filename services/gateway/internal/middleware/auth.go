@@ -258,6 +258,14 @@ func GetPrincipal(ctx context.Context) (domain.Principal, bool) {
 	return principal, ok
 }
 
+// isPublicPath reports whether the given path bypasses the auth middleware entirely.
+// Note: /v1/auth/logout is listed here so that unauthenticated logout requests
+// are not blocked, but PostLogout still performs its own Origin check when a
+// session cookie is present — "public" here means "no auth middleware", not
+// "unprotected".
+// Only the /v1/trace/ prefix is public (matching /v1/trace/{trace_code});
+// /v1/trace without a trailing segment is not a registered route and
+// intentionally requires auth to avoid exposing unintended endpoints.
 func isPublicPath(path string) bool {
 	switch path {
 	case "/healthz", "/v1/health", "/v1/auth/login", "/v1/auth/callback", "/v1/auth/logout":
@@ -276,7 +284,7 @@ func isAuthorized(r *http.Request, role domain.UserRole) bool {
 		return true
 	}
 	if method == http.MethodGet && (path == "/v1/orchards" || path == "/v1/plots") {
-		return !queryBool(r, "include_archived")
+		return !QueryBool(r, "include_archived")
 	}
 	switch {
 	case strings.HasPrefix(path, "/v1/infer/"),
@@ -290,7 +298,9 @@ func isAuthorized(r *http.Request, role domain.UserRole) bool {
 	}
 }
 
-func queryBool(r *http.Request, key string) bool {
+// QueryBool parses a boolean query parameter from the request URL.
+// Returns false for missing, empty, or unparseable values.
+func QueryBool(r *http.Request, key string) bool {
 	if r == nil || r.URL == nil {
 		return false
 	}
@@ -302,6 +312,11 @@ func queryBool(r *http.Request, key string) bool {
 	return err == nil && parsed
 }
 
+// isBatchItemPath matches /v1/batches/{batch_id} for operator-level GET
+// access. It uses a positive allowlist approach — it rejects known sub-paths
+// like "reconcile" and any nested paths. When new sub-paths are added under
+// /v1/batches/, they must be excluded here or they will be accessible to
+// operators without explicit authorization.
 func isBatchItemPath(path string) bool {
 	const prefix = "/v1/batches/"
 	if !strings.HasPrefix(path, prefix) {

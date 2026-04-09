@@ -4,11 +4,11 @@ import (
 	"context"
 	"errors"
 	"net/http"
-	"strconv"
 	"strings"
 	"time"
 
 	"github.com/lychee-ripe/gateway/internal/domain"
+	"github.com/lychee-ripe/gateway/internal/middleware"
 	"github.com/lychee-ripe/gateway/internal/service"
 )
 
@@ -83,7 +83,7 @@ type userResponse struct {
 
 func ListOrchards(svc orchardService) http.HandlerFunc {
 	return func(w http.ResponseWriter, r *http.Request) {
-		items, err := svc.List(r.Context(), queryBool(r, "include_archived"))
+		items, err := svc.List(r.Context(), middleware.QueryBool(r,"include_archived"))
 		if err != nil {
 			writeServiceError(w, r, err)
 			return
@@ -148,7 +148,7 @@ func ArchiveOrchard(svc orchardService) http.HandlerFunc {
 
 func ListPlots(svc plotService) http.HandlerFunc {
 	return func(w http.ResponseWriter, r *http.Request) {
-		items, err := svc.List(r.Context(), strings.TrimSpace(r.URL.Query().Get("orchard_id")), queryBool(r, "include_archived"))
+		items, err := svc.List(r.Context(), strings.TrimSpace(r.URL.Query().Get("orchard_id")), middleware.QueryBool(r,"include_archived"))
 		if err != nil {
 			writeServiceError(w, r, err)
 			return
@@ -319,11 +319,3 @@ func toUserResponse(item domain.UserRecord) userResponse {
 	}
 }
 
-func queryBool(r *http.Request, key string) bool {
-	value := strings.TrimSpace(r.URL.Query().Get(key))
-	if value == "" {
-		return false
-	}
-	parsed, err := strconv.ParseBool(value)
-	return err == nil && parsed
-}
