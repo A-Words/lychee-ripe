@@ -54,8 +54,8 @@ func TestLoginFailureRedirectURLKeepsAppBasePathAndErrorCode(t *testing.T) {
 	svc := &WebAuthService{}
 	svc.cfg.Web.AppBaseURL = "https://example.com/console"
 
-	got := svc.LoginFailureRedirectURL("invalid_request")
-	want := "https://example.com/console/login?auth_error=invalid_request"
+	got := svc.LoginFailureRedirectURL("invalid_request", "/admin?tab=users")
+	want := "https://example.com/console/login?auth_error=invalid_request&redirect=%2Fadmin%3Ftab%3Dusers"
 	if got != want {
 		t.Fatalf("LoginFailureRedirectURL() = %q, want %q", got, want)
 	}

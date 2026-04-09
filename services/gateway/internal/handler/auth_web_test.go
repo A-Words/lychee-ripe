@@ -22,9 +22,12 @@ type fakeWebAuthService struct {
 	cookieSecure               bool
 	cookieSameSite             service.HTTPSameSite
 	loginBindingCookieName     string
+	loginRedirectCookieName    string
 	loginBindingCookiePath     string
 	loginBindingCookieSameSite service.HTTPSameSite
 	loginFailureRedirectURL    string
+	lastFailureErrorCode       string
+	lastFailureRedirectPath    string
 	lastBeginRedirectPath      string
 	lastCompleteCode           string
 	lastCompleteState          string
@@ -83,6 +86,13 @@ func (f *fakeWebAuthService) LoginBindingCookieName() string {
 	return f.loginBindingCookieName
 }
 
+func (f *fakeWebAuthService) LoginRedirectCookieName() string {
+	if f.loginRedirectCookieName == "" {
+		return "lychee_session_login_redirect"
+	}
+	return f.loginRedirectCookieName
+}
+
 func (f *fakeWebAuthService) LoginBindingCookiePath() string {
 	if f.loginBindingCookiePath == "" {
 		return "/v1/auth/callback"
@@ -97,9 +107,11 @@ func (f *fakeWebAuthService) LoginBindingCookieSameSite() service.HTTPSameSite {
 	return f.loginBindingCookieSameSite
 }
 
-func (f *fakeWebAuthService) LoginFailureRedirectURL(errorCode string) string {
+func (f *fakeWebAuthService) LoginFailureRedirectURL(errorCode string, redirectPath string) string {
+	f.lastFailureErrorCode = errorCode
+	f.lastFailureRedirectPath = redirectPath
 	if f.loginFailureRedirectURL == "" {
-		return "/login?auth_error=" + errorCode
+		return "/login?auth_error=" + errorCode + "&redirect=" + redirectPath
 	}
 	return f.loginFailureRedirectURL
 }
@@ -131,37 +143,56 @@ func TestGetLoginSetsBrowserBindingCookieAndRedirects(t *testing.T) {
 
 	resp := rec.Result()
 	cookies := resp.Cookies()
-	if len(cookies) != 1 {
-		t.Fatalf("cookie count = %d, want 1", len(cookies))
+	if len(cookies) != 2 {
+		t.Fatalf("cookie count = %d, want 2", len(cookies))
 	}
-	cookie := cookies[0]
-	if cookie.Name != "lychee_session_login" {
-		t.Fatalf("cookie name = %q, want lychee_session_login", cookie.Name)
+	var bindingCookie *http.Cookie
+	var redirectCookie *http.Cookie
+	for _, cookie := range cookies {
+		switch cookie.Name {
+		case "lychee_session_login":
+			bindingCookie = cookie
+		case "lychee_session_login_redirect":
+			redirectCookie = cookie
+		}
 	}
-	if cookie.Value != "binding-token" {
-		t.Fatalf("cookie value = %q, want binding-token", cookie.Value)
+	if bindingCookie == nil {
+		t.Fatal("missing binding cookie")
 	}
-	if cookie.Path != "/gateway/v1/auth/callback" {
-		t.Fatalf("cookie path = %q, want /gateway/v1/auth/callback", cookie.Path)
+	if bindingCookie.Value != "binding-token" {
+		t.Fatalf("cookie value = %q, want binding-token", bindingCookie.Value)
 	}
-	if !cookie.HttpOnly {
+	if bindingCookie.Path != "/gateway/v1/auth/callback" {
+		t.Fatalf("cookie path = %q, want /gateway/v1/auth/callback", bindingCookie.Path)
+	}
+	if !bindingCookie.HttpOnly {
 		t.Fatal("expected HttpOnly login binding cookie")
 	}
-	if !cookie.Secure {
+	if !bindingCookie.Secure {
 		t.Fatal("expected Secure login binding cookie")
 	}
-	if cookie.SameSite != http.SameSiteLaxMode {
-		t.Fatalf("cookie SameSite = %v, want Lax", cookie.SameSite)
+	if bindingCookie.SameSite != http.SameSiteLaxMode {
+		t.Fatalf("cookie SameSite = %v, want Lax", bindingCookie.SameSite)
+	}
+	if redirectCookie == nil {
+		t.Fatal("missing redirect cookie")
+	}
+	if redirectCookie.Value != "/admin" {
+		t.Fatalf("redirect cookie value = %q, want /admin", redirectCookie.Value)
+	}
+	if redirectCookie.Path != "/gateway/v1/auth/callback" {
+		t.Fatalf("redirect cookie path = %q, want /gateway/v1/auth/callback", redirectCookie.Path)
 	}
 }
 
 func TestGetCallbackRedirectsInvalidRequestBackToLogin(t *testing.T) {
 	svc := &fakeWebAuthService{
 		loginBindingCookiePath:  "/gateway/v1/auth/callback",
-		loginFailureRedirectURL: "https://app.example.com/console/login?auth_error=invalid_request",
+		loginFailureRedirectURL: "https://app.example.com/console/login?auth_error=invalid_request&redirect=%2Fadmin",
 	}
 
 	req := httptest.NewRequest(http.MethodGet, "/v1/auth/callback?code=code-1&state=state-1", nil)
+	req.AddCookie(&http.Cookie{Name: "lychee_session_login_redirect", Value: "/admin"})
 	rec := httptest.NewRecorder()
 
 	svc.completeErr = service.ErrInvalidRequest
@@ -170,35 +201,43 @@ func TestGetCallbackRedirectsInvalidRequestBackToLogin(t *testing.T) {
 	if rec.Code != http.StatusFound {
 		t.Fatalf("status = %d, want 302", rec.Code)
 	}
-	if location := rec.Header().Get("Location"); location != "https://app.example.com/console/login?auth_error=invalid_request" {
+	if location := rec.Header().Get("Location"); location != "https://app.example.com/console/login?auth_error=invalid_request&redirect=%2Fadmin" {
 		t.Fatalf("Location = %q", location)
 	}
 	if svc.lastCompleteBindingToken != "" {
 		t.Fatalf("binding token = %q, want empty", svc.lastCompleteBindingToken)
 	}
+	if svc.lastFailureRedirectPath != "/admin" {
+		t.Fatalf("failure redirect path = %q, want /admin", svc.lastFailureRedirectPath)
+	}
 
 	resp := rec.Result()
 	cookies := resp.Cookies()
-	if len(cookies) != 1 {
-		t.Fatalf("cookie count = %d, want 1", len(cookies))
+	if len(cookies) != 2 {
+		t.Fatalf("cookie count = %d, want 2", len(cookies))
 	}
-	if cookies[0].Value != "" {
-		t.Fatalf("cleared binding cookie value = %q, want empty", cookies[0].Value)
+	for _, cookie := range cookies {
+		if cookie.Path != "/gateway/v1/auth/callback" {
+			t.Fatalf("cleared cookie path = %q, want /gateway/v1/auth/callback", cookie.Path)
+		}
+		if cookie.Value != "" {
+			t.Fatalf("cleared cookie value = %q, want empty", cookie.Value)
+		}
 	}
-	if cookies[0].Path != "/gateway/v1/auth/callback" {
-		t.Fatalf("cleared binding cookie path = %q, want /gateway/v1/auth/callback", cookies[0].Path)
-	}
-	if got := rec.Header().Get("Set-Cookie"); got == "" || !containsAll(got, "lychee_session_login=", "Max-Age=0") {
-		t.Fatalf("Set-Cookie = %q, want cleared login binding cookie", got)
+	for _, header := range rec.Header().Values("Set-Cookie") {
+		if !containsAll(header, "Max-Age=0") {
+			t.Fatalf("Set-Cookie = %q, want cleared callback cookie", header)
+		}
 	}
 }
 
 func TestGetCallbackRedirectsProviderErrorsBackToLogin(t *testing.T) {
 	svc := &fakeWebAuthService{
-		loginFailureRedirectURL: "https://app.example.com/login?auth_error=access_denied",
+		loginFailureRedirectURL: "https://app.example.com/login?auth_error=access_denied&redirect=%2Fadmin",
 	}
 
 	req := httptest.NewRequest(http.MethodGet, "/v1/auth/callback?error=access_denied&state=state-1", nil)
+	req.AddCookie(&http.Cookie{Name: "lychee_session_login_redirect", Value: "/admin"})
 	rec := httptest.NewRecorder()
 
 	GetCallback(svc).ServeHTTP(rec, req)
@@ -206,11 +245,14 @@ func TestGetCallbackRedirectsProviderErrorsBackToLogin(t *testing.T) {
 	if rec.Code != http.StatusFound {
 		t.Fatalf("status = %d, want 302", rec.Code)
 	}
-	if location := rec.Header().Get("Location"); location != "https://app.example.com/login?auth_error=access_denied" {
+	if location := rec.Header().Get("Location"); location != "https://app.example.com/login?auth_error=access_denied&redirect=%2Fadmin" {
 		t.Fatalf("Location = %q", location)
 	}
 	if svc.lastCompleteCode != "" || svc.lastCompleteState != "" {
 		t.Fatalf("complete login should not be called, got code=%q state=%q", svc.lastCompleteCode, svc.lastCompleteState)
+	}
+	if svc.lastFailureRedirectPath != "/admin" {
+		t.Fatalf("failure redirect path = %q, want /admin", svc.lastFailureRedirectPath)
 	}
 }
 
@@ -242,18 +284,21 @@ func TestGetCallbackSetsSessionCookieUsingConfiguredSameSite(t *testing.T) {
 
 	resp := rec.Result()
 	cookies := resp.Cookies()
-	if len(cookies) != 2 {
-		t.Fatalf("cookie count = %d, want 2", len(cookies))
+	if len(cookies) != 3 {
+		t.Fatalf("cookie count = %d, want 3", len(cookies))
 	}
 
 	var sessionCookie *http.Cookie
 	var bindingCookie *http.Cookie
+	var redirectCookie *http.Cookie
 	for _, cookie := range cookies {
 		switch cookie.Name {
 		case "lychee_session":
 			sessionCookie = cookie
 		case "lychee_session_login":
 			bindingCookie = cookie
+		case "lychee_session_login_redirect":
+			redirectCookie = cookie
 		}
 	}
 	if sessionCookie == nil {
@@ -270,6 +315,9 @@ func TestGetCallbackSetsSessionCookieUsingConfiguredSameSite(t *testing.T) {
 	}
 	if bindingCookie == nil || bindingCookie.Value != "" {
 		t.Fatalf("binding cookie = %#v, want cleared cookie", bindingCookie)
+	}
+	if redirectCookie == nil || redirectCookie.Value != "" {
+		t.Fatalf("redirect cookie = %#v, want cleared cookie", redirectCookie)
 	}
 }
 

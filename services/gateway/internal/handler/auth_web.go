@@ -18,9 +18,10 @@ type webAuthService interface {
 	CookieSecure() bool
 	CookieSameSite() service.HTTPSameSite
 	LoginBindingCookieName() string
+	LoginRedirectCookieName() string
 	LoginBindingCookiePath() string
 	LoginBindingCookieSameSite() service.HTTPSameSite
-	LoginFailureRedirectURL(errorCode string) string
+	LoginFailureRedirectURL(errorCode string, redirectPath string) string
 }
 
 type logoutResponse struct {
@@ -29,14 +30,24 @@ type logoutResponse struct {
 
 func GetLogin(svc webAuthService) http.HandlerFunc {
 	return func(w http.ResponseWriter, r *http.Request) {
-		result, err := svc.BeginLogin(r.Context(), strings.TrimSpace(r.URL.Query().Get("redirect")))
+		redirectPath := strings.TrimSpace(r.URL.Query().Get("redirect"))
+		result, err := svc.BeginLogin(r.Context(), redirectPath)
 		if err != nil {
 			writeServiceError(w, r, err)
 			return
 		}
+		normalizedRedirectPath := normalizeLoginRedirectPath(redirectPath)
 		http.SetCookie(w, &http.Cookie{
 			Name:     svc.LoginBindingCookieName(),
 			Value:    result.BrowserBindingToken,
+			Path:     svc.LoginBindingCookiePath(),
+			HttpOnly: true,
+			SameSite: toHTTPSameSite(svc.LoginBindingCookieSameSite()),
+			Secure:   svc.CookieSecure(),
+		})
+		http.SetCookie(w, &http.Cookie{
+			Name:     svc.LoginRedirectCookieName(),
+			Value:    normalizedRedirectPath,
 			Path:     svc.LoginBindingCookiePath(),
 			HttpOnly: true,
 			SameSite: toHTTPSameSite(svc.LoginBindingCookieSameSite()),
@@ -54,6 +65,7 @@ func GetCallback(svc webAuthService) http.HandlerFunc {
 		if cookie, err := r.Cookie(svc.LoginBindingCookieName()); err == nil {
 			browserBindingToken = strings.TrimSpace(cookie.Value)
 		}
+		redirectPath := readLoginRedirectPath(r, svc)
 
 		http.SetCookie(w, &http.Cookie{
 			Name:     svc.LoginBindingCookieName(),
@@ -64,12 +76,21 @@ func GetCallback(svc webAuthService) http.HandlerFunc {
 			Secure:   svc.CookieSecure(),
 			MaxAge:   -1,
 		})
+		http.SetCookie(w, &http.Cookie{
+			Name:     svc.LoginRedirectCookieName(),
+			Value:    "",
+			Path:     svc.LoginBindingCookiePath(),
+			HttpOnly: true,
+			SameSite: toHTTPSameSite(svc.LoginBindingCookieSameSite()),
+			Secure:   svc.CookieSecure(),
+			MaxAge:   -1,
+		})
 		if callbackError := strings.TrimSpace(r.URL.Query().Get("error")); callbackError != "" {
-			redirectLoginFailure(w, r, svc, callbackError)
+			redirectLoginFailure(w, r, svc, callbackError, redirectPath)
 			return
 		}
 		if code == "" || state == "" {
-			redirectLoginFailure(w, r, svc, "invalid_request")
+			redirectLoginFailure(w, r, svc, "invalid_request", redirectPath)
 			return
 		}
 
@@ -77,9 +98,9 @@ func GetCallback(svc webAuthService) http.HandlerFunc {
 		if err != nil {
 			switch {
 			case errors.Is(err, service.ErrInvalidRequest), errors.Is(err, service.ErrNotFound):
-				redirectLoginFailure(w, r, svc, "invalid_request")
+				redirectLoginFailure(w, r, svc, "invalid_request", redirectPath)
 			default:
-				redirectLoginFailure(w, r, svc, "auth_unavailable")
+				redirectLoginFailure(w, r, svc, "auth_unavailable", redirectPath)
 			}
 			return
 		}
@@ -96,8 +117,23 @@ func GetCallback(svc webAuthService) http.HandlerFunc {
 	}
 }
 
-func redirectLoginFailure(w http.ResponseWriter, r *http.Request, svc webAuthService, errorCode string) {
-	http.Redirect(w, r, svc.LoginFailureRedirectURL(errorCode), http.StatusFound)
+func redirectLoginFailure(w http.ResponseWriter, r *http.Request, svc webAuthService, errorCode string, redirectPath string) {
+	http.Redirect(w, r, svc.LoginFailureRedirectURL(errorCode, redirectPath), http.StatusFound)
+}
+
+func readLoginRedirectPath(r *http.Request, svc webAuthService) string {
+	if cookie, err := r.Cookie(svc.LoginRedirectCookieName()); err == nil {
+		return normalizeLoginRedirectPath(cookie.Value)
+	}
+	return "/dashboard"
+}
+
+func normalizeLoginRedirectPath(raw string) string {
+	trimmed := strings.TrimSpace(raw)
+	if trimmed == "" || !strings.HasPrefix(trimmed, "/") || strings.HasPrefix(trimmed, "//") {
+		return "/dashboard"
+	}
+	return trimmed
 }
 
 func PostLogout(svc webAuthService, corsCfg config.CORSConfig) http.HandlerFunc {

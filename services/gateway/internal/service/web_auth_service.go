@@ -88,6 +88,10 @@ func (s *WebAuthService) LoginBindingCookieName() string {
 	return s.CookieName() + "_login"
 }
 
+func (s *WebAuthService) LoginRedirectCookieName() string {
+	return s.CookieName() + "_login_redirect"
+}
+
 func (s *WebAuthService) LoginBindingCookiePath() string {
 	return s.callbackPath()
 }
@@ -96,8 +100,8 @@ func (s *WebAuthService) LoginBindingCookieSameSite() HTTPSameSite {
 	return HTTPSameSiteLax
 }
 
-func (s *WebAuthService) LoginFailureRedirectURL(errorCode string) string {
-	return resolveAppRedirect(s.cfg.Web.AppBaseURL, loginErrorPath(errorCode))
+func (s *WebAuthService) LoginFailureRedirectURL(errorCode string, redirectPath string) string {
+	return resolveAppRedirect(s.cfg.Web.AppBaseURL, loginErrorPath(errorCode, redirectPath))
 }
 
 func (s *WebAuthService) BeginLogin(ctx context.Context, redirectPath string) (BeginWebLoginResult, error) {
@@ -357,10 +361,11 @@ func (s *WebAuthService) callbackPath() string {
 	return callbackURL.Path
 }
 
-func loginErrorPath(errorCode string) string {
+func loginErrorPath(errorCode string, redirectPath string) string {
 	target := &url.URL{Path: "/login"}
 	query := target.Query()
 	query.Set("auth_error", normalizeLoginErrorCode(errorCode))
+	query.Set("redirect", normalizeRedirectPath(redirectPath))
 	target.RawQuery = query.Encode()
 	return target.String()
 }
