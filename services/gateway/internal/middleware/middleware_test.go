@@ -85,6 +85,54 @@ func TestAuthAllowsProtectedPathForOperator(t *testing.T) {
 	}
 }
 
+func TestAuthAllowsActiveOrchardListForOperator(t *testing.T) {
+	cfg := config.AuthConfig{Mode: config.AuthModeOIDC}
+	mw := Auth(cfg, fakeValidator{}, fakeResolver{principal: domain.Principal{Role: domain.UserRoleOperator, Status: domain.UserStatusActive}}, slog.Default())
+	handler := mw(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		w.WriteHeader(http.StatusOK)
+	}))
+
+	req := httptest.NewRequest(http.MethodGet, "/v1/orchards", nil)
+	req.Header.Set("Authorization", "Bearer token")
+	rec := httptest.NewRecorder()
+	handler.ServeHTTP(rec, req)
+	if rec.Code != http.StatusOK {
+		t.Errorf("expected 200 for operator orchard list, got %d", rec.Code)
+	}
+}
+
+func TestAuthRejectsArchivedOrchardListForOperator(t *testing.T) {
+	cfg := config.AuthConfig{Mode: config.AuthModeOIDC}
+	mw := Auth(cfg, fakeValidator{}, fakeResolver{principal: domain.Principal{Role: domain.UserRoleOperator, Status: domain.UserStatusActive}}, slog.Default())
+	handler := mw(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		w.WriteHeader(http.StatusOK)
+	}))
+
+	req := httptest.NewRequest(http.MethodGet, "/v1/orchards?include_archived=true", nil)
+	req.Header.Set("Authorization", "Bearer token")
+	rec := httptest.NewRecorder()
+	handler.ServeHTTP(rec, req)
+	if rec.Code != http.StatusForbidden {
+		t.Errorf("expected 403 for archived orchard list, got %d", rec.Code)
+	}
+}
+
+func TestAuthRejectsArchivedPlotListForOperator(t *testing.T) {
+	cfg := config.AuthConfig{Mode: config.AuthModeOIDC}
+	mw := Auth(cfg, fakeValidator{}, fakeResolver{principal: domain.Principal{Role: domain.UserRoleOperator, Status: domain.UserStatusActive}}, slog.Default())
+	handler := mw(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		w.WriteHeader(http.StatusOK)
+	}))
+
+	req := httptest.NewRequest(http.MethodGet, "/v1/plots?include_archived=1", nil)
+	req.Header.Set("Authorization", "Bearer token")
+	rec := httptest.NewRecorder()
+	handler.ServeHTTP(rec, req)
+	if rec.Code != http.StatusForbidden {
+		t.Errorf("expected 403 for archived plot list, got %d", rec.Code)
+	}
+}
+
 func TestAuthRejectsAdminPathForOperator(t *testing.T) {
 	cfg := config.AuthConfig{Mode: config.AuthModeOIDC}
 	mw := Auth(cfg, fakeValidator{}, fakeResolver{principal: domain.Principal{Role: domain.UserRoleOperator, Status: domain.UserStatusActive}}, slog.Default())

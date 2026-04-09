@@ -6,6 +6,7 @@ import (
 	"errors"
 	"log/slog"
 	"net/http"
+	"strconv"
 	"strings"
 
 	"github.com/lychee-ripe/gateway/internal/config"
@@ -98,7 +99,7 @@ func Auth(
 				}
 				return
 			}
-			if !isAuthorized(r.URL.Path, r.Method, principal.Role) {
+			if !isAuthorized(r, principal.Role) {
 				writeAuthError(w, http.StatusForbidden, "forbidden", "insufficient role")
 				return
 			}
@@ -142,12 +143,17 @@ func isPublicPath(path string) bool {
 	return strings.HasPrefix(path, "/v1/trace/")
 }
 
-func isAuthorized(path, method string, role domain.UserRole) bool {
+func isAuthorized(r *http.Request, role domain.UserRole) bool {
+	path := r.URL.Path
+	method := r.Method
 	if role == domain.UserRoleAdmin {
 		return true
 	}
-	if method == http.MethodGet && (path == "/v1/orchards" || path == "/v1/plots" || path == "/v1/auth/me") {
+	if method == http.MethodGet && path == "/v1/auth/me" {
 		return true
+	}
+	if method == http.MethodGet && (path == "/v1/orchards" || path == "/v1/plots") {
+		return !queryBool(r, "include_archived")
 	}
 	switch {
 	case strings.HasPrefix(path, "/v1/infer/"),
@@ -159,6 +165,18 @@ func isAuthorized(path, method string, role domain.UserRole) bool {
 	default:
 		return false
 	}
+}
+
+func queryBool(r *http.Request, key string) bool {
+	if r == nil || r.URL == nil {
+		return false
+	}
+	value := strings.TrimSpace(r.URL.Query().Get(key))
+	if value == "" {
+		return false
+	}
+	parsed, err := strconv.ParseBool(value)
+	return err == nil && parsed
 }
 
 func isBatchItemPath(path string) bool {

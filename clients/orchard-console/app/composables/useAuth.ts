@@ -1,16 +1,19 @@
 import type { AuthMode, AuthSession, OIDCDiscoveryDocument, Principal } from '~/types/auth'
+import {
+  clearLegacyWebAuthStorage,
+  clearPendingLoginState,
+  clearStoredAuth,
+  getAuthStorage,
+  loadPendingLoginState,
+  loadStoredPrincipal,
+  loadStoredSession,
+  savePendingLoginState,
+  saveStoredPrincipal,
+  saveStoredSession,
+  type PendingLoginState
+} from '~/utils/auth-storage'
 import { resolveAuthenticatedRequest, resolveBootstrapPrincipal } from '~/utils/auth-session'
 import { toWebSocketBase } from '~/utils/ws-url'
-
-const AUTH_SESSION_KEY = 'lychee-ripe.auth.session'
-const AUTH_PRINCIPAL_KEY = 'lychee-ripe.auth.principal'
-const AUTH_PENDING_KEY = 'lychee-ripe.auth.pending'
-
-type PendingLoginState = {
-  state: string
-  codeVerifier: string
-  redirectPath: string
-}
 
 let initPromise: Promise<void> | null = null
 
@@ -42,6 +45,10 @@ export function useAuth() {
           session.value = null
           initialized.value = true
           return
+        }
+
+        if (!isTauriRuntime()) {
+          clearLegacyWebAuthStorage()
         }
 
         session.value = loadSession()
@@ -87,9 +94,11 @@ export function useAuth() {
   async function handleWebCallback(query: { code?: string | null, state?: string | null }) {
     const code = query.code?.trim()
     const state = query.state?.trim()
-    const pending = loadPendingState()
+    const pending = state ? loadPendingState(state) : null
     if (!code || !state || !pending || pending.state !== state) {
-      clearPendingState()
+      if (state) {
+        clearPendingState(state)
+      }
       throw new Error('invalid callback state')
     }
 
@@ -108,7 +117,7 @@ export function useAuth() {
     initialized.value = true
 
     const target = pending.redirectPath || '/dashboard'
-    clearPendingState()
+    clearPendingState(state)
     return target
   }
 
@@ -207,9 +216,9 @@ export function useAuth() {
   function clearSession() {
     session.value = null
     principal.value = null
-    if (import.meta.client) {
-      localStorage.removeItem(AUTH_SESSION_KEY)
-      localStorage.removeItem(AUTH_PRINCIPAL_KEY)
+    clearStoredAuth(getStorage())
+    if (!isTauriRuntime()) {
+      clearLegacyWebAuthStorage()
     }
   }
 
@@ -345,16 +354,12 @@ export function useAuth() {
 
   function setSession(nextSession: AuthSession) {
     session.value = nextSession
-    if (import.meta.client) {
-      localStorage.setItem(AUTH_SESSION_KEY, JSON.stringify(nextSession))
-    }
+    saveStoredSession(getStorage(), nextSession)
   }
 
   function setPrincipal(nextPrincipal: Principal) {
     principal.value = nextPrincipal
-    if (import.meta.client) {
-      localStorage.setItem(AUTH_PRINCIPAL_KEY, JSON.stringify(nextPrincipal))
-    }
+    saveStoredPrincipal(getStorage(), nextPrincipal)
   }
 
   function setAuthenticatedState(nextSession: AuthSession, nextPrincipal: Principal) {
@@ -379,65 +384,28 @@ function buildDisabledPrincipal(): Principal {
   }
 }
 
+function getStorage() {
+  return getAuthStorage(isTauriRuntime())
+}
+
 function loadSession(): AuthSession | null {
-  if (!import.meta.client) {
-    return null
-  }
-  const raw = localStorage.getItem(AUTH_SESSION_KEY)
-  if (!raw) {
-    return null
-  }
-  try {
-    return JSON.parse(raw) as AuthSession
-  } catch {
-    localStorage.removeItem(AUTH_SESSION_KEY)
-    return null
-  }
+  return loadStoredSession(getStorage())
 }
 
 function loadPrincipal(): Principal | null {
-  if (!import.meta.client) {
-    return null
-  }
-  const raw = localStorage.getItem(AUTH_PRINCIPAL_KEY)
-  if (!raw) {
-    return null
-  }
-  try {
-    return JSON.parse(raw) as Principal
-  } catch {
-    localStorage.removeItem(AUTH_PRINCIPAL_KEY)
-    return null
-  }
+  return loadStoredPrincipal(getStorage())
 }
 
 function savePendingState(state: PendingLoginState) {
-  if (!import.meta.client) {
-    return
-  }
-  localStorage.setItem(AUTH_PENDING_KEY, JSON.stringify(state))
+  savePendingLoginState(getStorage(), state)
 }
 
-function loadPendingState(): PendingLoginState | null {
-  if (!import.meta.client) {
-    return null
-  }
-  const raw = localStorage.getItem(AUTH_PENDING_KEY)
-  if (!raw) {
-    return null
-  }
-  try {
-    return JSON.parse(raw) as PendingLoginState
-  } catch {
-    localStorage.removeItem(AUTH_PENDING_KEY)
-    return null
-  }
+function loadPendingState(state: string) {
+  return loadPendingLoginState(getStorage(), state)
 }
 
-function clearPendingState() {
-  if (import.meta.client) {
-    localStorage.removeItem(AUTH_PENDING_KEY)
-  }
+function clearPendingState(state: string) {
+  clearPendingLoginState(getStorage(), state)
 }
 
 function isTauriRuntime() {

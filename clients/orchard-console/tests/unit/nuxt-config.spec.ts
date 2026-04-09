@@ -5,7 +5,7 @@ describe('nuxt config auth boundary', () => {
     vi.unstubAllGlobals()
   })
 
-  it('locks the app to SPA mode for localStorage-based auth', async () => {
+  it('locks the app to SPA mode for browser-session-based auth', async () => {
     vi.stubGlobal('defineNuxtConfig', (config: unknown) => config)
     const { default: nuxtConfig } = await import('../../nuxt.config')
 
