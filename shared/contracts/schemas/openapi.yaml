@@ -407,6 +407,13 @@ paths:
       tags: [admin]
       security:
         - OpenIdConnect: []
+      parameters:
+        - name: include_archived
+          in: query
+          required: false
+          schema:
+            type: boolean
+          description: Include archived orchards in the response.
       responses:
         "200":
           description: Orchard list
