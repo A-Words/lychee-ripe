@@ -6,6 +6,7 @@ import (
 	"net/http"
 	"strings"
 
+	"github.com/lychee-ripe/gateway/internal/config"
 	"github.com/lychee-ripe/gateway/internal/service"
 )
 
@@ -88,11 +89,17 @@ func GetCallback(svc webAuthService) http.HandlerFunc {
 	}
 }
 
-func PostLogout(svc webAuthService) http.HandlerFunc {
+func PostLogout(svc webAuthService, corsCfg config.CORSConfig) http.HandlerFunc {
 	return func(w http.ResponseWriter, r *http.Request) {
 		sessionID := ""
 		if cookie, err := r.Cookie(svc.CookieName()); err == nil {
 			sessionID = strings.TrimSpace(cookie.Value)
+		}
+		if sessionID != "" {
+			if err := enforceLogoutOrigin(r, corsCfg); err != nil {
+				writeError(w, r, http.StatusForbidden, "forbidden", err.Error(), nil)
+				return
+			}
 		}
 
 		result, err := svc.Logout(r.Context(), sessionID)
@@ -112,6 +119,17 @@ func PostLogout(svc webAuthService) http.HandlerFunc {
 		})
 		writeJSON(w, http.StatusOK, logoutResponse{RedirectURL: result.RedirectURL})
 	}
+}
+
+func enforceLogoutOrigin(r *http.Request, corsCfg config.CORSConfig) error {
+	origin := strings.TrimSpace(r.Header.Get("Origin"))
+	if origin == "" {
+		return errors.New("origin header required for cookie-authenticated unsafe requests")
+	}
+	if !corsCfg.AllowsOrigin(origin) {
+		return errors.New("origin is not allowed for cookie-authenticated request")
+	}
+	return nil
 }
 
 func toHTTPSameSite(value service.HTTPSameSite) http.SameSite {

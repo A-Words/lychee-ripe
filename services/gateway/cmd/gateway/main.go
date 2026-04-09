@@ -140,7 +140,7 @@ func main() {
 	mux.HandleFunc("GET /healthz", handler.Health(cfg.Upstream, logger))
 	mux.HandleFunc("GET /v1/auth/login", handler.GetLogin(webAuthSvc))
 	mux.HandleFunc("GET /v1/auth/callback", handler.GetCallback(webAuthSvc))
-	mux.HandleFunc("POST /v1/auth/logout", handler.PostLogout(webAuthSvc))
+	mux.HandleFunc("POST /v1/auth/logout", handler.PostLogout(webAuthSvc, cfg.CORS))
 	mux.HandleFunc("GET /v1/auth/me", handler.GetCurrentPrincipal())
 	mux.HandleFunc("POST /v1/batches", handler.CreateBatch(batchSvc, logger))
 	mux.HandleFunc("GET /v1/batches/{batch_id}", handler.GetBatch(batchSvc, logger))

@@ -8,6 +8,7 @@ import (
 	"strings"
 	"testing"
 
+	"github.com/lychee-ripe/gateway/internal/config"
 	"github.com/lychee-ripe/gateway/internal/service"
 )
 
@@ -225,6 +226,49 @@ func TestGetCallbackSetsSessionCookieUsingConfiguredSameSite(t *testing.T) {
 	}
 	if bindingCookie == nil || bindingCookie.Value != "" {
 		t.Fatalf("binding cookie = %#v, want cleared cookie", bindingCookie)
+	}
+}
+
+func TestPostLogoutRejectsDisallowedOriginWhenSessionCookiePresent(t *testing.T) {
+	svc := &fakeWebAuthService{}
+
+	req := httptest.NewRequest(http.MethodPost, "/v1/auth/logout", nil)
+	req.Header.Set("Origin", "https://evil.example.com")
+	req.AddCookie(&http.Cookie{Name: "lychee_session", Value: "session-1"})
+	rec := httptest.NewRecorder()
+
+	PostLogout(svc, config.CORSConfig{AllowedOrigins: []string{"https://app.example.com"}}).ServeHTTP(rec, req)
+
+	if rec.Code != http.StatusForbidden {
+		t.Fatalf("status = %d, want 403", rec.Code)
+	}
+	if svc.lastLogoutSessionID != "" {
+		t.Fatalf("logout session id = %q, want empty", svc.lastLogoutSessionID)
+	}
+}
+
+func TestPostLogoutAllowsTrustedOriginAndClearsCookie(t *testing.T) {
+	svc := &fakeWebAuthService{
+		logoutResult:   service.LogoutResult{RedirectURL: "https://issuer.example.com/logout"},
+		cookieSameSite: service.HTTPSameSiteNone,
+		cookieSecure:   true,
+	}
+
+	req := httptest.NewRequest(http.MethodPost, "/v1/auth/logout", nil)
+	req.Header.Set("Origin", "https://app.example.com")
+	req.AddCookie(&http.Cookie{Name: "lychee_session", Value: "session-1"})
+	rec := httptest.NewRecorder()
+
+	PostLogout(svc, config.CORSConfig{AllowedOrigins: []string{"https://app.example.com"}}).ServeHTTP(rec, req)
+
+	if rec.Code != http.StatusOK {
+		t.Fatalf("status = %d, want 200", rec.Code)
+	}
+	if svc.lastLogoutSessionID != "session-1" {
+		t.Fatalf("logout session id = %q, want session-1", svc.lastLogoutSessionID)
+	}
+	if got := rec.Header().Get("Set-Cookie"); got == "" || !containsAll(got, "lychee_session=", "Max-Age=0") {
+		t.Fatalf("Set-Cookie = %q, want cleared session cookie", got)
 	}
 }
 
