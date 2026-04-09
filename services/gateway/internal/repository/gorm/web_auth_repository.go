@@ -21,12 +21,13 @@ func (r *Repository) CreateWebAuthState(ctx context.Context, state domain.WebAut
 	return webAuthStateModelToDomain(model), nil
 }
 
-func (r *Repository) ConsumeWebAuthState(ctx context.Context, state string, now time.Time) (domain.WebAuthStateRecord, error) {
+func (r *Repository) ConsumeWebAuthState(ctx context.Context, state string, browserBindingHash string, now time.Time) (domain.WebAuthStateRecord, error) {
 	var record domain.WebAuthStateRecord
+	expired := false
 	resolveOnce := func() error {
 		return r.db.WithContext(ctx).Transaction(func(tx *gorm.DB) error {
 			var model WebAuthStateModel
-			query := tx.Where("state = ?", state)
+			query := tx.Where("state = ? AND browser_binding_hash = ?", state, browserBindingHash)
 			if tx.Dialector.Name() == "postgres" {
 				query = query.Clauses(clause.Locking{Strength: "UPDATE"})
 			}
@@ -37,7 +38,8 @@ func (r *Repository) ConsumeWebAuthState(ctx context.Context, state string, now 
 				if err := tx.Delete(&model).Error; err != nil {
 					return mapGormErr(err)
 				}
-				return repository.ErrNotFound
+				expired = true
+				return nil
 			}
 			if err := tx.Delete(&model).Error; err != nil {
 				return mapGormErr(err)
@@ -56,6 +58,9 @@ func (r *Repository) ConsumeWebAuthState(ctx context.Context, state string, now 
 	}
 	if err != nil {
 		return domain.WebAuthStateRecord{}, err
+	}
+	if expired {
+		return domain.WebAuthStateRecord{}, repository.ErrNotFound
 	}
 	return record, nil
 }
@@ -114,22 +119,24 @@ func webSessionModelToDomain(session WebSessionModel) domain.WebSessionRecord {
 
 func webAuthStateModelFromDomain(state domain.WebAuthStateRecord) WebAuthStateModel {
 	return WebAuthStateModel{
-		State:        state.State,
-		CodeVerifier: state.CodeVerifier,
-		RedirectPath: state.RedirectPath,
-		ExpiresAt:    normalizeTime(state.ExpiresAt),
-		CreatedAt:    normalizeTime(state.CreatedAt),
-		UpdatedAt:    normalizeTime(state.UpdatedAt),
+		State:              state.State,
+		BrowserBindingHash: state.BrowserBindingHash,
+		CodeVerifier:       state.CodeVerifier,
+		RedirectPath:       state.RedirectPath,
+		ExpiresAt:          normalizeTime(state.ExpiresAt),
+		CreatedAt:          normalizeTime(state.CreatedAt),
+		UpdatedAt:          normalizeTime(state.UpdatedAt),
 	}
 }
 
 func webAuthStateModelToDomain(state WebAuthStateModel) domain.WebAuthStateRecord {
 	return domain.WebAuthStateRecord{
-		State:        state.State,
-		CodeVerifier: state.CodeVerifier,
-		RedirectPath: state.RedirectPath,
-		ExpiresAt:    state.ExpiresAt.UTC(),
-		CreatedAt:    state.CreatedAt.UTC(),
-		UpdatedAt:    state.UpdatedAt.UTC(),
+		State:              state.State,
+		BrowserBindingHash: state.BrowserBindingHash,
+		CodeVerifier:       state.CodeVerifier,
+		RedirectPath:       state.RedirectPath,
+		ExpiresAt:          state.ExpiresAt.UTC(),
+		CreatedAt:          state.CreatedAt.UTC(),
+		UpdatedAt:          state.UpdatedAt.UTC(),
 	}
 }

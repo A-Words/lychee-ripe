@@ -47,6 +47,7 @@ auth:
     app_base_url: "http://127.0.0.1:3000" # orchard-console external url used for post-login redirect
     cookie_name: "lychee_session"
     cookie_secure: false # set true behind https
+    cookie_same_site: "lax" # use "none" with cookie_secure=true for cross-site web deployments
 
 rate_limit:
   enabled: true

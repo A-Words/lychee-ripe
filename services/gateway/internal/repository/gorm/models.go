@@ -138,13 +138,14 @@ type WebSessionModel struct {
 func (WebSessionModel) TableName() string { return "web_sessions" }
 
 type WebAuthStateModel struct {
-	ID           uint      `gorm:"primaryKey;autoIncrement"`
-	State        string    `gorm:"column:state;type:text;not null;uniqueIndex"`
-	CodeVerifier string    `gorm:"column:code_verifier;type:text;not null"`
-	RedirectPath string    `gorm:"column:redirect_path;type:text;not null"`
-	ExpiresAt    time.Time `gorm:"column:expires_at;not null;index"`
-	CreatedAt    time.Time `gorm:"column:created_at;not null"`
-	UpdatedAt    time.Time `gorm:"column:updated_at;not null"`
+	ID                 uint      `gorm:"primaryKey;autoIncrement"`
+	State              string    `gorm:"column:state;type:text;not null;uniqueIndex:uq_web_auth_state,priority:1"`
+	BrowserBindingHash string    `gorm:"column:browser_binding_hash;type:text;not null;uniqueIndex:uq_web_auth_state,priority:2"`
+	CodeVerifier       string    `gorm:"column:code_verifier;type:text;not null"`
+	RedirectPath       string    `gorm:"column:redirect_path;type:text;not null"`
+	ExpiresAt          time.Time `gorm:"column:expires_at;not null;index"`
+	CreatedAt          time.Time `gorm:"column:created_at;not null"`
+	UpdatedAt          time.Time `gorm:"column:updated_at;not null"`
 }
 
 func (WebAuthStateModel) TableName() string { return "web_auth_states" }

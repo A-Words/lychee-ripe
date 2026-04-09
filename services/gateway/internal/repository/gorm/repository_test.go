@@ -757,6 +757,78 @@ func TestResolvePrincipalConcurrentFirstBindPreservesSingleSubjectSQLite(t *test
 	}
 }
 
+func TestConsumeWebAuthStateRequiresMatchingBrowserBindingHash(t *testing.T) {
+	t.Parallel()
+
+	ctx := context.Background()
+	repo, sqlDB := mustNewSQLiteRepo(t)
+	defer sqlDB.Close()
+
+	now := time.Now().UTC()
+	_, err := repo.CreateWebAuthState(ctx, domain.WebAuthStateRecord{
+		State:              "state-1",
+		BrowserBindingHash: "binding-1",
+		CodeVerifier:       "verifier-1",
+		RedirectPath:       "/dashboard",
+		ExpiresAt:          now.Add(10 * time.Minute),
+		CreatedAt:          now,
+		UpdatedAt:          now,
+	})
+	if err != nil {
+		t.Fatalf("CreateWebAuthState returned error: %v", err)
+	}
+
+	if _, err := repo.ConsumeWebAuthState(ctx, "state-1", "binding-2", now.Add(time.Minute)); !errors.Is(err, repository.ErrNotFound) {
+		t.Fatalf("ConsumeWebAuthState with wrong binding error = %v, want ErrNotFound", err)
+	}
+
+	record, err := repo.ConsumeWebAuthState(ctx, "state-1", "binding-1", now.Add(time.Minute))
+	if err != nil {
+		t.Fatalf("ConsumeWebAuthState returned error: %v", err)
+	}
+	if record.State != "state-1" {
+		t.Fatalf("record.State = %q, want state-1", record.State)
+	}
+
+	if _, err := repo.ConsumeWebAuthState(ctx, "state-1", "binding-1", now.Add(2*time.Minute)); !errors.Is(err, repository.ErrNotFound) {
+		t.Fatalf("ConsumeWebAuthState second consume error = %v, want ErrNotFound", err)
+	}
+}
+
+func TestConsumeWebAuthStateDeletesExpiredState(t *testing.T) {
+	t.Parallel()
+
+	ctx := context.Background()
+	repo, sqlDB := mustNewSQLiteRepo(t)
+	defer sqlDB.Close()
+
+	now := time.Now().UTC()
+	_, err := repo.CreateWebAuthState(ctx, domain.WebAuthStateRecord{
+		State:              "state-expired",
+		BrowserBindingHash: "binding-expired",
+		CodeVerifier:       "verifier-expired",
+		RedirectPath:       "/dashboard",
+		ExpiresAt:          now.Add(-time.Minute),
+		CreatedAt:          now.Add(-2 * time.Minute),
+		UpdatedAt:          now.Add(-2 * time.Minute),
+	})
+	if err != nil {
+		t.Fatalf("CreateWebAuthState returned error: %v", err)
+	}
+
+	if _, err := repo.ConsumeWebAuthState(ctx, "state-expired", "binding-expired", now); !errors.Is(err, repository.ErrNotFound) {
+		t.Fatalf("ConsumeWebAuthState expired error = %v, want ErrNotFound", err)
+	}
+
+	var count int64
+	if err := repo.db.WithContext(ctx).Model(&WebAuthStateModel{}).Where("state = ?", "state-expired").Count(&count).Error; err != nil {
+		t.Fatalf("count state rows: %v", err)
+	}
+	if count != 0 {
+		t.Fatalf("expired state row count = %d, want 0", count)
+	}
+}
+
 func TestUpdateUserRejectsDemotingLastActiveAdmin(t *testing.T) {
 	t.Parallel()
 
@@ -1348,6 +1420,8 @@ func mustNewRepoWithConfig(t *testing.T, cfg config.DBConfig) (*Repository, *sql
 		&UserModel{},
 		&OrchardModel{},
 		&PlotModel{},
+		&WebSessionModel{},
+		&WebAuthStateModel{},
 	); err != nil {
 		t.Fatalf("auto migrate: %v", err)
 	}

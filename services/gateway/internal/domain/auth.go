@@ -68,10 +68,11 @@ type WebSessionRecord struct {
 }
 
 type WebAuthStateRecord struct {
-	State        string
-	CodeVerifier string
-	RedirectPath string
-	ExpiresAt    time.Time
-	CreatedAt    time.Time
-	UpdatedAt    time.Time
+	State              string
+	BrowserBindingHash string
+	CodeVerifier       string
+	RedirectPath       string
+	ExpiresAt          time.Time
+	CreatedAt          time.Time
+	UpdatedAt          time.Time
 }

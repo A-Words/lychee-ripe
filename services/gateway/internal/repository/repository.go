@@ -55,7 +55,7 @@ type UserRepository interface {
 
 type WebSessionRepository interface {
 	CreateWebAuthState(ctx context.Context, state domain.WebAuthStateRecord) (domain.WebAuthStateRecord, error)
-	ConsumeWebAuthState(ctx context.Context, state string, now time.Time) (domain.WebAuthStateRecord, error)
+	ConsumeWebAuthState(ctx context.Context, state string, browserBindingHash string, now time.Time) (domain.WebAuthStateRecord, error)
 	CreateWebSession(ctx context.Context, session domain.WebSessionRecord) (domain.WebSessionRecord, error)
 	GetWebSession(ctx context.Context, sessionIDHash string, now time.Time) (domain.WebSessionRecord, error)
 	DeleteWebSession(ctx context.Context, sessionIDHash string) error

@@ -47,6 +47,7 @@ auth:
     app_base_url: "http://127.0.0.1:3000"
     cookie_name: "lychee_session"
     cookie_secure: false
+    cookie_same_site: "lax"
 
 rate_limit:
   enabled: true

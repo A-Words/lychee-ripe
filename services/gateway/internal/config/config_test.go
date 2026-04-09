@@ -59,6 +59,9 @@ func TestDefaults(t *testing.T) {
 	if cfg.Auth.Web.CookieName != "lychee_session" {
 		t.Errorf("unexpected default auth.web.cookie_name: %q", cfg.Auth.Web.CookieName)
 	}
+	if cfg.Auth.Web.CookieSameSite != "lax" {
+		t.Errorf("unexpected default auth.web.cookie_same_site: %q", cfg.Auth.Web.CookieSameSite)
+	}
 	if cfg.CORS.AllowCredentials {
 		t.Error("cors.allow_credentials should default to false")
 	}
@@ -100,6 +103,7 @@ auth:
     app_base_url: "http://127.0.0.1:3000"
     cookie_name: "lychee_session"
     cookie_secure: false
+    cookie_same_site: "lax"
 rate_limit:
   enabled: false
 trace:
@@ -167,6 +171,9 @@ trace:
 	}
 	if cfg.Auth.Web.AppBaseURL != "http://127.0.0.1:3000" {
 		t.Errorf("auth.web.app_base_url = %q", cfg.Auth.Web.AppBaseURL)
+	}
+	if cfg.Auth.Web.CookieSameSite != "lax" {
+		t.Errorf("auth.web.cookie_same_site = %q, want lax", cfg.Auth.Web.CookieSameSite)
 	}
 	if cfg.RateLimit.Enabled {
 		t.Error("rate_limit should be disabled")
@@ -324,6 +331,7 @@ auth:
 	t.Setenv("LYCHEE_AUTH_WEB_APP_BASE_URL", "https://app.example.com")
 	t.Setenv("LYCHEE_AUTH_WEB_COOKIE_NAME", "session_cookie")
 	t.Setenv("LYCHEE_AUTH_WEB_COOKIE_SECURE", "true")
+	t.Setenv("LYCHEE_AUTH_WEB_COOKIE_SAME_SITE", "none")
 
 	cfg, err := Load(cfgPath)
 	if err != nil {
@@ -356,6 +364,9 @@ auth:
 	}
 	if !cfg.Auth.Web.CookieSecure {
 		t.Fatal("auth.web.cookie_secure = false, want true")
+	}
+	if cfg.Auth.Web.CookieSameSite != "none" {
+		t.Fatalf("auth.web.cookie_same_site = %q, want none", cfg.Auth.Web.CookieSameSite)
 	}
 }
 
@@ -722,5 +733,54 @@ func TestAddr(t *testing.T) {
 	addr := cfg.Addr()
 	if addr != "0.0.0.0:9000" {
 		t.Errorf("addr = %q, want 0.0.0.0:9000", addr)
+	}
+}
+
+func TestValidateRejectsCrossSiteWebCookieWithLax(t *testing.T) {
+	cfg := Defaults()
+	cfg.Auth.Mode = AuthModeOIDC
+	cfg.Auth.OIDC.IssuerURL = "https://issuer.example.com"
+	cfg.Auth.OIDC.Audience = "lychee-ripe"
+	cfg.Auth.OIDC.WebClientID = "orchard-console-web"
+	cfg.Auth.Web.PublicBaseURL = "https://gateway.example.com"
+	cfg.Auth.Web.AppBaseURL = "https://console.other-example.com"
+	cfg.Auth.Web.CookieSameSite = "lax"
+
+	err := cfg.Validate()
+	if err == nil {
+		t.Fatal("expected validation error for cross-site lax web cookie")
+	}
+}
+
+func TestValidateRejectsSameSiteNoneWithoutSecure(t *testing.T) {
+	cfg := Defaults()
+	cfg.Auth.Mode = AuthModeOIDC
+	cfg.Auth.OIDC.IssuerURL = "https://issuer.example.com"
+	cfg.Auth.OIDC.Audience = "lychee-ripe"
+	cfg.Auth.OIDC.WebClientID = "orchard-console-web"
+	cfg.Auth.Web.PublicBaseURL = "https://gateway.example.com"
+	cfg.Auth.Web.AppBaseURL = "https://console.other-example.com"
+	cfg.Auth.Web.CookieSameSite = "none"
+	cfg.Auth.Web.CookieSecure = false
+
+	err := cfg.Validate()
+	if err == nil {
+		t.Fatal("expected validation error when cookie_same_site=none without secure cookie")
+	}
+}
+
+func TestValidateAllowsCrossSiteWebCookieWithNoneAndSecure(t *testing.T) {
+	cfg := Defaults()
+	cfg.Auth.Mode = AuthModeOIDC
+	cfg.Auth.OIDC.IssuerURL = "https://issuer.example.com"
+	cfg.Auth.OIDC.Audience = "lychee-ripe"
+	cfg.Auth.OIDC.WebClientID = "orchard-console-web"
+	cfg.Auth.Web.PublicBaseURL = "https://gateway.example.com"
+	cfg.Auth.Web.AppBaseURL = "https://console.other-example.com"
+	cfg.Auth.Web.CookieSameSite = "none"
+	cfg.Auth.Web.CookieSecure = true
+
+	if err := cfg.Validate(); err != nil {
+		t.Fatalf("Validate returned error: %v", err)
 	}
 }

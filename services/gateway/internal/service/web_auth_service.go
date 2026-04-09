@@ -24,7 +24,7 @@ const (
 
 type WebAuthRepository interface {
 	CreateWebAuthState(ctx context.Context, state domain.WebAuthStateRecord) (domain.WebAuthStateRecord, error)
-	ConsumeWebAuthState(ctx context.Context, state string, now time.Time) (domain.WebAuthStateRecord, error)
+	ConsumeWebAuthState(ctx context.Context, state string, browserBindingHash string, now time.Time) (domain.WebAuthStateRecord, error)
 	CreateWebSession(ctx context.Context, session domain.WebSessionRecord) (domain.WebSessionRecord, error)
 	GetWebSession(ctx context.Context, sessionIDHash string, now time.Time) (domain.WebSessionRecord, error)
 	DeleteWebSession(ctx context.Context, sessionIDHash string) error
@@ -40,6 +40,11 @@ type WebAuthService struct {
 	nowFn     func() time.Time
 	randomFn  func(int) (string, error)
 	stateTTL  time.Duration
+}
+
+type BeginWebLoginResult struct {
+	AuthorizationURL    string
+	BrowserBindingToken string
 }
 
 type CompleteWebLoginResult struct {
@@ -75,43 +80,60 @@ func (s *WebAuthService) CookieSecure() bool {
 	return s.cfg.Web.CookieSecure
 }
 
-func (s *WebAuthService) BeginLogin(ctx context.Context, redirectPath string) (string, error) {
+func (s *WebAuthService) CookieSameSite() HTTPSameSite {
+	return parseCookieSameSite(s.cfg.Web.CookieSameSite)
+}
+
+func (s *WebAuthService) LoginBindingCookieName() string {
+	return s.CookieName() + "_login"
+}
+
+func (s *WebAuthService) LoginBindingCookieSameSite() HTTPSameSite {
+	return HTTPSameSiteLax
+}
+
+func (s *WebAuthService) BeginLogin(ctx context.Context, redirectPath string) (BeginWebLoginResult, error) {
 	if s.repo == nil || s.validator == nil || s.auth == nil {
-		return "", ErrServiceUnavailable
+		return BeginWebLoginResult{}, ErrServiceUnavailable
 	}
 
 	state, err := s.randomFn(32)
 	if err != nil {
-		return "", ErrServiceUnavailable
+		return BeginWebLoginResult{}, ErrServiceUnavailable
+	}
+	browserBindingToken, err := s.randomFn(32)
+	if err != nil {
+		return BeginWebLoginResult{}, ErrServiceUnavailable
 	}
 	codeVerifier, err := s.randomFn(48)
 	if err != nil {
-		return "", ErrServiceUnavailable
+		return BeginWebLoginResult{}, ErrServiceUnavailable
 	}
 	codeChallenge, err := oidcCodeChallenge(codeVerifier)
 	if err != nil {
-		return "", ErrServiceUnavailable
+		return BeginWebLoginResult{}, ErrServiceUnavailable
 	}
 
 	now := s.nowFn()
 	if _, err := s.repo.CreateWebAuthState(ctx, domain.WebAuthStateRecord{
-		State:        state,
-		CodeVerifier: codeVerifier,
-		RedirectPath: normalizeRedirectPath(redirectPath),
-		ExpiresAt:    now.Add(s.stateTTL),
-		CreatedAt:    now,
-		UpdatedAt:    now,
+		State:              state,
+		BrowserBindingHash: hashOpaqueToken(browserBindingToken),
+		CodeVerifier:       codeVerifier,
+		RedirectPath:       normalizeRedirectPath(redirectPath),
+		ExpiresAt:          now.Add(s.stateTTL),
+		CreatedAt:          now,
+		UpdatedAt:          now,
 	}); err != nil {
-		return "", ErrServiceUnavailable
+		return BeginWebLoginResult{}, ErrServiceUnavailable
 	}
 
 	discovery, err := s.validator.Discover(ctx)
 	if err != nil {
-		return "", ErrServiceUnavailable
+		return BeginWebLoginResult{}, ErrServiceUnavailable
 	}
 	authURL, err := url.Parse(discovery.AuthorizationEndpoint)
 	if err != nil || authURL.Scheme == "" || authURL.Host == "" {
-		return "", ErrServiceUnavailable
+		return BeginWebLoginResult{}, ErrServiceUnavailable
 	}
 	query := authURL.Query()
 	query.Set("client_id", strings.TrimSpace(s.cfg.OIDC.WebClientID))
@@ -122,15 +144,21 @@ func (s *WebAuthService) BeginLogin(ctx context.Context, redirectPath string) (s
 	query.Set("code_challenge", codeChallenge)
 	query.Set("code_challenge_method", "S256")
 	authURL.RawQuery = query.Encode()
-	return authURL.String(), nil
+	return BeginWebLoginResult{
+		AuthorizationURL:    authURL.String(),
+		BrowserBindingToken: browserBindingToken,
+	}, nil
 }
 
-func (s *WebAuthService) CompleteLogin(ctx context.Context, code string, state string) (CompleteWebLoginResult, error) {
+func (s *WebAuthService) CompleteLogin(ctx context.Context, code string, state string, browserBindingToken string) (CompleteWebLoginResult, error) {
 	if s.repo == nil || s.validator == nil || s.auth == nil {
 		return CompleteWebLoginResult{}, ErrServiceUnavailable
 	}
+	if strings.TrimSpace(browserBindingToken) == "" {
+		return CompleteWebLoginResult{}, ErrInvalidRequest
+	}
 	now := s.nowFn()
-	authState, err := s.repo.ConsumeWebAuthState(ctx, strings.TrimSpace(state), now)
+	authState, err := s.repo.ConsumeWebAuthState(ctx, strings.TrimSpace(state), hashOpaqueToken(browserBindingToken), now)
 	if err != nil {
 		if errors.Is(err, repository.ErrNotFound) {
 			return CompleteWebLoginResult{}, ErrInvalidRequest
@@ -321,4 +349,20 @@ func randomToken(length int) (string, error) {
 func oidcCodeChallenge(codeVerifier string) (string, error) {
 	sum := sha256.Sum256([]byte(codeVerifier))
 	return base64.RawURLEncoding.EncodeToString(sum[:]), nil
+}
+
+type HTTPSameSite string
+
+const (
+	HTTPSameSiteLax  HTTPSameSite = "lax"
+	HTTPSameSiteNone HTTPSameSite = "none"
+)
+
+func parseCookieSameSite(value string) HTTPSameSite {
+	switch strings.ToLower(strings.TrimSpace(value)) {
+	case "none":
+		return HTTPSameSiteNone
+	default:
+		return HTTPSameSiteLax
+	}
 }

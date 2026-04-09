@@ -3,6 +3,7 @@ package config
 import (
 	"bytes"
 	"fmt"
+	"net"
 	"net/url"
 	"os"
 	"path/filepath"
@@ -11,6 +12,7 @@ import (
 	"strings"
 
 	"github.com/lychee-ripe/gateway/internal/domain"
+	"golang.org/x/net/publicsuffix"
 	"gopkg.in/yaml.v3"
 )
 
@@ -104,10 +106,11 @@ type OIDCConfig struct {
 }
 
 type WebAuthConfig struct {
-	PublicBaseURL string `yaml:"public_base_url"`
-	AppBaseURL    string `yaml:"app_base_url"`
-	CookieName    string `yaml:"cookie_name"`
-	CookieSecure  bool   `yaml:"cookie_secure"`
+	PublicBaseURL  string `yaml:"public_base_url"`
+	AppBaseURL     string `yaml:"app_base_url"`
+	CookieName     string `yaml:"cookie_name"`
+	CookieSecure   bool   `yaml:"cookie_secure"`
+	CookieSameSite string `yaml:"cookie_same_site"`
 }
 
 // RateLimitConfig defines token-bucket rate limiting settings.
@@ -253,8 +256,9 @@ func Defaults() Config {
 		Auth: AuthConfig{
 			Mode: AuthModeDisabled,
 			Web: WebAuthConfig{
-				CookieName:   "lychee_session",
-				CookieSecure: false,
+				CookieName:     "lychee_session",
+				CookieSecure:   false,
+				CookieSameSite: "lax",
 			},
 		},
 		RateLimit: RateLimitConfig{
@@ -433,6 +437,21 @@ func (c *Config) Validate() error {
 	if strings.TrimSpace(c.Auth.Web.CookieName) == "" {
 		c.Auth.Web.CookieName = "lychee_session"
 	}
+	if strings.TrimSpace(c.Auth.Web.CookieSameSite) == "" {
+		c.Auth.Web.CookieSameSite = "lax"
+	}
+	c.Auth.Web.CookieSameSite = strings.ToLower(strings.TrimSpace(c.Auth.Web.CookieSameSite))
+	switch c.Auth.Web.CookieSameSite {
+	case "lax", "none":
+	default:
+		return fmt.Errorf("auth.web.cookie_same_site must be one of lax|none, got %q", c.Auth.Web.CookieSameSite)
+	}
+	if c.Auth.Web.CookieSameSite == "none" && !c.Auth.Web.CookieSecure {
+		return fmt.Errorf("auth.web.cookie_secure must be true when auth.web.cookie_same_site=none")
+	}
+	if c.Auth.Mode == AuthModeOIDC && c.Auth.Web.CookieSameSite != "none" && !isSameSitePair(c.Auth.Web.PublicBaseURL, c.Auth.Web.AppBaseURL) {
+		return fmt.Errorf("auth.web.public_base_url and auth.web.app_base_url must be same-site unless auth.web.cookie_same_site=none")
+	}
 
 	if c.CORS.AllowCredentials {
 		for _, origin := range c.CORS.AllowedOrigins {
@@ -476,6 +495,9 @@ func applyEnvOverrides(cfg *Config) {
 	if value := strings.TrimSpace(os.Getenv("LYCHEE_AUTH_WEB_COOKIE_SECURE")); value != "" {
 		cfg.Auth.Web.CookieSecure = strings.EqualFold(value, "true") || value == "1"
 	}
+	if value := strings.TrimSpace(os.Getenv("LYCHEE_AUTH_WEB_COOKIE_SAME_SITE")); value != "" {
+		cfg.Auth.Web.CookieSameSite = value
+	}
 	if value := strings.TrimSpace(os.Getenv("LYCHEE_SEED_DEFAULT_RESOURCES_ENABLED")); value != "" {
 		cfg.Seed.DefaultResourcesEnabled = strings.EqualFold(value, "true") || value == "1"
 	}
@@ -487,4 +509,35 @@ func applyEnvOverrides(cfg *Config) {
 func isAbsoluteURL(raw string) bool {
 	parsed, err := url.Parse(strings.TrimSpace(raw))
 	return err == nil && parsed != nil && parsed.Scheme != "" && parsed.Host != ""
+}
+
+func isSameSitePair(leftRaw string, rightRaw string) bool {
+	left, err := url.Parse(strings.TrimSpace(leftRaw))
+	if err != nil || left == nil {
+		return false
+	}
+	right, err := url.Parse(strings.TrimSpace(rightRaw))
+	if err != nil || right == nil {
+		return false
+	}
+	return siteKey(left) != "" && siteKey(left) == siteKey(right)
+}
+
+func siteKey(parsed *url.URL) string {
+	if parsed == nil {
+		return ""
+	}
+	scheme := strings.ToLower(strings.TrimSpace(parsed.Scheme))
+	host := strings.ToLower(strings.TrimSpace(parsed.Hostname()))
+	if scheme == "" || host == "" {
+		return ""
+	}
+	if host == "localhost" || net.ParseIP(host) != nil {
+		return scheme + "://" + host
+	}
+	siteHost, err := publicsuffix.EffectiveTLDPlusOne(host)
+	if err != nil {
+		return scheme + "://" + host
+	}
+	return scheme + "://" + siteHost
 }

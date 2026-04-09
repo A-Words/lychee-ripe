@@ -18,6 +18,7 @@
 - Gateway 认证模式：`auth.mode=disabled | oidc`，默认 `disabled`。
 - `disabled` 模式下网关为受保护接口注入模拟 `admin` 主体，便于本地开发。
 - `oidc` 模式下 Web 端走 Gateway 托管的 OIDC 授权码交换与 HttpOnly Session Cookie，Tauri 继续走 `JWT + JWKS` Bearer Token；角色授权仍以本地 `users` 表为准。
+- Web Cookie 默认 `SameSite=Lax`，因此默认要求 `auth.web.public_base_url` 与 `auth.web.app_base_url` 是 same-site；如果确实要跨站部署，必须显式改成 `auth.web.cookie_same_site=none` 且同时开启 `auth.web.cookie_secure=true`。
 - `oidc` 模式当前将 `email in access_token` 视为硬要求：首次绑定预创建用户时，网关只接受 Bearer Token 中自带的 `email` claim，不额外调用 `userinfo` / 不读取前端单独传递的 `id_token`。
 - `oidc` 模式首次跑在空库上时，必须提供 `auth.bootstrap_admin_email` 或 `LYCHEE_AUTH_BOOTSTRAP_ADMIN_EMAIL`，用于引导首个管理员账号。
 - `database` 模式下系统与区块链解耦，批次主状态为 `stored`。
