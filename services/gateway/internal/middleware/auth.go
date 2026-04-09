@@ -31,6 +31,7 @@ type SessionResolver interface {
 
 func Auth(
 	cfg config.AuthConfig,
+	corsCfg config.CORSConfig,
 	validator TokenValidator,
 	resolver AuthResolver,
 	sessionResolver SessionResolver,
@@ -67,6 +68,15 @@ func Auth(
 				return
 			}
 			if sessionID := sessionCookieValue(r, cfg.Web.CookieName); sessionID != "" {
+				if err := enforceCookieOrigin(r, corsCfg); err != nil {
+					logger.Warn("auth: rejected cookie-authenticated request due to origin policy",
+						"path", r.URL.Path,
+						"method", r.Method,
+						"origin", strings.TrimSpace(r.Header.Get("Origin")),
+					)
+					writeAuthError(w, http.StatusForbidden, "forbidden", err.Error())
+					return
+				}
 				if sessionResolver == nil {
 					writeAuthError(w, http.StatusServiceUnavailable, "auth_unavailable", "auth unavailable")
 					return
@@ -136,6 +146,55 @@ func Auth(
 			next.ServeHTTP(w, r.WithContext(WithPrincipal(r.Context(), principal)))
 		})
 	}
+}
+
+func enforceCookieOrigin(r *http.Request, corsCfg config.CORSConfig) error {
+	if !requiresCookieOriginCheck(r) {
+		return nil
+	}
+	origin := strings.TrimSpace(r.Header.Get("Origin"))
+	if origin == "" {
+		return errors.New("origin header required for cookie-authenticated unsafe requests")
+	}
+	if !corsCfg.AllowsOrigin(origin) {
+		return errors.New("origin is not allowed for cookie-authenticated request")
+	}
+	return nil
+}
+
+func requiresCookieOriginCheck(r *http.Request) bool {
+	if r == nil {
+		return false
+	}
+	if isWebSocketRequest(r) {
+		return true
+	}
+	switch r.Method {
+	case http.MethodGet, http.MethodHead, http.MethodOptions:
+		return false
+	default:
+		return true
+	}
+}
+
+func isWebSocketRequest(r *http.Request) bool {
+	if r == nil {
+		return false
+	}
+	return headerContainsToken(r.Header, "Connection", "upgrade") &&
+		headerContainsToken(r.Header, "Upgrade", "websocket")
+}
+
+func headerContainsToken(header http.Header, key string, want string) bool {
+	values := header.Values(key)
+	for _, value := range values {
+		for _, token := range strings.Split(value, ",") {
+			if strings.EqualFold(strings.TrimSpace(token), want) {
+				return true
+			}
+		}
+	}
+	return false
 }
 
 func stripQueryToken(r *http.Request, key string) *http.Request {

@@ -137,6 +137,23 @@ type LoggingConfig struct {
 	Format string `yaml:"format"`
 }
 
+func (c CORSConfig) AllowsOrigin(origin string) bool {
+	origin = strings.TrimSpace(origin)
+	if origin == "" {
+		return false
+	}
+	for _, allowedOrigin := range c.AllowedOrigins {
+		allowedOrigin = strings.TrimSpace(allowedOrigin)
+		if allowedOrigin == "*" {
+			return true
+		}
+		if strings.EqualFold(allowedOrigin, origin) {
+			return true
+		}
+	}
+	return false
+}
+
 func isExplicitRelativePath(path string) bool {
 	path = filepath.ToSlash(strings.TrimSpace(path))
 	return path == "." || path == ".." || strings.HasPrefix(path, "./") || strings.HasPrefix(path, "../")
@@ -451,6 +468,19 @@ func (c *Config) Validate() error {
 	}
 	if c.Auth.Mode == AuthModeOIDC && c.Auth.Web.CookieSameSite != "none" && !isSameSitePair(c.Auth.Web.PublicBaseURL, c.Auth.Web.AppBaseURL) {
 		return fmt.Errorf("auth.web.public_base_url and auth.web.app_base_url must be same-site unless auth.web.cookie_same_site=none")
+	}
+	if c.Auth.Mode == AuthModeOIDC {
+		if !c.CORS.AllowCredentials {
+			return fmt.Errorf("cors.allow_credentials must be true when auth.mode=oidc")
+		}
+		if len(c.CORS.AllowedOrigins) == 0 {
+			return fmt.Errorf("cors.allowed_origins must list at least one trusted origin when auth.mode=oidc")
+		}
+		for _, origin := range c.CORS.AllowedOrigins {
+			if strings.TrimSpace(origin) == "*" {
+				return fmt.Errorf("cors.allowed_origins cannot contain * when auth.mode=oidc")
+			}
+		}
 	}
 
 	if c.CORS.AllowCredentials {

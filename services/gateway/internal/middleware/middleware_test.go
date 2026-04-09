@@ -19,7 +19,7 @@ import (
 
 func TestAuthDisabled(t *testing.T) {
 	cfg := config.AuthConfig{Mode: config.AuthModeDisabled}
-	mw := Auth(cfg, nil, nil, nil, slog.Default())
+	mw := Auth(cfg, config.CORSConfig{}, nil, nil, nil, slog.Default())
 	handler := mw(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		principal, ok := GetPrincipal(r.Context())
 		if !ok {
@@ -41,7 +41,7 @@ func TestAuthDisabled(t *testing.T) {
 
 func TestAuthOIDCMissingBearerRejects(t *testing.T) {
 	cfg := config.AuthConfig{Mode: config.AuthModeOIDC}
-	mw := Auth(cfg, fakeValidator{}, fakeResolver{}, nil, slog.Default())
+	mw := Auth(cfg, config.CORSConfig{}, fakeValidator{}, fakeResolver{}, nil, slog.Default())
 	handler := mw(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		t.Fatal("handler should not be reached")
 	}))
@@ -56,7 +56,7 @@ func TestAuthOIDCMissingBearerRejects(t *testing.T) {
 
 func TestAuthAllowsPublicTracePathWithoutBearer(t *testing.T) {
 	cfg := config.AuthConfig{Mode: config.AuthModeOIDC}
-	mw := Auth(cfg, fakeValidator{}, fakeResolver{}, nil, slog.Default())
+	mw := Auth(cfg, config.CORSConfig{}, fakeValidator{}, fakeResolver{}, nil, slog.Default())
 	handler := mw(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		w.WriteHeader(http.StatusOK)
 	}))
@@ -71,7 +71,7 @@ func TestAuthAllowsPublicTracePathWithoutBearer(t *testing.T) {
 
 func TestAuthAllowsProtectedPathForOperator(t *testing.T) {
 	cfg := config.AuthConfig{Mode: config.AuthModeOIDC}
-	mw := Auth(cfg, fakeValidator{}, fakeResolver{principal: domain.Principal{Role: domain.UserRoleOperator, Status: domain.UserStatusActive}}, nil, slog.Default())
+	mw := Auth(cfg, config.CORSConfig{}, fakeValidator{}, fakeResolver{principal: domain.Principal{Role: domain.UserRoleOperator, Status: domain.UserStatusActive}}, nil, slog.Default())
 	handler := mw(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		w.WriteHeader(http.StatusOK)
 	}))
@@ -90,7 +90,7 @@ func TestAuthAllowsSessionCookieForWebClientAndStripsCookieBeforeDownstream(t *t
 		Mode: config.AuthModeOIDC,
 		Web:  config.WebAuthConfig{CookieName: "lychee_session"},
 	}
-	mw := Auth(cfg, fakeValidator{}, fakeResolver{}, fakeSessionResolver{
+	mw := Auth(cfg, config.CORSConfig{AllowedOrigins: []string{"https://app.example.com"}}, fakeValidator{}, fakeResolver{}, fakeSessionResolver{
 		principal: domain.Principal{Role: domain.UserRoleOperator, Status: domain.UserStatusActive},
 	}, slog.Default())
 	handler := mw(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
@@ -118,7 +118,7 @@ func TestAuthRejectsUnknownSessionCookie(t *testing.T) {
 		Mode: config.AuthModeOIDC,
 		Web:  config.WebAuthConfig{CookieName: "lychee_session"},
 	}
-	mw := Auth(cfg, fakeValidator{}, fakeResolver{}, fakeSessionResolver{err: service.ErrNotFound}, slog.Default())
+	mw := Auth(cfg, config.CORSConfig{}, fakeValidator{}, fakeResolver{}, fakeSessionResolver{err: service.ErrNotFound}, slog.Default())
 	handler := mw(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		t.Fatal("handler should not be reached")
 	}))
@@ -132,9 +132,76 @@ func TestAuthRejectsUnknownSessionCookie(t *testing.T) {
 	}
 }
 
+func TestAuthRejectsUnsafeCookieRequestWithoutOrigin(t *testing.T) {
+	cfg := config.AuthConfig{
+		Mode: config.AuthModeOIDC,
+		Web:  config.WebAuthConfig{CookieName: "lychee_session"},
+	}
+	mw := Auth(cfg, config.CORSConfig{AllowedOrigins: []string{"https://app.example.com"}}, fakeValidator{}, fakeResolver{}, fakeSessionResolver{
+		principal: domain.Principal{Role: domain.UserRoleOperator, Status: domain.UserStatusActive},
+	}, slog.Default())
+	handler := mw(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		t.Fatal("handler should not be reached")
+	}))
+
+	req := httptest.NewRequest(http.MethodPost, "/v1/batches", nil)
+	req.AddCookie(&http.Cookie{Name: "lychee_session", Value: "session-1"})
+	rec := httptest.NewRecorder()
+	handler.ServeHTTP(rec, req)
+	if rec.Code != http.StatusForbidden {
+		t.Errorf("expected 403 for unsafe cookie request without Origin, got %d", rec.Code)
+	}
+}
+
+func TestAuthAllowsUnsafeCookieRequestFromAllowedOrigin(t *testing.T) {
+	cfg := config.AuthConfig{
+		Mode: config.AuthModeOIDC,
+		Web:  config.WebAuthConfig{CookieName: "lychee_session"},
+	}
+	mw := Auth(cfg, config.CORSConfig{AllowedOrigins: []string{"https://app.example.com"}}, fakeValidator{}, fakeResolver{}, fakeSessionResolver{
+		principal: domain.Principal{Role: domain.UserRoleOperator, Status: domain.UserStatusActive},
+	}, slog.Default())
+	handler := mw(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		w.WriteHeader(http.StatusOK)
+	}))
+
+	req := httptest.NewRequest(http.MethodPost, "/v1/batches", nil)
+	req.Header.Set("Origin", "https://app.example.com")
+	req.AddCookie(&http.Cookie{Name: "lychee_session", Value: "session-1"})
+	rec := httptest.NewRecorder()
+	handler.ServeHTTP(rec, req)
+	if rec.Code != http.StatusOK {
+		t.Errorf("expected 200 for unsafe cookie request from allowed Origin, got %d", rec.Code)
+	}
+}
+
+func TestAuthRejectsCookieWebSocketFromDisallowedOrigin(t *testing.T) {
+	cfg := config.AuthConfig{
+		Mode: config.AuthModeOIDC,
+		Web:  config.WebAuthConfig{CookieName: "lychee_session"},
+	}
+	mw := Auth(cfg, config.CORSConfig{AllowedOrigins: []string{"https://app.example.com"}}, fakeValidator{}, fakeResolver{}, fakeSessionResolver{
+		principal: domain.Principal{Role: domain.UserRoleOperator, Status: domain.UserStatusActive},
+	}, slog.Default())
+	handler := mw(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		t.Fatal("handler should not be reached")
+	}))
+
+	req := httptest.NewRequest(http.MethodGet, "/v1/infer/stream", nil)
+	req.Header.Set("Connection", "keep-alive, Upgrade")
+	req.Header.Set("Upgrade", "websocket")
+	req.Header.Set("Origin", "https://evil.example.com")
+	req.AddCookie(&http.Cookie{Name: "lychee_session", Value: "session-1"})
+	rec := httptest.NewRecorder()
+	handler.ServeHTTP(rec, req)
+	if rec.Code != http.StatusForbidden {
+		t.Errorf("expected 403 for cookie-authenticated websocket from disallowed Origin, got %d", rec.Code)
+	}
+}
+
 func TestAuthAllowsActiveOrchardListForOperator(t *testing.T) {
 	cfg := config.AuthConfig{Mode: config.AuthModeOIDC}
-	mw := Auth(cfg, fakeValidator{}, fakeResolver{principal: domain.Principal{Role: domain.UserRoleOperator, Status: domain.UserStatusActive}}, nil, slog.Default())
+	mw := Auth(cfg, config.CORSConfig{}, fakeValidator{}, fakeResolver{principal: domain.Principal{Role: domain.UserRoleOperator, Status: domain.UserStatusActive}}, nil, slog.Default())
 	handler := mw(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		w.WriteHeader(http.StatusOK)
 	}))
@@ -150,7 +217,7 @@ func TestAuthAllowsActiveOrchardListForOperator(t *testing.T) {
 
 func TestAuthRejectsArchivedOrchardListForOperator(t *testing.T) {
 	cfg := config.AuthConfig{Mode: config.AuthModeOIDC}
-	mw := Auth(cfg, fakeValidator{}, fakeResolver{principal: domain.Principal{Role: domain.UserRoleOperator, Status: domain.UserStatusActive}}, nil, slog.Default())
+	mw := Auth(cfg, config.CORSConfig{}, fakeValidator{}, fakeResolver{principal: domain.Principal{Role: domain.UserRoleOperator, Status: domain.UserStatusActive}}, nil, slog.Default())
 	handler := mw(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		w.WriteHeader(http.StatusOK)
 	}))
@@ -166,7 +233,7 @@ func TestAuthRejectsArchivedOrchardListForOperator(t *testing.T) {
 
 func TestAuthRejectsArchivedPlotListForOperator(t *testing.T) {
 	cfg := config.AuthConfig{Mode: config.AuthModeOIDC}
-	mw := Auth(cfg, fakeValidator{}, fakeResolver{principal: domain.Principal{Role: domain.UserRoleOperator, Status: domain.UserStatusActive}}, nil, slog.Default())
+	mw := Auth(cfg, config.CORSConfig{}, fakeValidator{}, fakeResolver{principal: domain.Principal{Role: domain.UserRoleOperator, Status: domain.UserStatusActive}}, nil, slog.Default())
 	handler := mw(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		w.WriteHeader(http.StatusOK)
 	}))
@@ -182,7 +249,7 @@ func TestAuthRejectsArchivedPlotListForOperator(t *testing.T) {
 
 func TestAuthRejectsAdminPathForOperator(t *testing.T) {
 	cfg := config.AuthConfig{Mode: config.AuthModeOIDC}
-	mw := Auth(cfg, fakeValidator{}, fakeResolver{principal: domain.Principal{Role: domain.UserRoleOperator, Status: domain.UserStatusActive}}, nil, slog.Default())
+	mw := Auth(cfg, config.CORSConfig{}, fakeValidator{}, fakeResolver{principal: domain.Principal{Role: domain.UserRoleOperator, Status: domain.UserStatusActive}}, nil, slog.Default())
 	handler := mw(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		w.WriteHeader(http.StatusOK)
 	}))
@@ -198,7 +265,7 @@ func TestAuthRejectsAdminPathForOperator(t *testing.T) {
 
 func TestAuthRejectsReconcilePathForOperator(t *testing.T) {
 	cfg := config.AuthConfig{Mode: config.AuthModeOIDC}
-	mw := Auth(cfg, fakeValidator{}, fakeResolver{principal: domain.Principal{Role: domain.UserRoleOperator, Status: domain.UserStatusActive}}, nil, slog.Default())
+	mw := Auth(cfg, config.CORSConfig{}, fakeValidator{}, fakeResolver{principal: domain.Principal{Role: domain.UserRoleOperator, Status: domain.UserStatusActive}}, nil, slog.Default())
 	handler := mw(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		w.WriteHeader(http.StatusOK)
 	}))
@@ -214,7 +281,7 @@ func TestAuthRejectsReconcilePathForOperator(t *testing.T) {
 
 func TestAuthAllowsCreateBatchForOperator(t *testing.T) {
 	cfg := config.AuthConfig{Mode: config.AuthModeOIDC}
-	mw := Auth(cfg, fakeValidator{}, fakeResolver{principal: domain.Principal{Role: domain.UserRoleOperator, Status: domain.UserStatusActive}}, nil, slog.Default())
+	mw := Auth(cfg, config.CORSConfig{}, fakeValidator{}, fakeResolver{principal: domain.Principal{Role: domain.UserRoleOperator, Status: domain.UserStatusActive}}, nil, slog.Default())
 	handler := mw(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		w.WriteHeader(http.StatusOK)
 	}))
@@ -230,7 +297,7 @@ func TestAuthAllowsCreateBatchForOperator(t *testing.T) {
 
 func TestAuthAllowsGetBatchForOperator(t *testing.T) {
 	cfg := config.AuthConfig{Mode: config.AuthModeOIDC}
-	mw := Auth(cfg, fakeValidator{}, fakeResolver{principal: domain.Principal{Role: domain.UserRoleOperator, Status: domain.UserStatusActive}}, nil, slog.Default())
+	mw := Auth(cfg, config.CORSConfig{}, fakeValidator{}, fakeResolver{principal: domain.Principal{Role: domain.UserRoleOperator, Status: domain.UserStatusActive}}, nil, slog.Default())
 	handler := mw(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		w.WriteHeader(http.StatusOK)
 	}))
@@ -246,7 +313,7 @@ func TestAuthAllowsGetBatchForOperator(t *testing.T) {
 
 func TestAuthStripsWebSocketAccessTokenBeforeForwarding(t *testing.T) {
 	cfg := config.AuthConfig{Mode: config.AuthModeOIDC}
-	mw := Auth(cfg, fakeValidator{}, fakeResolver{principal: domain.Principal{Role: domain.UserRoleOperator, Status: domain.UserStatusActive}}, nil, slog.Default())
+	mw := Auth(cfg, config.CORSConfig{}, fakeValidator{}, fakeResolver{principal: domain.Principal{Role: domain.UserRoleOperator, Status: domain.UserStatusActive}}, nil, slog.Default())
 	handler := mw(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		if got := r.URL.Query().Get("access_token"); got != "" {
 			t.Fatalf("access_token should be stripped before downstream handling, got %q", got)
@@ -267,7 +334,7 @@ func TestAuthStripsWebSocketAccessTokenBeforeForwarding(t *testing.T) {
 
 func TestAuthRejectsNestedBatchPathForOperator(t *testing.T) {
 	cfg := config.AuthConfig{Mode: config.AuthModeOIDC}
-	mw := Auth(cfg, fakeValidator{}, fakeResolver{principal: domain.Principal{Role: domain.UserRoleOperator, Status: domain.UserStatusActive}}, nil, slog.Default())
+	mw := Auth(cfg, config.CORSConfig{}, fakeValidator{}, fakeResolver{principal: domain.Principal{Role: domain.UserRoleOperator, Status: domain.UserStatusActive}}, nil, slog.Default())
 	handler := mw(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		w.WriteHeader(http.StatusOK)
 	}))
@@ -283,7 +350,7 @@ func TestAuthRejectsNestedBatchPathForOperator(t *testing.T) {
 
 func TestAuthRejectsNestedReconcilePathForOperator(t *testing.T) {
 	cfg := config.AuthConfig{Mode: config.AuthModeOIDC}
-	mw := Auth(cfg, fakeValidator{}, fakeResolver{principal: domain.Principal{Role: domain.UserRoleOperator, Status: domain.UserStatusActive}}, nil, slog.Default())
+	mw := Auth(cfg, config.CORSConfig{}, fakeValidator{}, fakeResolver{principal: domain.Principal{Role: domain.UserRoleOperator, Status: domain.UserStatusActive}}, nil, slog.Default())
 	handler := mw(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		w.WriteHeader(http.StatusOK)
 	}))
@@ -299,7 +366,7 @@ func TestAuthRejectsNestedReconcilePathForOperator(t *testing.T) {
 
 func TestAuthRejectsDeleteBatchCollectionForOperator(t *testing.T) {
 	cfg := config.AuthConfig{Mode: config.AuthModeOIDC}
-	mw := Auth(cfg, fakeValidator{}, fakeResolver{principal: domain.Principal{Role: domain.UserRoleOperator, Status: domain.UserStatusActive}}, nil, slog.Default())
+	mw := Auth(cfg, config.CORSConfig{}, fakeValidator{}, fakeResolver{principal: domain.Principal{Role: domain.UserRoleOperator, Status: domain.UserStatusActive}}, nil, slog.Default())
 	handler := mw(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		w.WriteHeader(http.StatusOK)
 	}))
@@ -315,7 +382,7 @@ func TestAuthRejectsDeleteBatchCollectionForOperator(t *testing.T) {
 
 func TestAuthRejectsDeleteBatchItemForOperator(t *testing.T) {
 	cfg := config.AuthConfig{Mode: config.AuthModeOIDC}
-	mw := Auth(cfg, fakeValidator{}, fakeResolver{principal: domain.Principal{Role: domain.UserRoleOperator, Status: domain.UserStatusActive}}, nil, slog.Default())
+	mw := Auth(cfg, config.CORSConfig{}, fakeValidator{}, fakeResolver{principal: domain.Principal{Role: domain.UserRoleOperator, Status: domain.UserStatusActive}}, nil, slog.Default())
 	handler := mw(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		w.WriteHeader(http.StatusOK)
 	}))
@@ -331,7 +398,7 @@ func TestAuthRejectsDeleteBatchItemForOperator(t *testing.T) {
 
 func TestAuthRejectsUnknownProvisionedUser(t *testing.T) {
 	cfg := config.AuthConfig{Mode: config.AuthModeOIDC}
-	mw := Auth(cfg, fakeValidator{}, fakeResolver{err: service.ErrNotFound}, nil, slog.Default())
+	mw := Auth(cfg, config.CORSConfig{}, fakeValidator{}, fakeResolver{err: service.ErrNotFound}, nil, slog.Default())
 	handler := mw(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		w.WriteHeader(http.StatusOK)
 	}))
@@ -347,7 +414,7 @@ func TestAuthRejectsUnknownProvisionedUser(t *testing.T) {
 
 func TestAuthReturnsServiceUnavailableWhenValidatorUnavailable(t *testing.T) {
 	cfg := config.AuthConfig{Mode: config.AuthModeOIDC}
-	mw := Auth(cfg, fakeValidator{err: fmt.Errorf("%w: jwks offline", oidc.ErrUnavailable)}, fakeResolver{}, nil, slog.Default())
+	mw := Auth(cfg, config.CORSConfig{}, fakeValidator{err: fmt.Errorf("%w: jwks offline", oidc.ErrUnavailable)}, fakeResolver{}, nil, slog.Default())
 	handler := mw(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		w.WriteHeader(http.StatusOK)
 	}))
@@ -363,7 +430,7 @@ func TestAuthReturnsServiceUnavailableWhenValidatorUnavailable(t *testing.T) {
 
 func TestAuthReturnsServiceUnavailableWhenResolverUnavailable(t *testing.T) {
 	cfg := config.AuthConfig{Mode: config.AuthModeOIDC}
-	mw := Auth(cfg, fakeValidator{}, fakeResolver{err: service.ErrServiceUnavailable}, nil, slog.Default())
+	mw := Auth(cfg, config.CORSConfig{}, fakeValidator{}, fakeResolver{err: service.ErrServiceUnavailable}, nil, slog.Default())
 	handler := mw(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		w.WriteHeader(http.StatusOK)
 	}))

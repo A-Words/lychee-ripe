@@ -104,6 +104,10 @@ auth:
     cookie_name: "lychee_session"
     cookie_secure: false
     cookie_same_site: "lax"
+cors:
+  allowed_origins:
+    - "http://127.0.0.1:3000"
+  allow_credentials: true
 rate_limit:
   enabled: false
 trace:
@@ -317,6 +321,10 @@ func TestLoadAppliesAuthEnvOverrides(t *testing.T) {
 	content := `
 auth:
   mode: "disabled"
+cors:
+  allowed_origins:
+    - "https://app.example.com"
+  allow_credentials: true
 `
 	if err := os.WriteFile(cfgPath, []byte(content), 0o644); err != nil {
 		t.Fatal(err)
@@ -779,8 +787,44 @@ func TestValidateAllowsCrossSiteWebCookieWithNoneAndSecure(t *testing.T) {
 	cfg.Auth.Web.AppBaseURL = "https://console.other-example.com"
 	cfg.Auth.Web.CookieSameSite = "none"
 	cfg.Auth.Web.CookieSecure = true
+	cfg.CORS.AllowCredentials = true
+	cfg.CORS.AllowedOrigins = []string{"https://console.other-example.com"}
 
 	if err := cfg.Validate(); err != nil {
 		t.Fatalf("Validate returned error: %v", err)
+	}
+}
+
+func TestValidateRejectsOIDCWithoutCredentialedCORS(t *testing.T) {
+	cfg := Defaults()
+	cfg.Auth.Mode = AuthModeOIDC
+	cfg.Auth.OIDC.IssuerURL = "https://issuer.example.com"
+	cfg.Auth.OIDC.Audience = "lychee-ripe"
+	cfg.Auth.OIDC.WebClientID = "orchard-console-web"
+	cfg.Auth.Web.PublicBaseURL = "https://gateway.example.com"
+	cfg.Auth.Web.AppBaseURL = "https://app.example.com"
+	cfg.CORS.AllowCredentials = false
+	cfg.CORS.AllowedOrigins = []string{"https://app.example.com"}
+
+	err := cfg.Validate()
+	if err == nil {
+		t.Fatal("expected validation error when oidc is enabled without cors.allow_credentials")
+	}
+}
+
+func TestValidateRejectsOIDCWithWildcardOrigins(t *testing.T) {
+	cfg := Defaults()
+	cfg.Auth.Mode = AuthModeOIDC
+	cfg.Auth.OIDC.IssuerURL = "https://issuer.example.com"
+	cfg.Auth.OIDC.Audience = "lychee-ripe"
+	cfg.Auth.OIDC.WebClientID = "orchard-console-web"
+	cfg.Auth.Web.PublicBaseURL = "https://gateway.example.com"
+	cfg.Auth.Web.AppBaseURL = "https://app.example.com"
+	cfg.CORS.AllowCredentials = true
+	cfg.CORS.AllowedOrigins = []string{"*"}
+
+	err := cfg.Validate()
+	if err == nil {
+		t.Fatal("expected validation error when oidc is enabled with wildcard cors origin")
 	}
 }

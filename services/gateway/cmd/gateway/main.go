@@ -163,7 +163,7 @@ func main() {
 	// Apply middleware (outermost runs first).
 	// Order: RequestID → Logging → CORS → RateLimit → Auth → handler
 	var h http.Handler = mux
-	h = middleware.Auth(cfg.Auth, validator, authSvc, webAuthSvc, logger)(h)
+	h = middleware.Auth(cfg.Auth, cfg.CORS, validator, authSvc, webAuthSvc, logger)(h)
 	h = middleware.RateLimit(cfg.RateLimit, logger)(h)
 	h = middleware.CORS(cfg.CORS)(h)
 	h = middleware.Logging(logger)(h)
