@@ -54,70 +54,95 @@ async function loadAll() {
   }
 }
 
+function formatAdminActionError(error: unknown, fallback: string) {
+  return error instanceof Error ? error.message : fallback
+}
+
+async function runAdminMutation(action: () => Promise<void>, fallbackMessage: string) {
+  errorMessage.value = ''
+  try {
+    await action()
+  } catch (error) {
+    errorMessage.value = formatAdminActionError(error, fallbackMessage)
+  }
+}
+
 async function handleCreateOrchard() {
-  await api.createOrchard({
-    orchard_id: orchardForm.orchard_id,
-    orchard_name: orchardForm.orchard_name
-  })
-  orchardForm.orchard_id = ''
-  orchardForm.orchard_name = ''
-  await loadAll()
+  await runAdminMutation(async () => {
+    await api.createOrchard({
+      orchard_id: orchardForm.orchard_id,
+      orchard_name: orchardForm.orchard_name
+    })
+    orchardForm.orchard_id = ''
+    orchardForm.orchard_name = ''
+    await loadAll()
+  }, '创建果园失败')
 }
 
 async function handleCreatePlot() {
-  await api.createPlot({
-    plot_id: plotForm.plot_id,
-    orchard_id: plotForm.orchard_id,
-    plot_name: plotForm.plot_name
-  })
-  plotForm.plot_id = ''
-  plotForm.orchard_id = ''
-  plotForm.plot_name = ''
-  await loadAll()
+  await runAdminMutation(async () => {
+    await api.createPlot({
+      plot_id: plotForm.plot_id,
+      orchard_id: plotForm.orchard_id,
+      plot_name: plotForm.plot_name
+    })
+    plotForm.plot_id = ''
+    plotForm.orchard_id = ''
+    plotForm.plot_name = ''
+    await loadAll()
+  }, '创建地块失败')
 }
 
 async function handleCreateUser() {
-  await api.createUser({
-    email: userForm.email,
-    display_name: userForm.display_name,
-    role: userForm.role,
-    status: userForm.status
-  })
-  userForm.email = ''
-  userForm.display_name = ''
-  userForm.role = 'operator'
-  userForm.status = 'active'
-  await loadAll()
+  await runAdminMutation(async () => {
+    await api.createUser({
+      email: userForm.email,
+      display_name: userForm.display_name,
+      role: userForm.role,
+      status: userForm.status
+    })
+    userForm.email = ''
+    userForm.display_name = ''
+    userForm.role = 'operator'
+    userForm.status = 'active'
+    await loadAll()
+  }, '创建用户失败')
 }
 
 async function toggleOrchardStatus(item: Orchard) {
-  const nextStatus: ResourceStatus = item.status === 'active' ? 'archived' : 'active'
-  await api.updateOrchard(item.orchard_id, {
-    orchard_name: item.orchard_name,
-    status: nextStatus
-  })
-  await loadAll()
+  await runAdminMutation(async () => {
+    const nextStatus: ResourceStatus = item.status === 'active' ? 'archived' : 'active'
+    await api.updateOrchard(item.orchard_id, {
+      orchard_name: item.orchard_name,
+      status: nextStatus
+    })
+    await loadAll()
+  }, '更新果园状态失败')
 }
 
 async function togglePlotStatus(item: Plot) {
-  const nextStatus: ResourceStatus = item.status === 'active' ? 'archived' : 'active'
-  await api.updatePlot(item.plot_id, {
-    orchard_id: item.orchard_id,
-    plot_name: item.plot_name,
-    status: nextStatus
-  })
-  await loadAll()
+  await runAdminMutation(async () => {
+    const nextStatus: ResourceStatus = item.status === 'active' ? 'archived' : 'active'
+    await api.updatePlot(item.plot_id, {
+      orchard_id: item.orchard_id,
+      plot_name: item.plot_name,
+      status: nextStatus
+    })
+    await loadAll()
+  }, '更新地块状态失败')
 }
 
 async function toggleUserStatus(item: UserRecord) {
-  const nextStatus: UserStatus = item.status === 'active' ? 'disabled' : 'active'
-  await api.updateUser(item.id, {
-    email: item.email,
-    display_name: item.display_name,
-    role: item.role,
-    status: nextStatus
-  })
-  await loadAll()
+  await runAdminMutation(async () => {
+    const nextStatus: UserStatus = item.status === 'active' ? 'disabled' : 'active'
+    await api.updateUser(item.id, {
+      email: item.email,
+      display_name: item.display_name,
+      role: item.role,
+      status: nextStatus
+    })
+    await loadAll()
+  }, '更新用户状态失败')
 }
 
 onMounted(() => {

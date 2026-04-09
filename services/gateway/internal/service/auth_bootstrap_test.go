@@ -104,6 +104,38 @@ func TestEnsureBootstrapAdminTreatsCreateConflictAsInitialized(t *testing.T) {
 	}
 }
 
+func TestEnsureBootstrapAdminPromotesExistingSameEmailUserWhenNoActiveAdminExists(t *testing.T) {
+	t.Parallel()
+
+	repo := &fakeBootstrapAdminRepo{
+		countActiveAdmins: 0,
+		createUserErr:     repository.ErrConflict,
+		users: []domain.UserRecord{
+			{
+				ID:          "user-1",
+				Email:       "admin@example.com",
+				DisplayName: "Bootstrap Candidate",
+				Role:        domain.UserRoleOperator,
+				Status:      domain.UserStatusDisabled,
+				CreatedAt:   time.Now().UTC(),
+				UpdatedAt:   time.Now().UTC(),
+			},
+		},
+	}
+	if err := EnsureBootstrapAdmin(context.Background(), domain.AuthModeOIDC, "admin@example.com", repo); err != nil {
+		t.Fatalf("EnsureBootstrapAdmin returned error: %v", err)
+	}
+	if repo.updateCallCount != 1 {
+		t.Fatalf("updateCallCount = %d, want 1", repo.updateCallCount)
+	}
+	if repo.updated.Role != domain.UserRoleAdmin {
+		t.Fatalf("updated role = %q, want admin", repo.updated.Role)
+	}
+	if repo.updated.Status != domain.UserStatusActive {
+		t.Fatalf("updated status = %q, want active", repo.updated.Status)
+	}
+}
+
 func TestEnsureBootstrapAdminRejectsConflictWhenStillNoActiveAdmin(t *testing.T) {
 	t.Parallel()
 
@@ -123,7 +155,10 @@ type fakeBootstrapAdminRepo struct {
 	countActiveAdminsErr      error
 	createUserErr             error
 	createCallCount           int
+	updateCallCount           int
 	created                   domain.UserRecord
+	updated                   domain.UserRecord
+	users                     []domain.UserRecord
 }
 
 func (f *fakeBootstrapAdminRepo) CountActiveAdmins(_ context.Context) (int64, error) {
@@ -150,4 +185,20 @@ func (f *fakeBootstrapAdminRepo) CreateUser(_ context.Context, user domain.UserR
 		f.created.UpdatedAt = now
 	}
 	return f.created, nil
+}
+
+func (f *fakeBootstrapAdminRepo) ListUsers(_ context.Context) ([]domain.UserRecord, error) {
+	return append([]domain.UserRecord(nil), f.users...), nil
+}
+
+func (f *fakeBootstrapAdminRepo) UpdateUser(_ context.Context, user domain.UserRecord) (domain.UserRecord, error) {
+	f.updateCallCount++
+	f.updated = user
+	for idx := range f.users {
+		if f.users[idx].ID == user.ID {
+			f.users[idx] = user
+			break
+		}
+	}
+	return user, nil
 }
