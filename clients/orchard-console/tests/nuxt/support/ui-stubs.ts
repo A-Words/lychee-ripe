@@ -376,8 +376,11 @@ const UHeader = defineComponent({
   },
   setup(props, { attrs, slots }) {
     return () => h('header', { ...attrs, 'data-stub': 'UHeader' }, renderChildren([
-      props.title ? h(props.to ? 'a' : 'span', props.to ? { href: props.to } : {}, props.title) : null,
-      slots.default?.(),
+      props.title ? h('div', { 'data-slot': 'left' }, [
+        h(props.to ? 'a' : 'span', props.to ? { href: props.to } : {}, props.title)
+      ]) : null,
+      slots.default ? h('div', { 'data-slot': 'center' }, slots.default()) : null,
+      slots.right ? h('div', { 'data-slot': 'right' }, slots.right()) : null,
       slots.body ? h('div', { 'data-slot': 'body' }, slots.body()) : null
     ]))
   }

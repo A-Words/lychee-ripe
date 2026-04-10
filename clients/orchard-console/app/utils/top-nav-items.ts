@@ -1,6 +1,6 @@
 import { buildTraceLandingPathWithFrom } from '~/utils/trace-from'
 
-export type TopNavKey = 'batch_create' | 'dashboard' | 'trace'
+export type TopNavKey = 'batch_create' | 'dashboard' | 'trace' | 'admin'
 
 type TopNavItemDefinition = {
   key: TopNavKey
@@ -18,7 +18,7 @@ export type TopNavItem = {
   active: boolean
 }
 
-const TOP_NAV_DEFINITIONS: TopNavItemDefinition[] = [
+const BASE_TOP_NAV_DEFINITIONS: TopNavItemDefinition[] = [
   {
     key: 'batch_create',
     label: '识别建批',
@@ -39,6 +39,13 @@ const TOP_NAV_DEFINITIONS: TopNavItemDefinition[] = [
     to: buildTraceLandingPathWithFrom('index'),
     icon: 'i-lucide-search',
     activePrefixes: ['/trace']
+  },
+  {
+    key: 'admin',
+    label: '管理后台',
+    to: '/admin',
+    icon: 'i-lucide-shield-check',
+    activePrefixes: ['/admin']
   }
 ]
 
@@ -46,8 +53,12 @@ function isNavItemActive(path: string, prefixes: string[]): boolean {
   return prefixes.some((prefix) => path.startsWith(prefix))
 }
 
-export function buildTopNavItems(path: string): TopNavItem[] {
-  return TOP_NAV_DEFINITIONS.map((item) => ({
+export function buildTopNavItems(path: string, includeAdmin = false): TopNavItem[] {
+  const items = includeAdmin
+    ? BASE_TOP_NAV_DEFINITIONS
+    : BASE_TOP_NAV_DEFINITIONS.filter((item) => item.key !== 'admin')
+
+  return items.map((item) => ({
     key: item.key,
     label: item.label,
     to: item.to,

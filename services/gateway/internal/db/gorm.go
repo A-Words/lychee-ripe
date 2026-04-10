@@ -67,6 +67,11 @@ func AutoMigrate(ctx context.Context, gdb *gorm.DB) error {
 		&repositorygorm.ReconcileJobModel{},
 		&repositorygorm.ReconcileJobItemModel{},
 		&repositorygorm.AuditLogModel{},
+		&repositorygorm.UserModel{},
+		&repositorygorm.OrchardModel{},
+		&repositorygorm.PlotModel{},
+		&repositorygorm.WebSessionModel{},
+		&repositorygorm.WebAuthStateModel{},
 	); err != nil {
 		return fmt.Errorf("auto migrate models: %w", err)
 	}

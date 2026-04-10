@@ -175,7 +175,7 @@ func (s *BatchCreateService) CreateBatch(ctx context.Context, input BatchCreateI
 			return CreateBatchResult{}, fmt.Errorf("%w: %v", ErrServiceUnavailable, err)
 		}
 
-		if err := s.repo.AttachAnchorProof(ctx, created.BatchID, proof, s.nowFn()); err != nil {
+		if err := s.repo.AttachAnchorProof(ctx, created.BatchID, domain.BatchStatusPendingAnchor, created.UpdatedAt, proof, s.nowFn()); err != nil {
 			if errors.Is(err, repository.ErrConflict) {
 				return CreateBatchResult{}, fmt.Errorf("%w: %v", ErrConflict, err)
 			}
@@ -219,7 +219,7 @@ func (s *BatchCreateService) degradeBatch(
 	statusCode int,
 ) (CreateBatchResult, error) {
 	updatedAt := s.nowFn().UTC()
-	if err := s.repo.UpdateBatchStatus(ctx, record.BatchID, domain.BatchStatusPendingAnchor, &lastError, retryCount, updatedAt); err != nil {
+	if err := s.repo.UpdateBatchStatus(ctx, record.BatchID, record.Status, record.UpdatedAt, domain.BatchStatusPendingAnchor, &lastError, retryCount, updatedAt); err != nil {
 		return CreateBatchResult{}, fmt.Errorf("%w: %v", ErrServiceUnavailable, err)
 	}
 

@@ -87,3 +87,72 @@ type AuditLogModel struct {
 }
 
 func (AuditLogModel) TableName() string { return "audit_logs" }
+
+type UserModel struct {
+	ID          string     `gorm:"column:id;type:text;primaryKey"`
+	Email       string     `gorm:"column:email;type:text;not null;uniqueIndex"`
+	DisplayName string     `gorm:"column:display_name;type:text;not null"`
+	OIDCSubject *string    `gorm:"column:oidc_subject;type:text;uniqueIndex"`
+	Role        string     `gorm:"column:role;type:text;not null;index"`
+	Status      string     `gorm:"column:status;type:text;not null;index"`
+	LastLoginAt *time.Time `gorm:"column:last_login_at"`
+	CreatedAt   time.Time  `gorm:"column:created_at;not null"`
+	UpdatedAt   time.Time  `gorm:"column:updated_at;not null"`
+}
+
+func (UserModel) TableName() string { return "users" }
+
+type OrchardModel struct {
+	ID          uint      `gorm:"primaryKey;autoIncrement"`
+	OrchardID   string    `gorm:"column:orchard_id;type:text;not null;uniqueIndex"`
+	OrchardName string    `gorm:"column:orchard_name;type:text;not null"`
+	Status      string    `gorm:"column:status;type:text;not null;index"`
+	CreatedAt   time.Time `gorm:"column:created_at;not null"`
+	UpdatedAt   time.Time `gorm:"column:updated_at;not null"`
+}
+
+func (OrchardModel) TableName() string { return "orchards" }
+
+type PlotModel struct {
+	ID        uint      `gorm:"primaryKey;autoIncrement"`
+	PlotID    string    `gorm:"column:plot_id;type:text;not null;uniqueIndex"`
+	OrchardID string    `gorm:"column:orchard_id;type:text;not null;index"`
+	PlotName  string    `gorm:"column:plot_name;type:text;not null"`
+	Status    string    `gorm:"column:status;type:text;not null;index"`
+	CreatedAt time.Time `gorm:"column:created_at;not null"`
+	UpdatedAt time.Time `gorm:"column:updated_at;not null"`
+}
+
+func (PlotModel) TableName() string { return "plots" }
+
+// WebSessionModel stores server-side web sessions.
+// IDToken is kept in plaintext because it is a signed (not encrypted) JWT
+// that only carries public identity claims; it is not a credential. The sole
+// purpose of retaining it is to provide an id_token_hint to the IdP during
+// logout (RP-Initiated Logout). If the deployment threat model requires
+// protecting identity information at rest, consider adding application-level
+// encryption with a server-side key.
+type WebSessionModel struct {
+	ID            uint      `gorm:"primaryKey;autoIncrement"`
+	SessionIDHash string    `gorm:"column:session_id_hash;type:text;not null;uniqueIndex"`
+	UserID        string    `gorm:"column:user_id;type:text;not null;index"`
+	IDToken       *string   `gorm:"column:id_token;type:text"`
+	ExpiresAt     time.Time `gorm:"column:expires_at;not null;index"`
+	CreatedAt     time.Time `gorm:"column:created_at;not null"`
+	UpdatedAt     time.Time `gorm:"column:updated_at;not null"`
+}
+
+func (WebSessionModel) TableName() string { return "web_sessions" }
+
+type WebAuthStateModel struct {
+	ID                 uint      `gorm:"primaryKey;autoIncrement"`
+	State              string    `gorm:"column:state;type:text;not null;uniqueIndex:uq_web_auth_state,priority:1"`
+	BrowserBindingHash string    `gorm:"column:browser_binding_hash;type:text;not null;uniqueIndex:uq_web_auth_state,priority:2"`
+	CodeVerifier       string    `gorm:"column:code_verifier;type:text;not null"`
+	RedirectPath       string    `gorm:"column:redirect_path;type:text;not null"`
+	ExpiresAt          time.Time `gorm:"column:expires_at;not null;index"`
+	CreatedAt          time.Time `gorm:"column:created_at;not null"`
+	UpdatedAt          time.Time `gorm:"column:updated_at;not null"`
+}
+
+func (WebAuthStateModel) TableName() string { return "web_auth_states" }

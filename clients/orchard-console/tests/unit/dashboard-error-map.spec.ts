@@ -6,8 +6,8 @@ describe('dashboard error mapping', () => {
     const message401 = mapDashboardErrorMessage(401, '')
     const message403 = mapDashboardErrorMessage(403, '')
 
-    expect(message401).toContain('不传 API Key')
-    expect(message403).toContain('不传 API Key')
+    expect(message401).toContain('登录态已失效')
+    expect(message403).toContain('登录态已失效')
   })
 
   it('keeps fallback message for 503', () => {

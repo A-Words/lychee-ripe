@@ -7,6 +7,11 @@ describe('top nav visibility', () => {
     expect(shouldShowTopNav('/batch/create', undefined)).toBe(true)
   })
 
+  it('hides nav on login routes', () => {
+    expect(shouldShowTopNav('/login', undefined)).toBe(false)
+    expect(shouldShowTopNav('/auth/callback', undefined)).toBe(false)
+  })
+
   it('hides nav for public trace access', () => {
     expect(shouldShowTopNav('/trace', undefined)).toBe(false)
     expect(shouldShowTopNav('/trace/TRC-9A7X-11QF', 'invalid')).toBe(false)

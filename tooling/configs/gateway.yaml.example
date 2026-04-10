@@ -21,6 +21,9 @@ db:
     ssl_mode: "disable"
     schema: "public"
 
+seed:
+  default_resources_enabled: true # local demo orchard/plot seed data; disable for production
+
 trace:
   mode: "database" # database | blockchain
 
@@ -33,9 +36,20 @@ chain:
   receipt_poll_interval_ms: 500
 
 auth:
-  enabled: false
-  api_keys:
-    - "changeme"
+  mode: "disabled" # disabled | oidc
+  bootstrap_admin_email: "" # required for first startup with auth.mode=oidc on an empty users table
+  oidc:
+    issuer_url: "https://issuer.example.com" # the access_token presented to gateway must include an email claim for first-time user binding
+    audience: "lychee-ripe"
+    web_client_id: "orchard-console-web"
+  web:
+    public_base_url: "http://127.0.0.1:9000" # gateway external url used for /v1/auth/callback
+    app_base_url: "http://127.0.0.1:3000" # orchard-console external url used for post-login redirect
+    cookie_name: "lychee_session"
+    cookie_secure: false # set true behind https
+    cookie_same_site: "lax" # use "none" with cookie_secure=true for cross-site web deployments
+    session_ttl_s: 3600 # fallback session duration when OIDC token has no explicit expiry
+    session_cleanup_interval_s: 1800 # background purge interval for expired sessions/auth states
 
 rate_limit:
   enabled: true
@@ -47,15 +61,17 @@ rate_limit:
 cors:
   enabled: true
   allowed_origins:
-    - "*"
+    - "http://127.0.0.1:3000"
   allowed_methods:
     - "GET"
     - "POST"
+    - "PATCH"
+    - "DELETE"
     - "OPTIONS"
   allowed_headers:
     - "Content-Type"
     - "Authorization"
-    - "X-API-Key"
+  allow_credentials: true
   max_age_s: 3600
 
 logging:

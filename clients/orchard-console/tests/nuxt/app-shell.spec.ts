@@ -43,6 +43,18 @@ describe('app shell navigation', () => {
     expect(nav.get('[data-key="trace"]').attributes('data-active')).toBe('true')
     expect(nav.get('[data-key="trace"]').attributes('href')).toBe('/trace?from=index')
   })
+
+  it('renders auth actions in the header right slot instead of the center nav area', async () => {
+    const wrapper = await mountApp('/dashboard')
+    const center = wrapper.get('[data-slot="center"]')
+    const right = wrapper.get('[data-slot="right"]')
+
+    expect(right.text()).toContain('Dev Admin')
+    expect(right.text()).toContain('退出登录')
+    expect(center.text()).toContain('识别建批')
+    expect(center.text()).not.toContain('Dev Admin')
+    expect(center.text()).not.toContain('退出登录')
+  })
 })
 
 async function mountApp(route: string) {

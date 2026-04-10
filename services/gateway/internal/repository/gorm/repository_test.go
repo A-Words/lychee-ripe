@@ -8,6 +8,8 @@ import (
 	"os"
 	"path/filepath"
 	"strings"
+	"sync"
+	"sync/atomic"
 	"testing"
 	"time"
 
@@ -69,7 +71,7 @@ func TestBatchCRUDAndStatusFlowSQLite(t *testing.T) {
 	lastError := "chain unavailable"
 	retryCount := 2
 	updatedAt := time.Now().UTC().Add(2 * time.Minute)
-	if err := repo.UpdateBatchStatus(ctx, create.BatchID, domain.BatchStatusAnchorFailed, &lastError, &retryCount, updatedAt); err != nil {
+	if err := repo.UpdateBatchStatus(ctx, create.BatchID, domain.BatchStatusPendingAnchor, batch.UpdatedAt, domain.BatchStatusAnchorFailed, &lastError, &retryCount, updatedAt); err != nil {
 		t.Fatalf("update batch status: %v", err)
 	}
 
@@ -95,7 +97,7 @@ func TestBatchCRUDAndStatusFlowSQLite(t *testing.T) {
 		AnchorHash:      "0xhash",
 		AnchoredAt:      time.Now().UTC(),
 	}
-	if err := repo.AttachAnchorProof(ctx, create.BatchID, proof, time.Now().UTC()); err != nil {
+	if err := repo.AttachAnchorProof(ctx, create.BatchID, domain.BatchStatusAnchorFailed, updated.UpdatedAt, proof, time.Now().UTC()); err != nil {
 		t.Fatalf("attach anchor proof: %v", err)
 	}
 
@@ -108,6 +110,77 @@ func TestBatchCRUDAndStatusFlowSQLite(t *testing.T) {
 	}
 	if anchored.AnchorProof == nil || anchored.AnchorProof.TxHash != proof.TxHash {
 		t.Fatalf("anchor_proof = %+v, want tx_hash %q", anchored.AnchorProof, proof.TxHash)
+	}
+}
+
+func TestClaimPendingBatchPreventsDuplicateClaimSQLite(t *testing.T) {
+	t.Parallel()
+	ctx := context.Background()
+	repo, sqlDB := mustNewSQLiteRepo(t)
+	defer sqlDB.Close()
+
+	create := sampleCreateBatchParams("batch-claim-1", "trace-claim-1")
+	create.Status = domain.BatchStatusPendingAnchor
+	batch, err := repo.CreateBatch(ctx, create)
+	if err != nil {
+		t.Fatalf("create batch: %v", err)
+	}
+
+	claimAt := batch.UpdatedAt.Add(time.Minute)
+	if err := repo.ClaimPendingBatch(ctx, batch.BatchID, batch.UpdatedAt, claimAt); err != nil {
+		t.Fatalf("first claim: %v", err)
+	}
+	if err := repo.ClaimPendingBatch(ctx, batch.BatchID, batch.UpdatedAt, claimAt.Add(time.Minute)); !errors.Is(err, repository.ErrConflict) {
+		t.Fatalf("second claim error = %v, want ErrConflict", err)
+	}
+}
+
+func TestStaleBatchStatusWriteCannotOverrideAnchoredSQLite(t *testing.T) {
+	t.Parallel()
+	ctx := context.Background()
+	repo, sqlDB := mustNewSQLiteRepo(t)
+	defer sqlDB.Close()
+
+	create := sampleCreateBatchParams("batch-stale-1", "trace-stale-1")
+	create.Status = domain.BatchStatusPendingAnchor
+	batch, err := repo.CreateBatch(ctx, create)
+	if err != nil {
+		t.Fatalf("create batch: %v", err)
+	}
+
+	claimAt := batch.UpdatedAt.Add(time.Minute)
+	if err := repo.ClaimPendingBatch(ctx, batch.BatchID, batch.UpdatedAt, claimAt); err != nil {
+		t.Fatalf("claim batch: %v", err)
+	}
+
+	proof := domain.AnchorProofRecord{
+		TxHash:          "0xstale",
+		BlockNumber:     200,
+		ChainID:         "31337",
+		ContractAddress: "0xdef",
+		AnchorHash:      "0xstalehash",
+		AnchoredAt:      time.Now().UTC(),
+	}
+	anchoredAt := claimAt.Add(time.Minute)
+	if err := repo.AttachAnchorProof(ctx, batch.BatchID, domain.BatchStatusAnchoring, claimAt, proof, anchoredAt); err != nil {
+		t.Fatalf("attach anchor proof: %v", err)
+	}
+
+	lastError := "timeout"
+	retryCount := 1
+	if err := repo.UpdateBatchStatus(ctx, batch.BatchID, domain.BatchStatusAnchoring, claimAt, domain.BatchStatusAnchorFailed, &lastError, &retryCount, anchoredAt.Add(time.Minute)); !errors.Is(err, repository.ErrConflict) {
+		t.Fatalf("stale update error = %v, want ErrConflict", err)
+	}
+
+	updated, err := repo.GetBatchByID(ctx, batch.BatchID, domain.TraceModeBlockchain)
+	if err != nil {
+		t.Fatalf("get updated batch: %v", err)
+	}
+	if updated.Status != domain.BatchStatusAnchored {
+		t.Fatalf("status = %q, want anchored", updated.Status)
+	}
+	if updated.AnchorProof == nil || updated.AnchorProof.TxHash != proof.TxHash {
+		t.Fatalf("anchor_proof = %+v, want tx_hash %q", updated.AnchorProof, proof.TxHash)
 	}
 }
 
@@ -411,7 +484,11 @@ func TestModeScopedReadsAndDashboardAggregationsSQLite(t *testing.T) {
 	if _, err := repo.CreateBatch(ctx, blockchainBatch); err != nil {
 		t.Fatalf("create blockchain batch: %v", err)
 	}
-	if err := repo.AttachAnchorProof(ctx, blockchainBatch.BatchID, domain.AnchorProofRecord{
+	freshBlockchainBatch, err := repo.GetBatchByID(ctx, blockchainBatch.BatchID, domain.TraceModeBlockchain)
+	if err != nil {
+		t.Fatalf("reload blockchain batch: %v", err)
+	}
+	if err := repo.AttachAnchorProof(ctx, blockchainBatch.BatchID, domain.BatchStatusAnchored, freshBlockchainBatch.UpdatedAt, domain.AnchorProofRecord{
 		TxHash:          "0xtest",
 		BlockNumber:     100,
 		ChainID:         "31337",
@@ -510,6 +587,882 @@ func TestModeScopedReadsAndDashboardAggregationsSQLite(t *testing.T) {
 	}
 }
 
+func TestResolvePrincipalBindsActivePreProvisionedUser(t *testing.T) {
+	t.Parallel()
+
+	ctx := context.Background()
+	repo, sqlDB := mustNewSQLiteRepo(t)
+	defer sqlDB.Close()
+
+	now := time.Now().UTC()
+	user := UserModel{
+		ID:          "user-1",
+		Email:       "operator@example.com",
+		DisplayName: "Provisioned Operator",
+		Role:        string(domain.UserRoleOperator),
+		Status:      string(domain.UserStatusActive),
+		CreatedAt:   now,
+		UpdatedAt:   now,
+	}
+	if err := repo.db.WithContext(ctx).Create(&user).Error; err != nil {
+		t.Fatalf("seed user: %v", err)
+	}
+
+	claims := domain.IdentityClaims{
+		Subject:     "oidc-sub-1",
+		Email:       "operator@example.com",
+		DisplayName: "OIDC Operator",
+	}
+	principal, err := repo.ResolvePrincipal(ctx, claims, domain.AuthModeOIDC, now.Add(time.Minute))
+	if err != nil {
+		t.Fatalf("ResolvePrincipal returned error: %v", err)
+	}
+	if principal.Subject != "oidc-sub-1" {
+		t.Fatalf("principal subject = %q, want oidc-sub-1", principal.Subject)
+	}
+
+	var stored UserModel
+	if err := repo.db.WithContext(ctx).Where("id = ?", user.ID).First(&stored).Error; err != nil {
+		t.Fatalf("reload user: %v", err)
+	}
+	if stored.OIDCSubject == nil || *stored.OIDCSubject != "oidc-sub-1" {
+		t.Fatalf("oidc_subject = %v, want oidc-sub-1", stored.OIDCSubject)
+	}
+	if stored.DisplayName != "OIDC Operator" {
+		t.Fatalf("display_name = %q, want OIDC Operator", stored.DisplayName)
+	}
+	if stored.LastLoginAt == nil {
+		t.Fatal("expected last_login_at to be set")
+	}
+}
+
+func TestResolvePrincipalDoesNotRewriteLoginMetadataForBoundUser(t *testing.T) {
+	t.Parallel()
+
+	ctx := context.Background()
+	repo, sqlDB := mustNewSQLiteRepo(t)
+	defer sqlDB.Close()
+
+	now := time.Now().UTC()
+	firstLogin := now.Add(time.Minute)
+	secondRequest := now.Add(2 * time.Minute)
+	subject := "oidc-sub-2"
+	initialLoginAt := firstLogin
+	user := UserModel{
+		ID:          "user-3",
+		Email:       "bound@example.com",
+		DisplayName: "Bound User",
+		OIDCSubject: &subject,
+		Role:        string(domain.UserRoleOperator),
+		Status:      string(domain.UserStatusActive),
+		LastLoginAt: &initialLoginAt,
+		CreatedAt:   now,
+		UpdatedAt:   firstLogin,
+	}
+	if err := repo.db.WithContext(ctx).Create(&user).Error; err != nil {
+		t.Fatalf("seed user: %v", err)
+	}
+
+	claims := domain.IdentityClaims{
+		Subject:     subject,
+		Email:       user.Email,
+		DisplayName: "New Display Name",
+	}
+	principal, err := repo.ResolvePrincipal(ctx, claims, domain.AuthModeOIDC, secondRequest)
+	if err != nil {
+		t.Fatalf("ResolvePrincipal returned error: %v", err)
+	}
+	if principal.DisplayName != user.DisplayName {
+		t.Fatalf("principal display_name = %q, want %q", principal.DisplayName, user.DisplayName)
+	}
+
+	var stored UserModel
+	if err := repo.db.WithContext(ctx).Where("id = ?", user.ID).First(&stored).Error; err != nil {
+		t.Fatalf("reload user: %v", err)
+	}
+	if stored.LastLoginAt == nil || !stored.LastLoginAt.Equal(initialLoginAt) {
+		t.Fatalf("last_login_at = %v, want %v", stored.LastLoginAt, initialLoginAt)
+	}
+	if stored.DisplayName != user.DisplayName {
+		t.Fatalf("display_name = %q, want %q", stored.DisplayName, user.DisplayName)
+	}
+}
+
+func TestResolvePrincipalDoesNotBindDisabledPreProvisionedUser(t *testing.T) {
+	t.Parallel()
+
+	ctx := context.Background()
+	repo, sqlDB := mustNewSQLiteRepo(t)
+	defer sqlDB.Close()
+
+	now := time.Now().UTC()
+	user := UserModel{
+		ID:          "user-2",
+		Email:       "disabled@example.com",
+		DisplayName: "Disabled User",
+		Role:        string(domain.UserRoleOperator),
+		Status:      string(domain.UserStatusDisabled),
+		CreatedAt:   now,
+		UpdatedAt:   now,
+	}
+	if err := repo.db.WithContext(ctx).Create(&user).Error; err != nil {
+		t.Fatalf("seed user: %v", err)
+	}
+
+	claims := domain.IdentityClaims{
+		Subject:     "oidc-disabled-sub",
+		Email:       "disabled@example.com",
+		DisplayName: "Attempted Login",
+	}
+	if _, err := repo.ResolvePrincipal(ctx, claims, domain.AuthModeOIDC, now.Add(time.Minute)); !errors.Is(err, repository.ErrInvalidState) {
+		t.Fatalf("ResolvePrincipal error = %v, want ErrInvalidState", err)
+	}
+
+	var stored UserModel
+	if err := repo.db.WithContext(ctx).Where("id = ?", user.ID).First(&stored).Error; err != nil {
+		t.Fatalf("reload user: %v", err)
+	}
+	if stored.OIDCSubject != nil {
+		t.Fatalf("oidc_subject = %v, want nil", stored.OIDCSubject)
+	}
+	if stored.DisplayName != "Disabled User" {
+		t.Fatalf("display_name = %q, want Disabled User", stored.DisplayName)
+	}
+	if stored.LastLoginAt != nil {
+		t.Fatalf("last_login_at = %v, want nil", stored.LastLoginAt)
+	}
+}
+
+func TestResolvePrincipalConcurrentFirstBindPreservesSingleSubjectSQLite(t *testing.T) {
+	t.Parallel()
+
+	ctx := context.Background()
+	dbPath := filepath.Join(t.TempDir(), "gateway-resolve-principal.db")
+	cfg := config.DBConfig{
+		Driver:           "sqlite",
+		DSN:              dbPath,
+		MaxOpenConns:     10,
+		MaxIdleConns:     5,
+		ConnMaxLifetimeS: 300,
+		SQLite: config.SQLiteDBConfig{
+			JournalMode:   "WAL",
+			BusyTimeoutMS: 5000,
+		},
+	}
+	repoA, sqlDBA := mustNewRepoWithConfig(t, cfg)
+	defer sqlDBA.Close()
+	repoB, sqlDBB := mustNewRepoWithConfig(t, cfg)
+	defer sqlDBB.Close()
+
+	now := time.Now().UTC()
+	user := UserModel{
+		ID:          "user-concurrent",
+		Email:       "operator@example.com",
+		DisplayName: "Provisioned Operator",
+		Role:        string(domain.UserRoleOperator),
+		Status:      string(domain.UserStatusActive),
+		CreatedAt:   now,
+		UpdatedAt:   now,
+	}
+	if err := repoA.db.WithContext(ctx).Create(&user).Error; err != nil {
+		t.Fatalf("seed user: %v", err)
+	}
+
+	claims := []domain.IdentityClaims{
+		{Subject: "oidc-sub-1", Email: user.Email, DisplayName: "OIDC User 1"},
+		{Subject: "oidc-sub-2", Email: user.Email, DisplayName: "OIDC User 2"},
+	}
+	repos := []*Repository{repoA, repoB}
+
+	start := make(chan struct{})
+	var wg sync.WaitGroup
+	var successCount atomic.Int32
+	var notFoundCount atomic.Int32
+	errCh := make(chan error, len(claims))
+
+	for idx := range claims {
+		repo := repos[idx]
+		claim := claims[idx]
+		wg.Add(1)
+		go func() {
+			defer wg.Done()
+			<-start
+			_, err := repo.ResolvePrincipal(ctx, claim, domain.AuthModeOIDC, now.Add(time.Minute))
+			switch {
+			case err == nil:
+				successCount.Add(1)
+			case errors.Is(err, repository.ErrNotFound):
+				notFoundCount.Add(1)
+			default:
+				errCh <- err
+			}
+		}()
+	}
+
+	close(start)
+	wg.Wait()
+	close(errCh)
+
+	for err := range errCh {
+		if err != nil {
+			t.Fatalf("unexpected concurrent resolve error: %v", err)
+		}
+	}
+
+	if successCount.Load() != 1 {
+		t.Fatalf("success count = %d, want 1", successCount.Load())
+	}
+	if notFoundCount.Load() != 1 {
+		t.Fatalf("not found count = %d, want 1", notFoundCount.Load())
+	}
+
+	var stored UserModel
+	if err := repoA.db.WithContext(ctx).Where("id = ?", user.ID).First(&stored).Error; err != nil {
+		t.Fatalf("reload user: %v", err)
+	}
+	if stored.OIDCSubject == nil {
+		t.Fatal("expected oidc_subject to be bound")
+	}
+	bound := *stored.OIDCSubject
+	if bound != claims[0].Subject && bound != claims[1].Subject {
+		t.Fatalf("bound oidc_subject = %q, want one of the concurrent subjects", bound)
+	}
+	if stored.LastLoginAt == nil {
+		t.Fatal("expected last_login_at to be set for the winning bind")
+	}
+}
+
+func TestConsumeWebAuthStateRequiresMatchingBrowserBindingHash(t *testing.T) {
+	t.Parallel()
+
+	ctx := context.Background()
+	repo, sqlDB := mustNewSQLiteRepo(t)
+	defer sqlDB.Close()
+
+	now := time.Now().UTC()
+	_, err := repo.CreateWebAuthState(ctx, domain.WebAuthStateRecord{
+		State:              "state-1",
+		BrowserBindingHash: "binding-1",
+		CodeVerifier:       "verifier-1",
+		RedirectPath:       "/dashboard",
+		ExpiresAt:          now.Add(10 * time.Minute),
+		CreatedAt:          now,
+		UpdatedAt:          now,
+	})
+	if err != nil {
+		t.Fatalf("CreateWebAuthState returned error: %v", err)
+	}
+
+	if _, err := repo.ConsumeWebAuthState(ctx, "state-1", "binding-2", now.Add(time.Minute)); !errors.Is(err, repository.ErrNotFound) {
+		t.Fatalf("ConsumeWebAuthState with wrong binding error = %v, want ErrNotFound", err)
+	}
+
+	record, err := repo.ConsumeWebAuthState(ctx, "state-1", "binding-1", now.Add(time.Minute))
+	if err != nil {
+		t.Fatalf("ConsumeWebAuthState returned error: %v", err)
+	}
+	if record.State != "state-1" {
+		t.Fatalf("record.State = %q, want state-1", record.State)
+	}
+
+	if _, err := repo.ConsumeWebAuthState(ctx, "state-1", "binding-1", now.Add(2*time.Minute)); !errors.Is(err, repository.ErrNotFound) {
+		t.Fatalf("ConsumeWebAuthState second consume error = %v, want ErrNotFound", err)
+	}
+}
+
+func TestConsumeWebAuthStateDeletesExpiredState(t *testing.T) {
+	t.Parallel()
+
+	ctx := context.Background()
+	repo, sqlDB := mustNewSQLiteRepo(t)
+	defer sqlDB.Close()
+
+	now := time.Now().UTC()
+	_, err := repo.CreateWebAuthState(ctx, domain.WebAuthStateRecord{
+		State:              "state-expired",
+		BrowserBindingHash: "binding-expired",
+		CodeVerifier:       "verifier-expired",
+		RedirectPath:       "/dashboard",
+		ExpiresAt:          now.Add(-time.Minute),
+		CreatedAt:          now.Add(-2 * time.Minute),
+		UpdatedAt:          now.Add(-2 * time.Minute),
+	})
+	if err != nil {
+		t.Fatalf("CreateWebAuthState returned error: %v", err)
+	}
+
+	if _, err := repo.ConsumeWebAuthState(ctx, "state-expired", "binding-expired", now); !errors.Is(err, repository.ErrNotFound) {
+		t.Fatalf("ConsumeWebAuthState expired error = %v, want ErrNotFound", err)
+	}
+
+	var count int64
+	if err := repo.db.WithContext(ctx).Model(&WebAuthStateModel{}).Where("state = ?", "state-expired").Count(&count).Error; err != nil {
+		t.Fatalf("count state rows: %v", err)
+	}
+	if count != 0 {
+		t.Fatalf("expired state row count = %d, want 0", count)
+	}
+}
+
+func TestUpdateUserRejectsDemotingLastActiveAdmin(t *testing.T) {
+	t.Parallel()
+
+	ctx := context.Background()
+	repo, sqlDB := mustNewSQLiteRepo(t)
+	defer sqlDB.Close()
+
+	now := time.Now().UTC()
+	admin := UserModel{
+		ID:          "admin-1",
+		Email:       "admin@example.com",
+		DisplayName: "Admin",
+		Role:        string(domain.UserRoleAdmin),
+		Status:      string(domain.UserStatusActive),
+		CreatedAt:   now,
+		UpdatedAt:   now,
+	}
+	if err := repo.db.WithContext(ctx).Create(&admin).Error; err != nil {
+		t.Fatalf("seed admin: %v", err)
+	}
+
+	_, err := repo.UpdateUser(ctx, admin.UpdatedAt, domain.UserRecord{
+		ID:          admin.ID,
+		Email:       admin.Email,
+		DisplayName: admin.DisplayName,
+		Role:        domain.UserRoleOperator,
+		Status:      domain.UserStatusActive,
+		CreatedAt:   admin.CreatedAt,
+		UpdatedAt:   now.Add(time.Minute),
+	})
+	if !errors.Is(err, repository.ErrInvalidState) {
+		t.Fatalf("UpdateUser error = %v, want ErrInvalidState", err)
+	}
+}
+
+func TestUpdateUserAllowsDemotingAdminWhenAnotherActiveAdminExists(t *testing.T) {
+	t.Parallel()
+
+	ctx := context.Background()
+	repo, sqlDB := mustNewSQLiteRepo(t)
+	defer sqlDB.Close()
+
+	now := time.Now().UTC()
+	admins := []UserModel{
+		{
+			ID:          "admin-1",
+			Email:       "admin-1@example.com",
+			DisplayName: "Admin 1",
+			Role:        string(domain.UserRoleAdmin),
+			Status:      string(domain.UserStatusActive),
+			CreatedAt:   now,
+			UpdatedAt:   now,
+		},
+		{
+			ID:          "admin-2",
+			Email:       "admin-2@example.com",
+			DisplayName: "Admin 2",
+			Role:        string(domain.UserRoleAdmin),
+			Status:      string(domain.UserStatusActive),
+			CreatedAt:   now,
+			UpdatedAt:   now,
+		},
+	}
+	if err := repo.db.WithContext(ctx).Create(&admins).Error; err != nil {
+		t.Fatalf("seed admins: %v", err)
+	}
+
+	updated, err := repo.UpdateUser(ctx, admins[0].UpdatedAt, domain.UserRecord{
+		ID:          admins[0].ID,
+		Email:       admins[0].Email,
+		DisplayName: admins[0].DisplayName,
+		Role:        domain.UserRoleOperator,
+		Status:      domain.UserStatusActive,
+		CreatedAt:   admins[0].CreatedAt,
+		UpdatedAt:   now.Add(time.Minute),
+	})
+	if err != nil {
+		t.Fatalf("UpdateUser returned error: %v", err)
+	}
+	if updated.Role != domain.UserRoleOperator {
+		t.Fatalf("updated role = %q, want operator", updated.Role)
+	}
+}
+
+func TestUpdateUserMapsSQLiteUniqueEmailViolationToConflict(t *testing.T) {
+	t.Parallel()
+
+	ctx := context.Background()
+	repo, sqlDB := mustNewSQLiteRepo(t)
+	defer sqlDB.Close()
+
+	now := time.Now().UTC()
+	users := []UserModel{
+		{
+			ID:          "user-1",
+			Email:       "user-1@example.com",
+			DisplayName: "User 1",
+			Role:        string(domain.UserRoleOperator),
+			Status:      string(domain.UserStatusActive),
+			CreatedAt:   now,
+			UpdatedAt:   now,
+		},
+		{
+			ID:          "user-2",
+			Email:       "user-2@example.com",
+			DisplayName: "User 2",
+			Role:        string(domain.UserRoleOperator),
+			Status:      string(domain.UserStatusActive),
+			CreatedAt:   now,
+			UpdatedAt:   now,
+		},
+	}
+	if err := repo.db.WithContext(ctx).Create(&users).Error; err != nil {
+		t.Fatalf("seed users: %v", err)
+	}
+
+	_, err := repo.UpdateUser(ctx, users[0].UpdatedAt, domain.UserRecord{
+		ID:          users[0].ID,
+		Email:       users[1].Email,
+		DisplayName: users[0].DisplayName,
+		Role:        domain.UserRoleOperator,
+		Status:      domain.UserStatusActive,
+		CreatedAt:   users[0].CreatedAt,
+		UpdatedAt:   now.Add(time.Minute),
+	})
+	if !errors.Is(err, repository.ErrConflict) {
+		t.Fatalf("UpdateUser error = %v, want ErrConflict", err)
+	}
+}
+
+func TestUpdateUserConcurrentDemotionsPreserveActiveAdmin(t *testing.T) {
+	t.Parallel()
+
+	ctx := context.Background()
+	dbPath := filepath.Join(t.TempDir(), "gateway-users.db")
+	cfg := config.DBConfig{
+		Driver:           "sqlite",
+		DSN:              dbPath,
+		MaxOpenConns:     10,
+		MaxIdleConns:     5,
+		ConnMaxLifetimeS: 300,
+		SQLite: config.SQLiteDBConfig{
+			JournalMode:   "WAL",
+			BusyTimeoutMS: 5000,
+		},
+	}
+	repoA, sqlDBA := mustNewRepoWithConfig(t, cfg)
+	defer sqlDBA.Close()
+	repoB, sqlDBB := mustNewRepoWithConfig(t, cfg)
+	defer sqlDBB.Close()
+
+	now := time.Now().UTC()
+	admins := []UserModel{
+		{
+			ID:          "admin-1",
+			Email:       "admin-1@example.com",
+			DisplayName: "Admin 1",
+			Role:        string(domain.UserRoleAdmin),
+			Status:      string(domain.UserStatusActive),
+			CreatedAt:   now,
+			UpdatedAt:   now,
+		},
+		{
+			ID:          "admin-2",
+			Email:       "admin-2@example.com",
+			DisplayName: "Admin 2",
+			Role:        string(domain.UserRoleAdmin),
+			Status:      string(domain.UserStatusActive),
+			CreatedAt:   now,
+			UpdatedAt:   now,
+		},
+	}
+	if err := repoA.db.WithContext(ctx).Create(&admins).Error; err != nil {
+		t.Fatalf("seed admins: %v", err)
+	}
+
+	start := make(chan struct{})
+	var wg sync.WaitGroup
+	var successCount atomic.Int32
+	var invalidStateCount atomic.Int32
+	errCh := make(chan error, len(admins))
+
+	repos := []*Repository{repoA, repoB}
+	for idx, admin := range admins {
+		admin := admin
+		repo := repos[idx]
+		wg.Add(1)
+		go func() {
+			defer wg.Done()
+			<-start
+			_, err := repo.UpdateUser(ctx, admin.UpdatedAt, domain.UserRecord{
+				ID:          admin.ID,
+				Email:       admin.Email,
+				DisplayName: admin.DisplayName,
+				Role:        domain.UserRoleOperator,
+				Status:      domain.UserStatusActive,
+				CreatedAt:   admin.CreatedAt,
+				UpdatedAt:   now.Add(time.Minute),
+			})
+			switch {
+			case err == nil:
+				successCount.Add(1)
+			case errors.Is(err, repository.ErrInvalidState):
+				invalidStateCount.Add(1)
+			default:
+				errCh <- err
+			}
+		}()
+	}
+
+	close(start)
+	wg.Wait()
+	close(errCh)
+
+	for err := range errCh {
+		if err != nil {
+			t.Fatalf("unexpected concurrent update error: %v", err)
+		}
+	}
+
+	if successCount.Load() != 1 {
+		t.Fatalf("success count = %d, want 1", successCount.Load())
+	}
+	if invalidStateCount.Load() != 1 {
+		t.Fatalf("invalid state count = %d, want 1", invalidStateCount.Load())
+	}
+
+	var activeAdmins int64
+	if err := repoA.db.WithContext(ctx).
+		Model(&UserModel{}).
+		Where("role = ? AND status = ?", string(domain.UserRoleAdmin), string(domain.UserStatusActive)).
+		Count(&activeAdmins).Error; err != nil {
+		t.Fatalf("count active admins: %v", err)
+	}
+	if activeAdmins != 1 {
+		t.Fatalf("active admin count = %d, want 1", activeAdmins)
+	}
+}
+
+func TestArchiveOrchardRejectsWhenActivePlotsExistSQLite(t *testing.T) {
+	t.Parallel()
+
+	ctx := context.Background()
+	repo, sqlDB := mustNewSQLiteRepo(t)
+	defer sqlDB.Close()
+
+	now := time.Now().UTC()
+	orchard := OrchardModel{
+		OrchardID:   "orchard-1",
+		OrchardName: "Demo Orchard",
+		Status:      string(domain.ResourceStatusActive),
+		CreatedAt:   now,
+		UpdatedAt:   now,
+	}
+	plot := PlotModel{
+		PlotID:    "plot-1",
+		OrchardID: orchard.OrchardID,
+		PlotName:  "A1",
+		Status:    string(domain.ResourceStatusActive),
+		CreatedAt: now,
+		UpdatedAt: now,
+	}
+	if err := repo.db.WithContext(ctx).Create(&orchard).Error; err != nil {
+		t.Fatalf("seed orchard: %v", err)
+	}
+	if err := repo.db.WithContext(ctx).Create(&plot).Error; err != nil {
+		t.Fatalf("seed plot: %v", err)
+	}
+
+	_, err := repo.ArchiveOrchard(ctx, orchard.UpdatedAt, domain.OrchardRecord{
+		OrchardID:   orchard.OrchardID,
+		OrchardName: orchard.OrchardName,
+		Status:      domain.ResourceStatusArchived,
+		CreatedAt:   orchard.CreatedAt,
+		UpdatedAt:   now.Add(time.Minute),
+	})
+	if !errors.Is(err, repository.ErrInvalidState) {
+		t.Fatalf("ArchiveOrchard error = %v, want ErrInvalidState", err)
+	}
+}
+
+func TestCreatePlotGuardedRejectsUnknownOrchardSQLite(t *testing.T) {
+	t.Parallel()
+
+	ctx := context.Background()
+	repo, sqlDB := mustNewSQLiteRepo(t)
+	defer sqlDB.Close()
+
+	_, err := repo.CreatePlotGuarded(ctx, domain.PlotRecord{
+		PlotID:    "plot-1",
+		OrchardID: "missing-orchard",
+		PlotName:  "A1",
+		Status:    domain.ResourceStatusActive,
+		CreatedAt: time.Now().UTC(),
+		UpdatedAt: time.Now().UTC(),
+	})
+	if !errors.Is(err, repository.ErrInvalidState) {
+		t.Fatalf("CreatePlotGuarded error = %v, want ErrInvalidState", err)
+	}
+}
+
+func TestUpdatePlotGuardedRejectsActivePlotUnderArchivedOrchardSQLite(t *testing.T) {
+	t.Parallel()
+
+	ctx := context.Background()
+	repo, sqlDB := mustNewSQLiteRepo(t)
+	defer sqlDB.Close()
+
+	now := time.Now().UTC()
+	orchards := []OrchardModel{
+		{
+			OrchardID:   "orchard-active",
+			OrchardName: "Active Orchard",
+			Status:      string(domain.ResourceStatusActive),
+			CreatedAt:   now,
+			UpdatedAt:   now,
+		},
+		{
+			OrchardID:   "orchard-archived",
+			OrchardName: "Archived Orchard",
+			Status:      string(domain.ResourceStatusArchived),
+			CreatedAt:   now,
+			UpdatedAt:   now,
+		},
+	}
+	if err := repo.db.WithContext(ctx).Create(&orchards).Error; err != nil {
+		t.Fatalf("seed orchards: %v", err)
+	}
+	plot := PlotModel{
+		PlotID:    "plot-1",
+		OrchardID: "orchard-active",
+		PlotName:  "A1",
+		Status:    string(domain.ResourceStatusActive),
+		CreatedAt: now,
+		UpdatedAt: now,
+	}
+	if err := repo.db.WithContext(ctx).Create(&plot).Error; err != nil {
+		t.Fatalf("seed plot: %v", err)
+	}
+
+	_, err := repo.UpdatePlotGuarded(ctx, plot.UpdatedAt, domain.PlotRecord{
+		PlotID:    plot.PlotID,
+		OrchardID: "orchard-archived",
+		PlotName:  plot.PlotName,
+		Status:    domain.ResourceStatusActive,
+		CreatedAt: plot.CreatedAt,
+		UpdatedAt: now.Add(time.Minute),
+	})
+	if !errors.Is(err, repository.ErrInvalidState) {
+		t.Fatalf("UpdatePlotGuarded error = %v, want ErrInvalidState", err)
+	}
+}
+
+func TestArchiveOrchardAndCreatePlotGuardedConcurrentPreserveInvariantSQLite(t *testing.T) {
+	t.Parallel()
+
+	ctx := context.Background()
+	dbPath := filepath.Join(t.TempDir(), "gateway-orchards.db")
+	cfg := config.DBConfig{
+		Driver:           "sqlite",
+		DSN:              dbPath,
+		MaxOpenConns:     10,
+		MaxIdleConns:     5,
+		ConnMaxLifetimeS: 300,
+		SQLite: config.SQLiteDBConfig{
+			JournalMode:   "WAL",
+			BusyTimeoutMS: 5000,
+		},
+	}
+	repoA, sqlDBA := mustNewRepoWithConfig(t, cfg)
+	defer sqlDBA.Close()
+	repoB, sqlDBB := mustNewRepoWithConfig(t, cfg)
+	defer sqlDBB.Close()
+
+	now := time.Now().UTC()
+	orchard := OrchardModel{
+		OrchardID:   "orchard-1",
+		OrchardName: "Demo Orchard",
+		Status:      string(domain.ResourceStatusActive),
+		CreatedAt:   now,
+		UpdatedAt:   now,
+	}
+	if err := repoA.db.WithContext(ctx).Create(&orchard).Error; err != nil {
+		t.Fatalf("seed orchard: %v", err)
+	}
+
+	start := make(chan struct{})
+	var wg sync.WaitGroup
+	errCh := make(chan error, 2)
+
+	wg.Add(1)
+	go func() {
+		defer wg.Done()
+		<-start
+		_, err := repoA.ArchiveOrchard(ctx, orchard.UpdatedAt, domain.OrchardRecord{
+			OrchardID:   orchard.OrchardID,
+			OrchardName: orchard.OrchardName,
+			Status:      domain.ResourceStatusArchived,
+			CreatedAt:   orchard.CreatedAt,
+			UpdatedAt:   now.Add(time.Minute),
+		})
+		if err != nil && !errors.Is(err, repository.ErrInvalidState) {
+			errCh <- fmt.Errorf("archive orchard: %w", err)
+		}
+	}()
+
+	wg.Add(1)
+	go func() {
+		defer wg.Done()
+		<-start
+		_, err := repoB.CreatePlotGuarded(ctx, domain.PlotRecord{
+			PlotID:    "plot-1",
+			OrchardID: orchard.OrchardID,
+			PlotName:  "A1",
+			Status:    domain.ResourceStatusActive,
+			CreatedAt: now.Add(time.Minute),
+			UpdatedAt: now.Add(time.Minute),
+		})
+		if err != nil && !errors.Is(err, repository.ErrInvalidState) {
+			errCh <- fmt.Errorf("create plot: %w", err)
+		}
+	}()
+
+	close(start)
+	wg.Wait()
+	close(errCh)
+
+	for err := range errCh {
+		if err != nil {
+			t.Fatalf("unexpected concurrent error: %v", err)
+		}
+	}
+
+	assertNoArchivedOrchardWithActivePlots(t, repoA, orchard.OrchardID)
+}
+
+func TestArchiveOrchardAndUpdatePlotGuardedConcurrentPreserveInvariantSQLite(t *testing.T) {
+	t.Parallel()
+
+	ctx := context.Background()
+	dbPath := filepath.Join(t.TempDir(), "gateway-orchards-move.db")
+	cfg := config.DBConfig{
+		Driver:           "sqlite",
+		DSN:              dbPath,
+		MaxOpenConns:     10,
+		MaxIdleConns:     5,
+		ConnMaxLifetimeS: 300,
+		SQLite: config.SQLiteDBConfig{
+			JournalMode:   "WAL",
+			BusyTimeoutMS: 5000,
+		},
+	}
+	repoA, sqlDBA := mustNewRepoWithConfig(t, cfg)
+	defer sqlDBA.Close()
+	repoB, sqlDBB := mustNewRepoWithConfig(t, cfg)
+	defer sqlDBB.Close()
+
+	now := time.Now().UTC()
+	orchards := []OrchardModel{
+		{
+			OrchardID:   "orchard-1",
+			OrchardName: "Target Orchard",
+			Status:      string(domain.ResourceStatusActive),
+			CreatedAt:   now,
+			UpdatedAt:   now,
+		},
+		{
+			OrchardID:   "orchard-2",
+			OrchardName: "Source Orchard",
+			Status:      string(domain.ResourceStatusActive),
+			CreatedAt:   now,
+			UpdatedAt:   now,
+		},
+	}
+	if err := repoA.db.WithContext(ctx).Create(&orchards).Error; err != nil {
+		t.Fatalf("seed orchards: %v", err)
+	}
+	plot := PlotModel{
+		PlotID:    "plot-1",
+		OrchardID: "orchard-2",
+		PlotName:  "A1",
+		Status:    string(domain.ResourceStatusActive),
+		CreatedAt: now,
+		UpdatedAt: now,
+	}
+	if err := repoA.db.WithContext(ctx).Create(&plot).Error; err != nil {
+		t.Fatalf("seed plot: %v", err)
+	}
+
+	start := make(chan struct{})
+	var wg sync.WaitGroup
+	errCh := make(chan error, 2)
+
+	wg.Add(1)
+	go func() {
+		defer wg.Done()
+		<-start
+		_, err := repoA.ArchiveOrchard(ctx, orchards[0].UpdatedAt, domain.OrchardRecord{
+			OrchardID:   "orchard-1",
+			OrchardName: "Target Orchard",
+			Status:      domain.ResourceStatusArchived,
+			CreatedAt:   now,
+			UpdatedAt:   now.Add(time.Minute),
+		})
+		if err != nil && !errors.Is(err, repository.ErrInvalidState) {
+			errCh <- fmt.Errorf("archive orchard: %w", err)
+		}
+	}()
+
+	wg.Add(1)
+	go func() {
+		defer wg.Done()
+		<-start
+		_, err := repoB.UpdatePlotGuarded(ctx, plot.UpdatedAt, domain.PlotRecord{
+			PlotID:    plot.PlotID,
+			OrchardID: "orchard-1",
+			PlotName:  plot.PlotName,
+			Status:    domain.ResourceStatusActive,
+			CreatedAt: plot.CreatedAt,
+			UpdatedAt: now.Add(time.Minute),
+		})
+		if err != nil && !errors.Is(err, repository.ErrInvalidState) {
+			errCh <- fmt.Errorf("update plot: %w", err)
+		}
+	}()
+
+	close(start)
+	wg.Wait()
+	close(errCh)
+
+	for err := range errCh {
+		if err != nil {
+			t.Fatalf("unexpected concurrent error: %v", err)
+		}
+	}
+
+	assertNoArchivedOrchardWithActivePlots(t, repoA, "orchard-1")
+}
+
+func assertNoArchivedOrchardWithActivePlots(t *testing.T, repo *Repository, orchardID string) {
+	t.Helper()
+
+	ctx := context.Background()
+	var orchard OrchardModel
+	if err := repo.db.WithContext(ctx).Where("orchard_id = ?", orchardID).First(&orchard).Error; err != nil {
+		t.Fatalf("reload orchard: %v", err)
+	}
+	var activePlots int64
+	if err := repo.db.WithContext(ctx).
+		Model(&PlotModel{}).
+		Where("orchard_id = ? AND status = ?", orchardID, string(domain.ResourceStatusActive)).
+		Count(&activePlots).Error; err != nil {
+		t.Fatalf("count active plots: %v", err)
+	}
+	if orchard.Status == string(domain.ResourceStatusArchived) && activePlots > 0 {
+		t.Fatalf("invariant violated: orchard %s archived with %d active plots", orchardID, activePlots)
+	}
+}
+
 func mustNewSQLiteRepo(t *testing.T) (*Repository, *sql.DB) {
 	t.Helper()
 	cfg := config.DBConfig{
@@ -539,6 +1492,11 @@ func mustNewRepoWithConfig(t *testing.T, cfg config.DBConfig) (*Repository, *sql
 		&ReconcileJobModel{},
 		&ReconcileJobItemModel{},
 		&AuditLogModel{},
+		&UserModel{},
+		&OrchardModel{},
+		&PlotModel{},
+		&WebSessionModel{},
+		&WebAuthStateModel{},
 	); err != nil {
 		t.Fatalf("auto migrate: %v", err)
 	}

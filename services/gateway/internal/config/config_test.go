@@ -41,6 +41,9 @@ func TestDefaults(t *testing.T) {
 	if cfg.DB.Postgres.Schema != "public" {
 		t.Errorf("unexpected default postgres schema: %s", cfg.DB.Postgres.Schema)
 	}
+	if cfg.Seed.DefaultResourcesEnabled {
+		t.Error("seed.default_resources_enabled should default to false")
+	}
 	if cfg.Trace.Mode != "database" {
 		t.Errorf("unexpected default trace.mode: %s", cfg.Trace.Mode)
 	}
@@ -49,6 +52,18 @@ func TestDefaults(t *testing.T) {
 	}
 	if cfg.Chain.ReceiptPollIntervalMS != 500 {
 		t.Errorf("unexpected default chain.receipt_poll_interval_ms: %d", cfg.Chain.ReceiptPollIntervalMS)
+	}
+	if got := cfg.CORS.AllowedMethods; len(got) != 5 || got[0] != "GET" || got[1] != "POST" || got[2] != "PATCH" || got[3] != "DELETE" || got[4] != "OPTIONS" {
+		t.Errorf("unexpected default cors.allowed_methods: %#v", got)
+	}
+	if cfg.Auth.Web.CookieName != "lychee_session" {
+		t.Errorf("unexpected default auth.web.cookie_name: %q", cfg.Auth.Web.CookieName)
+	}
+	if cfg.Auth.Web.CookieSameSite != "lax" {
+		t.Errorf("unexpected default auth.web.cookie_same_site: %q", cfg.Auth.Web.CookieSameSite)
+	}
+	if cfg.CORS.AllowCredentials {
+		t.Error("cors.allow_credentials should default to false")
 	}
 }
 
@@ -74,10 +89,25 @@ db:
   postgres:
     ssl_mode: "disable"
     schema: "public"
+seed:
+  default_resources_enabled: true
 auth:
-  enabled: true
-  api_keys:
-    - "test-key-1"
+  mode: "oidc"
+  bootstrap_admin_email: "admin@example.com"
+  oidc:
+    issuer_url: "https://issuer.example.com"
+    audience: "lychee-ripe"
+    web_client_id: "orchard-console-web"
+  web:
+    public_base_url: "http://127.0.0.1:9000"
+    app_base_url: "http://127.0.0.1:3000"
+    cookie_name: "lychee_session"
+    cookie_secure: false
+    cookie_same_site: "lax"
+cors:
+  allowed_origins:
+    - "http://127.0.0.1:3000"
+  allow_credentials: true
 rate_limit:
   enabled: false
 trace:
@@ -122,11 +152,32 @@ trace:
 	if cfg.DB.Postgres.Schema != "public" {
 		t.Errorf("db.postgres.schema = %q, want public", cfg.DB.Postgres.Schema)
 	}
-	if !cfg.Auth.Enabled {
-		t.Error("auth should be enabled")
+	if !cfg.Seed.DefaultResourcesEnabled {
+		t.Error("seed.default_resources_enabled = false, want true")
 	}
-	if len(cfg.Auth.APIKeys) != 1 || cfg.Auth.APIKeys[0] != "test-key-1" {
-		t.Errorf("api_keys = %v", cfg.Auth.APIKeys)
+	if cfg.Auth.Mode != AuthModeOIDC {
+		t.Errorf("auth.mode = %q, want oidc", cfg.Auth.Mode)
+	}
+	if cfg.Auth.BootstrapAdminEmail != "admin@example.com" {
+		t.Errorf("auth.bootstrap_admin_email = %q, want admin@example.com", cfg.Auth.BootstrapAdminEmail)
+	}
+	if cfg.Auth.OIDC.IssuerURL != "https://issuer.example.com" {
+		t.Errorf("auth.oidc.issuer_url = %q", cfg.Auth.OIDC.IssuerURL)
+	}
+	if cfg.Auth.OIDC.Audience != "lychee-ripe" {
+		t.Errorf("auth.oidc.audience = %q", cfg.Auth.OIDC.Audience)
+	}
+	if cfg.Auth.OIDC.WebClientID != "orchard-console-web" {
+		t.Errorf("auth.oidc.web_client_id = %q", cfg.Auth.OIDC.WebClientID)
+	}
+	if cfg.Auth.Web.PublicBaseURL != "http://127.0.0.1:9000" {
+		t.Errorf("auth.web.public_base_url = %q", cfg.Auth.Web.PublicBaseURL)
+	}
+	if cfg.Auth.Web.AppBaseURL != "http://127.0.0.1:3000" {
+		t.Errorf("auth.web.app_base_url = %q", cfg.Auth.Web.AppBaseURL)
+	}
+	if cfg.Auth.Web.CookieSameSite != "lax" {
+		t.Errorf("auth.web.cookie_same_site = %q, want lax", cfg.Auth.Web.CookieSameSite)
 	}
 	if cfg.RateLimit.Enabled {
 		t.Error("rate_limit should be disabled")
@@ -137,6 +188,9 @@ trace:
 	// Defaults should be preserved for unset fields.
 	if cfg.CORS.MaxAgeS != 3600 {
 		t.Errorf("cors max_age_s = %d, want 3600 (default)", cfg.CORS.MaxAgeS)
+	}
+	if got := cfg.CORS.AllowedMethods; len(got) != 5 || got[0] != "GET" || got[1] != "POST" || got[2] != "PATCH" || got[3] != "DELETE" || got[4] != "OPTIONS" {
+		t.Errorf("unexpected default cors.allowed_methods: %#v", got)
 	}
 }
 
@@ -258,6 +312,91 @@ db:
 	_, err := Load(cfgPath)
 	if err == nil {
 		t.Fatal("expected validation error for invalid db.driver")
+	}
+}
+
+func TestLoadAppliesAuthEnvOverrides(t *testing.T) {
+	dir := t.TempDir()
+	cfgPath := filepath.Join(dir, "gateway.yaml")
+	content := `
+auth:
+  mode: "disabled"
+cors:
+  allowed_origins:
+    - "https://app.example.com"
+  allow_credentials: true
+`
+	if err := os.WriteFile(cfgPath, []byte(content), 0o644); err != nil {
+		t.Fatal(err)
+	}
+
+	t.Setenv("LYCHEE_AUTH_MODE", "oidc")
+	t.Setenv("LYCHEE_AUTH_OIDC_ISSUER_URL", "https://issuer.override.example.com")
+	t.Setenv("LYCHEE_AUTH_OIDC_AUDIENCE", "lychee-ripe-override")
+	t.Setenv("LYCHEE_AUTH_OIDC_WEB_CLIENT_ID", "web-client-override")
+	t.Setenv("LYCHEE_AUTH_BOOTSTRAP_ADMIN_EMAIL", "bootstrap@example.com")
+	t.Setenv("LYCHEE_AUTH_WEB_PUBLIC_BASE_URL", "https://gateway.example.com")
+	t.Setenv("LYCHEE_AUTH_WEB_APP_BASE_URL", "https://app.example.com")
+	t.Setenv("LYCHEE_AUTH_WEB_COOKIE_NAME", "session_cookie")
+	t.Setenv("LYCHEE_AUTH_WEB_COOKIE_SECURE", "true")
+	t.Setenv("LYCHEE_AUTH_WEB_COOKIE_SAME_SITE", "none")
+
+	cfg, err := Load(cfgPath)
+	if err != nil {
+		t.Fatalf("Load failed: %v", err)
+	}
+
+	if cfg.Auth.Mode != AuthModeOIDC {
+		t.Fatalf("auth.mode = %q, want oidc", cfg.Auth.Mode)
+	}
+	if cfg.Auth.OIDC.IssuerURL != "https://issuer.override.example.com" {
+		t.Fatalf("auth.oidc.issuer_url = %q", cfg.Auth.OIDC.IssuerURL)
+	}
+	if cfg.Auth.OIDC.Audience != "lychee-ripe-override" {
+		t.Fatalf("auth.oidc.audience = %q", cfg.Auth.OIDC.Audience)
+	}
+	if cfg.Auth.OIDC.WebClientID != "web-client-override" {
+		t.Fatalf("auth.oidc.web_client_id = %q", cfg.Auth.OIDC.WebClientID)
+	}
+	if cfg.Auth.BootstrapAdminEmail != "bootstrap@example.com" {
+		t.Fatalf("auth.bootstrap_admin_email = %q", cfg.Auth.BootstrapAdminEmail)
+	}
+	if cfg.Auth.Web.PublicBaseURL != "https://gateway.example.com" {
+		t.Fatalf("auth.web.public_base_url = %q", cfg.Auth.Web.PublicBaseURL)
+	}
+	if cfg.Auth.Web.AppBaseURL != "https://app.example.com" {
+		t.Fatalf("auth.web.app_base_url = %q", cfg.Auth.Web.AppBaseURL)
+	}
+	if cfg.Auth.Web.CookieName != "session_cookie" {
+		t.Fatalf("auth.web.cookie_name = %q", cfg.Auth.Web.CookieName)
+	}
+	if !cfg.Auth.Web.CookieSecure {
+		t.Fatal("auth.web.cookie_secure = false, want true")
+	}
+	if cfg.Auth.Web.CookieSameSite != "none" {
+		t.Fatalf("auth.web.cookie_same_site = %q, want none", cfg.Auth.Web.CookieSameSite)
+	}
+}
+
+func TestLoadAppliesSeedEnvOverride(t *testing.T) {
+	dir := t.TempDir()
+	cfgPath := filepath.Join(dir, "gateway.yaml")
+	content := `
+seed:
+  default_resources_enabled: false
+`
+	if err := os.WriteFile(cfgPath, []byte(content), 0o644); err != nil {
+		t.Fatal(err)
+	}
+
+	t.Setenv("LYCHEE_SEED_DEFAULT_RESOURCES_ENABLED", "true")
+
+	cfg, err := Load(cfgPath)
+	if err != nil {
+		t.Fatalf("Load failed: %v", err)
+	}
+	if !cfg.Seed.DefaultResourcesEnabled {
+		t.Fatal("seed.default_resources_enabled = false, want true after env override")
 	}
 }
 
@@ -602,5 +741,90 @@ func TestAddr(t *testing.T) {
 	addr := cfg.Addr()
 	if addr != "0.0.0.0:9000" {
 		t.Errorf("addr = %q, want 0.0.0.0:9000", addr)
+	}
+}
+
+func TestValidateRejectsCrossSiteWebCookieWithLax(t *testing.T) {
+	cfg := Defaults()
+	cfg.Auth.Mode = AuthModeOIDC
+	cfg.Auth.OIDC.IssuerURL = "https://issuer.example.com"
+	cfg.Auth.OIDC.Audience = "lychee-ripe"
+	cfg.Auth.OIDC.WebClientID = "orchard-console-web"
+	cfg.Auth.Web.PublicBaseURL = "https://gateway.example.com"
+	cfg.Auth.Web.AppBaseURL = "https://console.other-example.com"
+	cfg.Auth.Web.CookieSameSite = "lax"
+
+	err := cfg.Validate()
+	if err == nil {
+		t.Fatal("expected validation error for cross-site lax web cookie")
+	}
+}
+
+func TestValidateRejectsSameSiteNoneWithoutSecure(t *testing.T) {
+	cfg := Defaults()
+	cfg.Auth.Mode = AuthModeOIDC
+	cfg.Auth.OIDC.IssuerURL = "https://issuer.example.com"
+	cfg.Auth.OIDC.Audience = "lychee-ripe"
+	cfg.Auth.OIDC.WebClientID = "orchard-console-web"
+	cfg.Auth.Web.PublicBaseURL = "https://gateway.example.com"
+	cfg.Auth.Web.AppBaseURL = "https://console.other-example.com"
+	cfg.Auth.Web.CookieSameSite = "none"
+	cfg.Auth.Web.CookieSecure = false
+
+	err := cfg.Validate()
+	if err == nil {
+		t.Fatal("expected validation error when cookie_same_site=none without secure cookie")
+	}
+}
+
+func TestValidateAllowsCrossSiteWebCookieWithNoneAndSecure(t *testing.T) {
+	cfg := Defaults()
+	cfg.Auth.Mode = AuthModeOIDC
+	cfg.Auth.OIDC.IssuerURL = "https://issuer.example.com"
+	cfg.Auth.OIDC.Audience = "lychee-ripe"
+	cfg.Auth.OIDC.WebClientID = "orchard-console-web"
+	cfg.Auth.Web.PublicBaseURL = "https://gateway.example.com"
+	cfg.Auth.Web.AppBaseURL = "https://console.other-example.com"
+	cfg.Auth.Web.CookieSameSite = "none"
+	cfg.Auth.Web.CookieSecure = true
+	cfg.CORS.AllowCredentials = true
+	cfg.CORS.AllowedOrigins = []string{"https://console.other-example.com"}
+
+	if err := cfg.Validate(); err != nil {
+		t.Fatalf("Validate returned error: %v", err)
+	}
+}
+
+func TestValidateRejectsOIDCWithoutCredentialedCORS(t *testing.T) {
+	cfg := Defaults()
+	cfg.Auth.Mode = AuthModeOIDC
+	cfg.Auth.OIDC.IssuerURL = "https://issuer.example.com"
+	cfg.Auth.OIDC.Audience = "lychee-ripe"
+	cfg.Auth.OIDC.WebClientID = "orchard-console-web"
+	cfg.Auth.Web.PublicBaseURL = "https://gateway.example.com"
+	cfg.Auth.Web.AppBaseURL = "https://app.example.com"
+	cfg.CORS.AllowCredentials = false
+	cfg.CORS.AllowedOrigins = []string{"https://app.example.com"}
+
+	err := cfg.Validate()
+	if err == nil {
+		t.Fatal("expected validation error when oidc is enabled without cors.allow_credentials")
+	}
+}
+
+func TestValidateRejectsOIDCWithWildcardOrigins(t *testing.T) {
+	cfg := Defaults()
+	cfg.Auth.Mode = AuthModeOIDC
+	cfg.Auth.OIDC.IssuerURL = "https://issuer.example.com"
+	cfg.Auth.OIDC.Audience = "lychee-ripe"
+	cfg.Auth.OIDC.WebClientID = "orchard-console-web"
+	cfg.Auth.Web.PublicBaseURL = "https://gateway.example.com"
+	cfg.Auth.Web.AppBaseURL = "https://app.example.com"
+	cfg.CORS.AllowCredentials = true
+	cfg.CORS.AllowedOrigins = []string{"*"}
+
+	err := cfg.Validate()
+	if err == nil {
+		t.Fatal("expected validation error when oidc is enabled with wildcard cors origin")
 	}
 }

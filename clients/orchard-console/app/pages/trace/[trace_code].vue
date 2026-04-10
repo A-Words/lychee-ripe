@@ -1,5 +1,6 @@
 <script setup lang="ts">
 import type { TraceApiError, TraceResponse, TraceViewState } from '~/types/trace'
+import { buildAppPath, inferAppBasePath } from '~/utils/app-path'
 import { getTraceBackTarget, getTraceFromQuery } from '~/utils/trace-from'
 import { getTraceCodeFromRouteParam } from '~/utils/trace-route'
 
@@ -13,7 +14,20 @@ const { getPublicTrace, parseTraceError } = useTraceApi()
 
 const traceCode = computed(() => getTraceCodeFromRouteParam(route.params.trace_code as string | string[] | undefined))
 const traceFrom = computed(() => getTraceFromQuery(route.query.from as string | string[] | undefined))
-const backTarget = computed(() => getTraceBackTarget(traceFrom.value))
+const appBasePath = computed(() =>
+  import.meta.client ? inferAppBasePath(window.location.pathname, route.path) : ''
+)
+const backTarget = computed(() => {
+  const target = getTraceBackTarget(traceFrom.value)
+  if (!target) {
+    return null
+  }
+  return {
+    ...target,
+    to: buildAppPath(appBasePath.value, target.to)
+  }
+})
+const traceLandingPath = computed(() => buildAppPath(appBasePath.value, '/trace'))
 
 const viewState = ref<TraceViewState>('loading')
 const traceData = ref<TraceResponse | null>(null)
@@ -107,7 +121,7 @@ watch(traceCode, () => {
               @click="copyCurrentTraceCode"
             />
             <UButton
-              to="/trace"
+              :to="traceLandingPath"
               color="neutral"
               variant="outline"
               icon="i-lucide-search"

@@ -15,6 +15,12 @@
 - 调用链路：`clients/orchard-console -> services/gateway -> services/inference-api`。
 - 网关实现：Go HTTP 反向代理 + WebSocket 透传，当前不是 gRPC。
 - Gateway 溯源模式：`trace.mode=database | blockchain`，默认 `database`。
+- Gateway 认证模式：`auth.mode=disabled | oidc`，默认 `disabled`。
+- `disabled` 模式下网关为受保护接口注入模拟 `admin` 主体，便于本地开发。
+- `oidc` 模式下 Web 端走 Gateway 托管的 OIDC 授权码交换与 HttpOnly Session Cookie，Tauri 继续走 `JWT + JWKS` Bearer Token；角色授权仍以本地 `users` 表为准。
+- Web Cookie 默认 `SameSite=Lax`，因此默认要求 `auth.web.public_base_url` 与 `auth.web.app_base_url` 是 same-site；如果确实要跨站部署，必须显式改成 `auth.web.cookie_same_site=none` 且同时开启 `auth.web.cookie_secure=true`。
+- `oidc` 模式当前将 `email in access_token` 视为硬要求：首次绑定预创建用户时，网关只接受 Bearer Token 中自带的 `email` claim，不额外调用 `userinfo` / 不读取前端单独传递的 `id_token`。
+- `oidc` 模式首次跑在空库上时，必须提供 `auth.bootstrap_admin_email` 或 `LYCHEE_AUTH_BOOTSTRAP_ADMIN_EMAIL`，用于引导首个管理员账号。
 - `database` 模式下系统与区块链解耦，批次主状态为 `stored`。
 - `blockchain` 模式下保留 `pending_anchor / anchored / anchor_failed` 与补链能力。
 - 成熟度类别映射：`0=green`，`1=half`，`2=red`，`3=young`。
@@ -43,6 +49,7 @@
 - 预训练权重：`mlops/pretrained/yolo26n.pt`
 - 推理模型配置：`tooling/configs/model.yaml`
 - 网关配置：`tooling/configs/gateway.yaml`
+- 演示种子开关：`seed.default_resources_enabled` / `LYCHEE_SEED_DEFAULT_RESOURCES_ENABLED`
 - 对外契约：`shared/contracts/schemas/openapi.yaml`
 
 ## 3. 执行工作流
@@ -140,6 +147,8 @@
 - 前端禁止直连 `services/inference-api`，默认必须走 `services/gateway`
 - 任何行为改动，至少运行一次相关测试；若未执行，必须说明原因和风险
 - `tooling/configs/gateway.yaml.example` 应保持本地直启可用，默认 `upstream.base_url` 指向 `http://127.0.0.1:8000`
+- 网关代码默认不应向空库自动写入演示果园/地块；如需本地演示数据，应通过 `seed.default_resources_enabled` 显式开启
+- `tooling/configs/gateway.yaml.example` 默认 `auth.mode=disabled`，应保持本地直启和管理后台可用；若切到 `oidc`，空库场景需同时说明 `auth.bootstrap_admin_email`
 - Docker Compose 应使用独立的 `tooling/configs/gateway.compose.yaml`，其中 `upstream.base_url` 指向容器服务名 `http://inference-api:8000`
 
 ## 5. 提交前检查

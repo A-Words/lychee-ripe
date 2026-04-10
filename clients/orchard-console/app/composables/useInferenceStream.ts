@@ -5,19 +5,22 @@ import {
   buildSessionAggregateSummary,
   createSessionAggregateState
 } from '~/utils/session-aggregator'
-import { useGatewayBase } from '~/composables/useGatewayBase'
-import { toWebSocketBase } from '~/utils/ws-url'
+import { useAuth } from '~/composables/useAuth'
 
 export interface UseInferenceStreamOptions {
   videoElement: Ref<HTMLVideoElement | null>
   frameIntervalMs?: number
   jpegQuality?: number
+  auth?: {
+    init: () => Promise<void>
+    websocketUrl: (path: string) => string
+  }
 }
 
 const STOP_TIMEOUT_MS = 1000
 
 export function useInferenceStream(options: UseInferenceStreamOptions) {
-  const gatewayBase = useGatewayBase()
+  const auth = options.auth ?? useAuth()
 
   const frameIntervalMs = options.frameIntervalMs ?? 300
   const jpegQuality = options.jpegQuality ?? 0.8
@@ -62,7 +65,8 @@ export function useInferenceStream(options: UseInferenceStreamOptions) {
     resetManualStop()
     resetSession()
 
-    const wsUrl = `${toWebSocketBase(gatewayBase.value)}/v1/infer/stream`
+    await auth.init()
+    const wsUrl = auth.websocketUrl('/v1/infer/stream')
     const socket = new WebSocket(wsUrl)
 
     socket.onopen = () => {

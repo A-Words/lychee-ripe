@@ -8,6 +8,7 @@ import type {
   BatchSummaryInput,
   ErrorResponse
 } from '~/types/batch'
+import { useAuth } from '~/composables/useAuth'
 
 const defaultCreateError: BatchCreateApiError = {
   statusCode: 0,
@@ -16,12 +17,11 @@ const defaultCreateError: BatchCreateApiError = {
 }
 
 export function useBatchCreate() {
-  const gatewayBase = useGatewayBase()
+  const auth = useAuth()
 
   const createBatch = async (payload: BatchCreateRequest): Promise<BatchCreateResult> => {
-    const response = await $fetch.raw<Batch>('/v1/batches', {
+    const response = await auth.gatewayFetchRaw<Batch>('/v1/batches', {
       method: 'POST',
-      baseURL: gatewayBase.value,
       body: payload
     })
     if (!response._data) {
@@ -54,7 +54,6 @@ export function useBatchCreate() {
   }
 
   return {
-    gatewayBase,
     createBatch,
     parseCreateError
   }
@@ -126,7 +125,7 @@ export function mapBatchErrorMessage(statusCode: number, fallbackMessage: string
     return fallbackMessage || '请求参数非法，请检查采摘信息与汇总结果。'
   }
   if (statusCode === 401 || statusCode === 403) {
-    return '网关已开启鉴权，本期建批页未传 API Key。请先关闭鉴权或切换联调配置。'
+    return '当前账号无权执行建批，或登录态已失效。请重新登录后重试。'
   }
   if (statusCode === 409) {
     return fallbackMessage || '批次冲突，请重新发起建批。'

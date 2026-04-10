@@ -1,0 +1,493 @@
+package service
+
+import (
+	"context"
+	"crypto/rand"
+	"crypto/sha256"
+	"encoding/base64"
+	"errors"
+	"net/url"
+	"path"
+	"strings"
+	"time"
+
+	"github.com/lychee-ripe/gateway/internal/config"
+	"github.com/lychee-ripe/gateway/internal/domain"
+	"github.com/lychee-ripe/gateway/internal/oidc"
+	"github.com/lychee-ripe/gateway/internal/repository"
+)
+
+const (
+	defaultWebOIDCScope = "openid profile email"
+	defaultStateTTL     = 10 * time.Minute
+)
+
+type WebAuthRepository interface {
+	CreateWebAuthState(ctx context.Context, state domain.WebAuthStateRecord) (domain.WebAuthStateRecord, error)
+	ConsumeWebAuthState(ctx context.Context, state string, browserBindingHash string, now time.Time) (domain.WebAuthStateRecord, error)
+	CreateWebSession(ctx context.Context, session domain.WebSessionRecord) (domain.WebSessionRecord, error)
+	GetWebSession(ctx context.Context, sessionIDHash string, now time.Time) (domain.WebSessionRecord, error)
+	DeleteWebSession(ctx context.Context, sessionIDHash string) error
+	DeleteExpiredSessions(ctx context.Context, now time.Time) (int64, error)
+	DeleteExpiredAuthStates(ctx context.Context, now time.Time) (int64, error)
+	GetPrincipalByID(ctx context.Context, userID string) (domain.UserRecord, error)
+	GetUserByOIDCSubject(ctx context.Context, subject string) (domain.UserRecord, error)
+}
+
+type WebAuthService struct {
+	repo      WebAuthRepository
+	validator *oidc.Validator
+	auth      *AuthService
+	cfg       config.AuthConfig
+	nowFn     func() time.Time
+	randomFn  func(int) (string, error)
+	stateTTL  time.Duration
+}
+
+type BeginWebLoginResult struct {
+	AuthorizationURL    string
+	BrowserBindingToken string
+}
+
+type CompleteWebLoginResult struct {
+	SessionID   string
+	RedirectURL string
+}
+
+type LogoutResult struct {
+	RedirectURL string
+}
+
+func NewWebAuthService(repo WebAuthRepository, validator *oidc.Validator, auth *AuthService, cfg config.AuthConfig) *WebAuthService {
+	return &WebAuthService{
+		repo:      repo,
+		validator: validator,
+		auth:      auth,
+		cfg:       cfg,
+		nowFn:     func() time.Time { return time.Now().UTC() },
+		randomFn:  randomToken,
+		stateTTL:  defaultStateTTL,
+	}
+}
+
+func (s *WebAuthService) CookieName() string {
+	name := strings.TrimSpace(s.cfg.Web.CookieName)
+	if name == "" {
+		return "lychee_session"
+	}
+	return name
+}
+
+func (s *WebAuthService) CookieSecure() bool {
+	return s.cfg.Web.CookieSecure
+}
+
+func (s *WebAuthService) CookieSameSite() HTTPSameSite {
+	return parseCookieSameSite(s.cfg.Web.CookieSameSite)
+}
+
+func (s *WebAuthService) LoginBindingCookieName() string {
+	return s.CookieName() + "_login"
+}
+
+func (s *WebAuthService) LoginRedirectCookieName() string {
+	return s.CookieName() + "_login_redirect"
+}
+
+func (s *WebAuthService) LoginBindingCookiePath() string {
+	return s.callbackPath()
+}
+
+func (s *WebAuthService) LoginBindingCookieSameSite() HTTPSameSite {
+	return HTTPSameSiteLax
+}
+
+func (s *WebAuthService) LoginFailureRedirectURL(errorCode string, redirectPath string) string {
+	return resolveAppRedirect(s.cfg.Web.AppBaseURL, loginErrorPath(errorCode, redirectPath))
+}
+
+func (s *WebAuthService) BeginLogin(ctx context.Context, redirectPath string) (BeginWebLoginResult, error) {
+	if s.repo == nil || s.validator == nil || s.auth == nil {
+		return BeginWebLoginResult{}, ErrServiceUnavailable
+	}
+
+	state, err := s.randomFn(32)
+	if err != nil {
+		return BeginWebLoginResult{}, ErrServiceUnavailable
+	}
+	browserBindingToken, err := s.randomFn(32)
+	if err != nil {
+		return BeginWebLoginResult{}, ErrServiceUnavailable
+	}
+	codeVerifier, err := s.randomFn(48)
+	if err != nil {
+		return BeginWebLoginResult{}, ErrServiceUnavailable
+	}
+	codeChallenge, err := oidcCodeChallenge(codeVerifier)
+	if err != nil {
+		return BeginWebLoginResult{}, ErrServiceUnavailable
+	}
+
+	now := s.nowFn()
+	if _, err := s.repo.CreateWebAuthState(ctx, domain.WebAuthStateRecord{
+		State:              state,
+		BrowserBindingHash: hashOpaqueToken(browserBindingToken),
+		CodeVerifier:       codeVerifier,
+		RedirectPath:       normalizeRedirectPath(redirectPath),
+		ExpiresAt:          now.Add(s.stateTTL),
+		CreatedAt:          now,
+		UpdatedAt:          now,
+	}); err != nil {
+		return BeginWebLoginResult{}, ErrServiceUnavailable
+	}
+
+	discovery, err := s.validator.Discover(ctx)
+	if err != nil {
+		return BeginWebLoginResult{}, ErrServiceUnavailable
+	}
+	authURL, err := url.Parse(discovery.AuthorizationEndpoint)
+	if err != nil || authURL.Scheme == "" || authURL.Host == "" {
+		return BeginWebLoginResult{}, ErrServiceUnavailable
+	}
+	query := authURL.Query()
+	query.Set("client_id", strings.TrimSpace(s.cfg.OIDC.WebClientID))
+	query.Set("response_type", "code")
+	query.Set("scope", defaultWebOIDCScope)
+	query.Set("redirect_uri", s.callbackURL())
+	query.Set("state", state)
+	query.Set("code_challenge", codeChallenge)
+	query.Set("code_challenge_method", "S256")
+	authURL.RawQuery = query.Encode()
+	return BeginWebLoginResult{
+		AuthorizationURL:    authURL.String(),
+		BrowserBindingToken: browserBindingToken,
+	}, nil
+}
+
+func (s *WebAuthService) CompleteLogin(ctx context.Context, code string, state string, browserBindingToken string) (CompleteWebLoginResult, error) {
+	if s.repo == nil || s.validator == nil || s.auth == nil {
+		return CompleteWebLoginResult{}, ErrServiceUnavailable
+	}
+	if strings.TrimSpace(browserBindingToken) == "" {
+		return CompleteWebLoginResult{}, ErrInvalidRequest
+	}
+	now := s.nowFn()
+	authState, err := s.repo.ConsumeWebAuthState(ctx, strings.TrimSpace(state), hashOpaqueToken(browserBindingToken), now)
+	if err != nil {
+		if errors.Is(err, repository.ErrNotFound) {
+			return CompleteWebLoginResult{}, ErrInvalidRequest
+		}
+		return CompleteWebLoginResult{}, ErrServiceUnavailable
+	}
+
+	token, err := s.validator.ExchangeAuthorizationCode(ctx, oidc.AuthorizationCodeExchange{
+		ClientID:     s.cfg.OIDC.WebClientID,
+		Code:         code,
+		CodeVerifier: authState.CodeVerifier,
+		RedirectURI:  s.callbackURL(),
+	})
+	if err != nil {
+		return CompleteWebLoginResult{}, ErrServiceUnavailable
+	}
+
+	identity, err := s.validator.Validate(ctx, token.AccessToken)
+	if err != nil {
+		if errors.Is(err, oidc.ErrInvalidToken) || errors.Is(err, oidc.ErrMissingBearerToken) {
+			return CompleteWebLoginResult{}, ErrInvalidRequest
+		}
+		return CompleteWebLoginResult{}, ErrServiceUnavailable
+	}
+
+	principal, err := s.auth.ResolvePrincipal(ctx, identity, domain.AuthModeOIDC)
+	if err != nil {
+		return CompleteWebLoginResult{}, err
+	}
+	user, err := s.auth.GetUserByOIDCSubject(ctx, principal.Subject)
+	if err != nil {
+		return CompleteWebLoginResult{}, err
+	}
+
+	sessionID, err := s.randomFn(32)
+	if err != nil {
+		return CompleteWebLoginResult{}, ErrServiceUnavailable
+	}
+
+	// Session expiry priority:
+	//   1. OIDC identity.ExpiresAt (from the access token exp claim)
+	//   2. OAuth token.ExpiresIn (from the token response)
+	//   3. Configured fallback (auth.web.session_ttl_s, default 3600s)
+	fallbackTTL := time.Duration(s.cfg.Web.SessionTTLS) * time.Second
+	if fallbackTTL <= 0 {
+		fallbackTTL = time.Hour
+	}
+	expiresAt := now.Add(fallbackTTL)
+	if identity.ExpiresAt != nil {
+		expiresAt = identity.ExpiresAt.UTC()
+	} else if token.ExpiresIn > 0 {
+		expiresAt = now.Add(time.Duration(token.ExpiresIn) * time.Second)
+	}
+	if expiresAt.Before(now) {
+		return CompleteWebLoginResult{}, ErrInvalidRequest
+	}
+
+	var idToken *string
+	if trimmed := strings.TrimSpace(token.IDToken); trimmed != "" {
+		idToken = &trimmed
+	}
+	if _, err := s.repo.CreateWebSession(ctx, domain.WebSessionRecord{
+		SessionIDHash: hashOpaqueToken(sessionID),
+		UserID:        user.ID,
+		IDToken:       idToken,
+		ExpiresAt:     expiresAt,
+		CreatedAt:     now,
+		UpdatedAt:     now,
+	}); err != nil {
+		return CompleteWebLoginResult{}, ErrServiceUnavailable
+	}
+
+	return CompleteWebLoginResult{
+		SessionID:   sessionID,
+		RedirectURL: resolveAppRedirect(s.cfg.Web.AppBaseURL, authState.RedirectPath),
+	}, nil
+}
+
+func (s *WebAuthService) ResolveSessionPrincipal(ctx context.Context, sessionID string) (domain.Principal, error) {
+	if s.repo == nil {
+		return domain.Principal{}, ErrServiceUnavailable
+	}
+	session, err := s.repo.GetWebSession(ctx, hashOpaqueToken(sessionID), s.nowFn())
+	if err != nil {
+		if errors.Is(err, repository.ErrNotFound) {
+			return domain.Principal{}, ErrNotFound
+		}
+		return domain.Principal{}, ErrServiceUnavailable
+	}
+
+	user, err := s.repo.GetPrincipalByID(ctx, session.UserID)
+	if err != nil {
+		if errors.Is(err, repository.ErrNotFound) {
+			_ = s.repo.DeleteWebSession(ctx, session.SessionIDHash)
+			return domain.Principal{}, ErrNotFound
+		}
+		return domain.Principal{}, ErrServiceUnavailable
+	}
+	if user.Status != domain.UserStatusActive {
+		return domain.Principal{}, ErrInvalidRequest
+	}
+	return principalFromUser(user, domain.AuthModeOIDC), nil
+}
+
+func (s *WebAuthService) Logout(ctx context.Context, sessionID string) (LogoutResult, error) {
+	if s.repo == nil {
+		return LogoutResult{}, ErrServiceUnavailable
+	}
+	if strings.TrimSpace(sessionID) == "" {
+		return LogoutResult{}, nil
+	}
+
+	session, err := s.repo.GetWebSession(ctx, hashOpaqueToken(sessionID), s.nowFn())
+	if err != nil && !errors.Is(err, repository.ErrNotFound) {
+		return LogoutResult{}, ErrServiceUnavailable
+	}
+	if err := s.repo.DeleteWebSession(ctx, hashOpaqueToken(sessionID)); err != nil {
+		return LogoutResult{}, ErrServiceUnavailable
+	}
+
+	redirectURL := ""
+	if err == nil && session.IDToken != nil && strings.TrimSpace(*session.IDToken) != "" && s.validator != nil {
+		if discovery, discoverErr := s.validator.Discover(ctx); discoverErr == nil && strings.TrimSpace(discovery.EndSessionEndpoint) != "" {
+			if endSessionURL, parseErr := url.Parse(discovery.EndSessionEndpoint); parseErr == nil {
+				query := endSessionURL.Query()
+				query.Set("id_token_hint", strings.TrimSpace(*session.IDToken))
+				query.Set("post_logout_redirect_uri", resolveAppRedirect(s.cfg.Web.AppBaseURL, "/login"))
+				endSessionURL.RawQuery = query.Encode()
+				redirectURL = endSessionURL.String()
+			}
+		}
+	}
+
+	return LogoutResult{RedirectURL: redirectURL}, nil
+}
+
+func principalFromUser(user domain.UserRecord, mode domain.AuthMode) domain.Principal {
+	subject := strings.TrimSpace(user.ID)
+	if user.OIDCSubject != nil && strings.TrimSpace(*user.OIDCSubject) != "" {
+		subject = strings.TrimSpace(*user.OIDCSubject)
+	}
+	return domain.Principal{
+		Subject:     subject,
+		Email:       user.Email,
+		DisplayName: user.DisplayName,
+		Role:        user.Role,
+		Status:      user.Status,
+		AuthMode:    mode,
+	}
+}
+
+func normalizeRedirectPath(raw string) string {
+	trimmed := strings.TrimSpace(raw)
+	if trimmed == "" || !strings.HasPrefix(trimmed, "/") || strings.HasPrefix(trimmed, "//") {
+		return "/dashboard"
+	}
+	if containsSchemeLikePrefix(trimmed) {
+		return "/dashboard"
+	}
+	parsed, err := url.Parse(trimmed)
+	if err != nil || parsed == nil || parsed.IsAbs() {
+		return "/dashboard"
+	}
+	if containsSchemeLikePrefix(parsed.Path) {
+		return "/dashboard"
+	}
+	cleanPath := path.Clean(parsed.Path)
+	if !strings.HasPrefix(cleanPath, "/") {
+		return "/dashboard"
+	}
+	if containsSchemeLikePrefix(cleanPath) {
+		return "/dashboard"
+	}
+	parsed.Path = cleanPath
+	parsed.RawPath = ""
+	return parsed.String()
+}
+
+func resolveAppRedirect(appBaseURL string, redirectPath string) string {
+	base, err := url.Parse(strings.TrimSpace(appBaseURL))
+	if err != nil || base == nil {
+		return redirectPath
+	}
+	target, err := resolveURLUnderBase(base, normalizeRedirectPath(redirectPath))
+	if err != nil {
+		return base.String()
+	}
+	return target.String()
+}
+
+func (s *WebAuthService) callbackURL() string {
+	return resolveAppRedirect(s.cfg.Web.PublicBaseURL, "/v1/auth/callback")
+}
+
+func (s *WebAuthService) callbackPath() string {
+	callbackURL, err := url.Parse(s.callbackURL())
+	if err != nil || callbackURL == nil || strings.TrimSpace(callbackURL.Path) == "" {
+		return "/v1/auth/callback"
+	}
+	return callbackURL.Path
+}
+
+func loginErrorPath(errorCode string, redirectPath string) string {
+	target := &url.URL{Path: "/login"}
+	query := target.Query()
+	query.Set("auth_error", normalizeLoginErrorCode(errorCode))
+	query.Set("redirect", normalizeRedirectPath(redirectPath))
+	target.RawQuery = query.Encode()
+	return target.String()
+}
+
+func normalizeLoginErrorCode(errorCode string) string {
+	switch strings.TrimSpace(strings.ToLower(errorCode)) {
+	case "invalid_request":
+		return "invalid_request"
+	case "auth_unavailable":
+		return "auth_unavailable"
+	case "access_denied":
+		return "access_denied"
+	default:
+		return "login_failed"
+	}
+}
+
+func containsSchemeLikePrefix(value string) bool {
+	trimmed := strings.TrimSpace(value)
+	if trimmed == "" || !strings.HasPrefix(trimmed, "/") {
+		return false
+	}
+	withoutLeadingSlash := strings.TrimLeft(trimmed, "/")
+	if withoutLeadingSlash == "" {
+		return false
+	}
+	colonIndex := strings.Index(withoutLeadingSlash, ":")
+	if colonIndex <= 0 {
+		return false
+	}
+	scheme := withoutLeadingSlash[:colonIndex]
+	for _, r := range scheme {
+		if (r >= 'a' && r <= 'z') || (r >= 'A' && r <= 'Z') || (r >= '0' && r <= '9') || r == '+' || r == '-' || r == '.' {
+			continue
+		}
+		return false
+	}
+	return true
+}
+
+// resolveURLUnderBase joins absolutePath under base while preserving base's
+// existing path prefix. It works by:
+//  1. Stripping the leading "/" from absolutePath to make it a relative
+//     reference (e.g. "/dashboard" → "dashboard").
+//  2. Normalizing base.Path to always end with "/" so that
+//     url.URL.ResolveReference appends rather than replaces the last segment.
+//  3. Clearing RawPath to avoid mismatches after path manipulation.
+//
+// Example: base="https://example.com/console", absolutePath="/admin"
+// → "https://example.com/console/admin"
+func resolveURLUnderBase(base *url.URL, absolutePath string) (*url.URL, error) {
+	if base == nil {
+		return nil, errors.New("base url is required")
+	}
+	normalizedPath := normalizeRedirectPath(absolutePath)
+	if containsSchemeLikePrefix(normalizedPath) {
+		return nil, errors.New("scheme-bearing redirect path is not allowed")
+	}
+	relativeTarget, err := url.Parse(strings.TrimLeft(strings.TrimSpace(normalizedPath), "/"))
+	if err != nil {
+		return nil, err
+	}
+	if relativeTarget.IsAbs() {
+		return nil, errors.New("absolute redirect target is not allowed")
+	}
+
+	baseCopy := *base
+	trimmedPath := strings.TrimRight(baseCopy.Path, "/")
+	if trimmedPath == "" {
+		baseCopy.Path = "/"
+	} else {
+		baseCopy.Path = trimmedPath + "/"
+	}
+	baseCopy.RawPath = ""
+
+	return baseCopy.ResolveReference(relativeTarget), nil
+}
+
+func hashOpaqueToken(value string) string {
+	sum := sha256.Sum256([]byte(strings.TrimSpace(value)))
+	return base64.RawURLEncoding.EncodeToString(sum[:])
+}
+
+func randomToken(length int) (string, error) {
+	buf := make([]byte, length)
+	if _, err := rand.Read(buf); err != nil {
+		return "", err
+	}
+	return base64.RawURLEncoding.EncodeToString(buf), nil
+}
+
+func oidcCodeChallenge(codeVerifier string) (string, error) {
+	sum := sha256.Sum256([]byte(codeVerifier))
+	return base64.RawURLEncoding.EncodeToString(sum[:]), nil
+}
+
+type HTTPSameSite string
+
+const (
+	HTTPSameSiteLax  HTTPSameSite = "lax"
+	HTTPSameSiteNone HTTPSameSite = "none"
+)
+
+func parseCookieSameSite(value string) HTTPSameSite {
+	switch strings.ToLower(strings.TrimSpace(value)) {
+	case "none":
+		return HTTPSameSiteNone
+	default:
+		return HTTPSameSiteLax
+	}
+}

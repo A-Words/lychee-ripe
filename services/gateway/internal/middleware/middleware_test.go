@@ -2,6 +2,8 @@ package middleware
 
 import (
 	"bufio"
+	"context"
+	"fmt"
 	"io"
 	"log/slog"
 	"net"
@@ -10,16 +12,26 @@ import (
 	"testing"
 
 	"github.com/lychee-ripe/gateway/internal/config"
+	"github.com/lychee-ripe/gateway/internal/domain"
+	"github.com/lychee-ripe/gateway/internal/oidc"
+	"github.com/lychee-ripe/gateway/internal/service"
 )
 
 func TestAuthDisabled(t *testing.T) {
-	cfg := config.AuthConfig{Enabled: false}
-	mw := Auth(cfg, slog.Default())
+	cfg := config.AuthConfig{Mode: config.AuthModeDisabled}
+	mw := Auth(cfg, config.CORSConfig{}, nil, nil, nil, slog.Default())
 	handler := mw(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		principal, ok := GetPrincipal(r.Context())
+		if !ok {
+			t.Fatal("expected principal in disabled mode")
+		}
+		if principal.Role != domain.UserRoleAdmin {
+			t.Fatalf("principal role = %q, want admin", principal.Role)
+		}
 		w.WriteHeader(http.StatusOK)
 	}))
 
-	req := httptest.NewRequest(http.MethodGet, "/", nil)
+	req := httptest.NewRequest(http.MethodGet, "/v1/dashboard/overview", nil)
 	rec := httptest.NewRecorder()
 	handler.ServeHTTP(rec, req)
 	if rec.Code != http.StatusOK {
@@ -27,103 +39,24 @@ func TestAuthDisabled(t *testing.T) {
 	}
 }
 
-func TestAuthEnabledEmptyKeysRejectsAll(t *testing.T) {
-	cfg := config.AuthConfig{Enabled: true, APIKeys: []string{}}
-	mw := Auth(cfg, slog.Default())
+func TestAuthOIDCMissingBearerRejects(t *testing.T) {
+	cfg := config.AuthConfig{Mode: config.AuthModeOIDC}
+	mw := Auth(cfg, config.CORSConfig{}, fakeValidator{}, fakeResolver{}, nil, slog.Default())
 	handler := mw(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		t.Fatal("handler should not be reached")
 	}))
 
-	req := httptest.NewRequest(http.MethodGet, "/", nil)
-	req.Header.Set("X-API-Key", "anything")
+	req := httptest.NewRequest(http.MethodGet, "/v1/dashboard/overview", nil)
 	rec := httptest.NewRecorder()
 	handler.ServeHTTP(rec, req)
 	if rec.Code != http.StatusUnauthorized {
-		t.Errorf("expected 401 with enabled + empty keys, got %d", rec.Code)
+		t.Errorf("expected 401 with missing bearer token, got %d", rec.Code)
 	}
 }
 
-func TestAuthEnabledNilKeysRejectsAll(t *testing.T) {
-	cfg := config.AuthConfig{Enabled: true}
-	mw := Auth(cfg, slog.Default())
-	handler := mw(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-		t.Fatal("handler should not be reached")
-	}))
-
-	req := httptest.NewRequest(http.MethodGet, "/", nil)
-	rec := httptest.NewRecorder()
-	handler.ServeHTTP(rec, req)
-	if rec.Code != http.StatusUnauthorized {
-		t.Errorf("expected 401 with enabled + nil keys, got %d", rec.Code)
-	}
-}
-
-func TestAuthValidKey(t *testing.T) {
-	cfg := config.AuthConfig{Enabled: true, APIKeys: []string{"secret-key"}}
-	mw := Auth(cfg, slog.Default())
-	handler := mw(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-		w.WriteHeader(http.StatusOK)
-	}))
-
-	req := httptest.NewRequest(http.MethodGet, "/", nil)
-	req.Header.Set("X-API-Key", "secret-key")
-	rec := httptest.NewRecorder()
-	handler.ServeHTTP(rec, req)
-	if rec.Code != http.StatusOK {
-		t.Errorf("expected 200, got %d", rec.Code)
-	}
-}
-
-func TestAuthBearerToken(t *testing.T) {
-	cfg := config.AuthConfig{Enabled: true, APIKeys: []string{"bearer-token"}}
-	mw := Auth(cfg, slog.Default())
-	handler := mw(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-		w.WriteHeader(http.StatusOK)
-	}))
-
-	req := httptest.NewRequest(http.MethodGet, "/", nil)
-	req.Header.Set("Authorization", "Bearer bearer-token")
-	rec := httptest.NewRecorder()
-	handler.ServeHTTP(rec, req)
-	if rec.Code != http.StatusOK {
-		t.Errorf("expected 200, got %d", rec.Code)
-	}
-}
-
-func TestAuthInvalidKey(t *testing.T) {
-	cfg := config.AuthConfig{Enabled: true, APIKeys: []string{"secret-key"}}
-	mw := Auth(cfg, slog.Default())
-	handler := mw(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-		w.WriteHeader(http.StatusOK)
-	}))
-
-	req := httptest.NewRequest(http.MethodGet, "/", nil)
-	req.Header.Set("X-API-Key", "wrong-key")
-	rec := httptest.NewRecorder()
-	handler.ServeHTTP(rec, req)
-	if rec.Code != http.StatusUnauthorized {
-		t.Errorf("expected 401, got %d", rec.Code)
-	}
-}
-
-func TestAuthNoKey(t *testing.T) {
-	cfg := config.AuthConfig{Enabled: true, APIKeys: []string{"secret-key"}}
-	mw := Auth(cfg, slog.Default())
-	handler := mw(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-		w.WriteHeader(http.StatusOK)
-	}))
-
-	req := httptest.NewRequest(http.MethodGet, "/", nil)
-	rec := httptest.NewRecorder()
-	handler.ServeHTTP(rec, req)
-	if rec.Code != http.StatusUnauthorized {
-		t.Errorf("expected 401, got %d", rec.Code)
-	}
-}
-
-func TestAuthAllowsPublicTracePathWithoutKey(t *testing.T) {
-	cfg := config.AuthConfig{Enabled: true, APIKeys: []string{"secret-key"}}
-	mw := Auth(cfg, slog.Default())
+func TestAuthAllowsPublicTracePathWithoutBearer(t *testing.T) {
+	cfg := config.AuthConfig{Mode: config.AuthModeOIDC}
+	mw := Auth(cfg, config.CORSConfig{}, fakeValidator{}, fakeResolver{}, nil, slog.Default())
 	handler := mw(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		w.WriteHeader(http.StatusOK)
 	}))
@@ -136,64 +69,378 @@ func TestAuthAllowsPublicTracePathWithoutKey(t *testing.T) {
 	}
 }
 
-func TestAuthStillRequiresKeyForProtectedPath(t *testing.T) {
-	cfg := config.AuthConfig{Enabled: true, APIKeys: []string{"secret-key"}}
-	mw := Auth(cfg, slog.Default())
-	handler := mw(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-		w.WriteHeader(http.StatusOK)
-	}))
-
-	req := httptest.NewRequest(http.MethodPost, "/v1/batches", nil)
-	rec := httptest.NewRecorder()
-	handler.ServeHTTP(rec, req)
-	if rec.Code != http.StatusUnauthorized {
-		t.Errorf("expected 401 for protected path without key, got %d", rec.Code)
-	}
-}
-
-func TestAuthRequiresKeyForProtectedReadPath(t *testing.T) {
-	cfg := config.AuthConfig{Enabled: true, APIKeys: []string{"secret-key"}}
-	mw := Auth(cfg, slog.Default())
-	handler := mw(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-		w.WriteHeader(http.StatusOK)
-	}))
-
-	tests := []struct {
-		name   string
-		method string
-		path   string
-	}{
-		{name: "batch detail", method: http.MethodGet, path: "/v1/batches/batch_01"},
-		{name: "dashboard overview", method: http.MethodGet, path: "/v1/dashboard/overview"},
-		{name: "reconcile", method: http.MethodPost, path: "/v1/batches/reconcile"},
-		{name: "proxy infer image", method: http.MethodPost, path: "/v1/infer/image"},
-	}
-
-	for _, tt := range tests {
-		t.Run(tt.name, func(t *testing.T) {
-			req := httptest.NewRequest(tt.method, tt.path, nil)
-			rec := httptest.NewRecorder()
-			handler.ServeHTTP(rec, req)
-			if rec.Code != http.StatusUnauthorized {
-				t.Fatalf("%s %s: expected 401, got %d", tt.method, tt.path, rec.Code)
-			}
-		})
-	}
-}
-
-func TestAuthAllowsProtectedPathWithValidKey(t *testing.T) {
-	cfg := config.AuthConfig{Enabled: true, APIKeys: []string{"secret-key"}}
-	mw := Auth(cfg, slog.Default())
+func TestAuthAllowsProtectedPathForOperator(t *testing.T) {
+	cfg := config.AuthConfig{Mode: config.AuthModeOIDC}
+	mw := Auth(cfg, config.CORSConfig{}, fakeValidator{}, fakeResolver{principal: domain.Principal{Role: domain.UserRoleOperator, Status: domain.UserStatusActive}}, nil, slog.Default())
 	handler := mw(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		w.WriteHeader(http.StatusOK)
 	}))
 
 	req := httptest.NewRequest(http.MethodGet, "/v1/dashboard/overview", nil)
-	req.Header.Set("X-API-Key", "secret-key")
+	req.Header.Set("Authorization", "Bearer token")
 	rec := httptest.NewRecorder()
 	handler.ServeHTTP(rec, req)
 	if rec.Code != http.StatusOK {
-		t.Errorf("expected 200 for protected path with valid key, got %d", rec.Code)
+		t.Errorf("expected 200 for operator on dashboard, got %d", rec.Code)
+	}
+}
+
+func TestAuthAllowsSessionCookieForWebClientAndStripsCookieBeforeDownstream(t *testing.T) {
+	cfg := config.AuthConfig{
+		Mode: config.AuthModeOIDC,
+		Web:  config.WebAuthConfig{CookieName: "lychee_session"},
+	}
+	mw := Auth(cfg, config.CORSConfig{AllowedOrigins: []string{"https://app.example.com"}}, fakeValidator{}, fakeResolver{}, fakeSessionResolver{
+		principal: domain.Principal{Role: domain.UserRoleOperator, Status: domain.UserStatusActive},
+	}, slog.Default())
+	handler := mw(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		if cookieHeader := r.Header.Get("Cookie"); cookieHeader != "" {
+			t.Fatalf("gateway session cookie should be stripped before downstream handling, got %q", cookieHeader)
+		}
+		principal, ok := GetPrincipal(r.Context())
+		if !ok || principal.Role != domain.UserRoleOperator {
+			t.Fatalf("principal = %+v, ok=%v", principal, ok)
+		}
+		w.WriteHeader(http.StatusOK)
+	}))
+
+	req := httptest.NewRequest(http.MethodGet, "/v1/dashboard/overview", nil)
+	req.AddCookie(&http.Cookie{Name: "lychee_session", Value: "session-1"})
+	rec := httptest.NewRecorder()
+	handler.ServeHTTP(rec, req)
+	if rec.Code != http.StatusOK {
+		t.Errorf("expected 200 for valid session cookie, got %d", rec.Code)
+	}
+}
+
+func TestAuthRejectsUnknownSessionCookie(t *testing.T) {
+	cfg := config.AuthConfig{
+		Mode: config.AuthModeOIDC,
+		Web:  config.WebAuthConfig{CookieName: "lychee_session"},
+	}
+	mw := Auth(cfg, config.CORSConfig{}, fakeValidator{}, fakeResolver{}, fakeSessionResolver{err: service.ErrNotFound}, slog.Default())
+	handler := mw(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		t.Fatal("handler should not be reached")
+	}))
+
+	req := httptest.NewRequest(http.MethodGet, "/v1/dashboard/overview", nil)
+	req.AddCookie(&http.Cookie{Name: "lychee_session", Value: "missing"})
+	rec := httptest.NewRecorder()
+	handler.ServeHTTP(rec, req)
+	if rec.Code != http.StatusUnauthorized {
+		t.Errorf("expected 401 for invalid session cookie, got %d", rec.Code)
+	}
+}
+
+func TestAuthRejectsUnsafeCookieRequestWithoutOrigin(t *testing.T) {
+	cfg := config.AuthConfig{
+		Mode: config.AuthModeOIDC,
+		Web:  config.WebAuthConfig{CookieName: "lychee_session"},
+	}
+	mw := Auth(cfg, config.CORSConfig{AllowedOrigins: []string{"https://app.example.com"}}, fakeValidator{}, fakeResolver{}, fakeSessionResolver{
+		principal: domain.Principal{Role: domain.UserRoleOperator, Status: domain.UserStatusActive},
+	}, slog.Default())
+	handler := mw(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		t.Fatal("handler should not be reached")
+	}))
+
+	req := httptest.NewRequest(http.MethodPost, "/v1/batches", nil)
+	req.AddCookie(&http.Cookie{Name: "lychee_session", Value: "session-1"})
+	rec := httptest.NewRecorder()
+	handler.ServeHTTP(rec, req)
+	if rec.Code != http.StatusForbidden {
+		t.Errorf("expected 403 for unsafe cookie request without Origin, got %d", rec.Code)
+	}
+}
+
+func TestAuthAllowsUnsafeCookieRequestFromAllowedOrigin(t *testing.T) {
+	cfg := config.AuthConfig{
+		Mode: config.AuthModeOIDC,
+		Web:  config.WebAuthConfig{CookieName: "lychee_session"},
+	}
+	mw := Auth(cfg, config.CORSConfig{AllowedOrigins: []string{"https://app.example.com"}}, fakeValidator{}, fakeResolver{}, fakeSessionResolver{
+		principal: domain.Principal{Role: domain.UserRoleOperator, Status: domain.UserStatusActive},
+	}, slog.Default())
+	handler := mw(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		w.WriteHeader(http.StatusOK)
+	}))
+
+	req := httptest.NewRequest(http.MethodPost, "/v1/batches", nil)
+	req.Header.Set("Origin", "https://app.example.com")
+	req.AddCookie(&http.Cookie{Name: "lychee_session", Value: "session-1"})
+	rec := httptest.NewRecorder()
+	handler.ServeHTTP(rec, req)
+	if rec.Code != http.StatusOK {
+		t.Errorf("expected 200 for unsafe cookie request from allowed Origin, got %d", rec.Code)
+	}
+}
+
+func TestAuthRejectsCookieWebSocketFromDisallowedOrigin(t *testing.T) {
+	cfg := config.AuthConfig{
+		Mode: config.AuthModeOIDC,
+		Web:  config.WebAuthConfig{CookieName: "lychee_session"},
+	}
+	mw := Auth(cfg, config.CORSConfig{AllowedOrigins: []string{"https://app.example.com"}}, fakeValidator{}, fakeResolver{}, fakeSessionResolver{
+		principal: domain.Principal{Role: domain.UserRoleOperator, Status: domain.UserStatusActive},
+	}, slog.Default())
+	handler := mw(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		t.Fatal("handler should not be reached")
+	}))
+
+	req := httptest.NewRequest(http.MethodGet, "/v1/infer/stream", nil)
+	req.Header.Set("Connection", "keep-alive, Upgrade")
+	req.Header.Set("Upgrade", "websocket")
+	req.Header.Set("Origin", "https://evil.example.com")
+	req.AddCookie(&http.Cookie{Name: "lychee_session", Value: "session-1"})
+	rec := httptest.NewRecorder()
+	handler.ServeHTTP(rec, req)
+	if rec.Code != http.StatusForbidden {
+		t.Errorf("expected 403 for cookie-authenticated websocket from disallowed Origin, got %d", rec.Code)
+	}
+}
+
+func TestAuthAllowsActiveOrchardListForOperator(t *testing.T) {
+	cfg := config.AuthConfig{Mode: config.AuthModeOIDC}
+	mw := Auth(cfg, config.CORSConfig{}, fakeValidator{}, fakeResolver{principal: domain.Principal{Role: domain.UserRoleOperator, Status: domain.UserStatusActive}}, nil, slog.Default())
+	handler := mw(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		w.WriteHeader(http.StatusOK)
+	}))
+
+	req := httptest.NewRequest(http.MethodGet, "/v1/orchards", nil)
+	req.Header.Set("Authorization", "Bearer token")
+	rec := httptest.NewRecorder()
+	handler.ServeHTTP(rec, req)
+	if rec.Code != http.StatusOK {
+		t.Errorf("expected 200 for operator orchard list, got %d", rec.Code)
+	}
+}
+
+func TestAuthRejectsArchivedOrchardListForOperator(t *testing.T) {
+	cfg := config.AuthConfig{Mode: config.AuthModeOIDC}
+	mw := Auth(cfg, config.CORSConfig{}, fakeValidator{}, fakeResolver{principal: domain.Principal{Role: domain.UserRoleOperator, Status: domain.UserStatusActive}}, nil, slog.Default())
+	handler := mw(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		w.WriteHeader(http.StatusOK)
+	}))
+
+	req := httptest.NewRequest(http.MethodGet, "/v1/orchards?include_archived=true", nil)
+	req.Header.Set("Authorization", "Bearer token")
+	rec := httptest.NewRecorder()
+	handler.ServeHTTP(rec, req)
+	if rec.Code != http.StatusForbidden {
+		t.Errorf("expected 403 for archived orchard list, got %d", rec.Code)
+	}
+}
+
+func TestAuthRejectsArchivedPlotListForOperator(t *testing.T) {
+	cfg := config.AuthConfig{Mode: config.AuthModeOIDC}
+	mw := Auth(cfg, config.CORSConfig{}, fakeValidator{}, fakeResolver{principal: domain.Principal{Role: domain.UserRoleOperator, Status: domain.UserStatusActive}}, nil, slog.Default())
+	handler := mw(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		w.WriteHeader(http.StatusOK)
+	}))
+
+	req := httptest.NewRequest(http.MethodGet, "/v1/plots?include_archived=1", nil)
+	req.Header.Set("Authorization", "Bearer token")
+	rec := httptest.NewRecorder()
+	handler.ServeHTTP(rec, req)
+	if rec.Code != http.StatusForbidden {
+		t.Errorf("expected 403 for archived plot list, got %d", rec.Code)
+	}
+}
+
+func TestAuthRejectsAdminPathForOperator(t *testing.T) {
+	cfg := config.AuthConfig{Mode: config.AuthModeOIDC}
+	mw := Auth(cfg, config.CORSConfig{}, fakeValidator{}, fakeResolver{principal: domain.Principal{Role: domain.UserRoleOperator, Status: domain.UserStatusActive}}, nil, slog.Default())
+	handler := mw(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		w.WriteHeader(http.StatusOK)
+	}))
+
+	req := httptest.NewRequest(http.MethodGet, "/v1/admin/users", nil)
+	req.Header.Set("Authorization", "Bearer token")
+	rec := httptest.NewRecorder()
+	handler.ServeHTTP(rec, req)
+	if rec.Code != http.StatusForbidden {
+		t.Errorf("expected 403 on admin path, got %d", rec.Code)
+	}
+}
+
+func TestAuthRejectsReconcilePathForOperator(t *testing.T) {
+	cfg := config.AuthConfig{Mode: config.AuthModeOIDC}
+	mw := Auth(cfg, config.CORSConfig{}, fakeValidator{}, fakeResolver{principal: domain.Principal{Role: domain.UserRoleOperator, Status: domain.UserStatusActive}}, nil, slog.Default())
+	handler := mw(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		w.WriteHeader(http.StatusOK)
+	}))
+
+	req := httptest.NewRequest(http.MethodPost, "/v1/batches/reconcile", nil)
+	req.Header.Set("Authorization", "Bearer token")
+	rec := httptest.NewRecorder()
+	handler.ServeHTTP(rec, req)
+	if rec.Code != http.StatusForbidden {
+		t.Errorf("expected 403 on reconcile path for operator, got %d", rec.Code)
+	}
+}
+
+func TestAuthAllowsCreateBatchForOperator(t *testing.T) {
+	cfg := config.AuthConfig{Mode: config.AuthModeOIDC}
+	mw := Auth(cfg, config.CORSConfig{}, fakeValidator{}, fakeResolver{principal: domain.Principal{Role: domain.UserRoleOperator, Status: domain.UserStatusActive}}, nil, slog.Default())
+	handler := mw(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		w.WriteHeader(http.StatusOK)
+	}))
+
+	req := httptest.NewRequest(http.MethodPost, "/v1/batches", nil)
+	req.Header.Set("Authorization", "Bearer token")
+	rec := httptest.NewRecorder()
+	handler.ServeHTTP(rec, req)
+	if rec.Code != http.StatusOK {
+		t.Errorf("expected 200 on create batch for operator, got %d", rec.Code)
+	}
+}
+
+func TestAuthAllowsGetBatchForOperator(t *testing.T) {
+	cfg := config.AuthConfig{Mode: config.AuthModeOIDC}
+	mw := Auth(cfg, config.CORSConfig{}, fakeValidator{}, fakeResolver{principal: domain.Principal{Role: domain.UserRoleOperator, Status: domain.UserStatusActive}}, nil, slog.Default())
+	handler := mw(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		w.WriteHeader(http.StatusOK)
+	}))
+
+	req := httptest.NewRequest(http.MethodGet, "/v1/batches/batch-1", nil)
+	req.Header.Set("Authorization", "Bearer token")
+	rec := httptest.NewRecorder()
+	handler.ServeHTTP(rec, req)
+	if rec.Code != http.StatusOK {
+		t.Errorf("expected 200 on get batch for operator, got %d", rec.Code)
+	}
+}
+
+func TestAuthStripsWebSocketAccessTokenBeforeForwarding(t *testing.T) {
+	cfg := config.AuthConfig{Mode: config.AuthModeOIDC}
+	mw := Auth(cfg, config.CORSConfig{}, fakeValidator{}, fakeResolver{principal: domain.Principal{Role: domain.UserRoleOperator, Status: domain.UserStatusActive}}, nil, slog.Default())
+	handler := mw(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		if got := r.URL.Query().Get("access_token"); got != "" {
+			t.Fatalf("access_token should be stripped before downstream handling, got %q", got)
+		}
+		if got := r.URL.Query().Get("keep"); got != "1" {
+			t.Fatalf("non-sensitive query parameter was lost, got %q", got)
+		}
+		w.WriteHeader(http.StatusOK)
+	}))
+
+	req := httptest.NewRequest(http.MethodGet, "/v1/infer/stream?access_token=token&keep=1", nil)
+	rec := httptest.NewRecorder()
+	handler.ServeHTTP(rec, req)
+	if rec.Code != http.StatusOK {
+		t.Errorf("expected 200 on websocket auth via query token, got %d", rec.Code)
+	}
+}
+
+func TestAuthRejectsNestedBatchPathForOperator(t *testing.T) {
+	cfg := config.AuthConfig{Mode: config.AuthModeOIDC}
+	mw := Auth(cfg, config.CORSConfig{}, fakeValidator{}, fakeResolver{principal: domain.Principal{Role: domain.UserRoleOperator, Status: domain.UserStatusActive}}, nil, slog.Default())
+	handler := mw(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		w.WriteHeader(http.StatusOK)
+	}))
+
+	req := httptest.NewRequest(http.MethodGet, "/v1/batches/batch-1/extra", nil)
+	req.Header.Set("Authorization", "Bearer token")
+	rec := httptest.NewRecorder()
+	handler.ServeHTTP(rec, req)
+	if rec.Code != http.StatusForbidden {
+		t.Errorf("expected 403 on nested batch path for operator, got %d", rec.Code)
+	}
+}
+
+func TestAuthRejectsNestedReconcilePathForOperator(t *testing.T) {
+	cfg := config.AuthConfig{Mode: config.AuthModeOIDC}
+	mw := Auth(cfg, config.CORSConfig{}, fakeValidator{}, fakeResolver{principal: domain.Principal{Role: domain.UserRoleOperator, Status: domain.UserStatusActive}}, nil, slog.Default())
+	handler := mw(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		w.WriteHeader(http.StatusOK)
+	}))
+
+	req := httptest.NewRequest(http.MethodGet, "/v1/batches/reconcile/extra", nil)
+	req.Header.Set("Authorization", "Bearer token")
+	rec := httptest.NewRecorder()
+	handler.ServeHTTP(rec, req)
+	if rec.Code != http.StatusForbidden {
+		t.Errorf("expected 403 on nested reconcile path for operator, got %d", rec.Code)
+	}
+}
+
+func TestAuthRejectsDeleteBatchCollectionForOperator(t *testing.T) {
+	cfg := config.AuthConfig{Mode: config.AuthModeOIDC}
+	mw := Auth(cfg, config.CORSConfig{}, fakeValidator{}, fakeResolver{principal: domain.Principal{Role: domain.UserRoleOperator, Status: domain.UserStatusActive}}, nil, slog.Default())
+	handler := mw(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		w.WriteHeader(http.StatusOK)
+	}))
+
+	req := httptest.NewRequest(http.MethodDelete, "/v1/batches", nil)
+	req.Header.Set("Authorization", "Bearer token")
+	rec := httptest.NewRecorder()
+	handler.ServeHTTP(rec, req)
+	if rec.Code != http.StatusForbidden {
+		t.Errorf("expected 403 on delete /v1/batches for operator, got %d", rec.Code)
+	}
+}
+
+func TestAuthRejectsDeleteBatchItemForOperator(t *testing.T) {
+	cfg := config.AuthConfig{Mode: config.AuthModeOIDC}
+	mw := Auth(cfg, config.CORSConfig{}, fakeValidator{}, fakeResolver{principal: domain.Principal{Role: domain.UserRoleOperator, Status: domain.UserStatusActive}}, nil, slog.Default())
+	handler := mw(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		w.WriteHeader(http.StatusOK)
+	}))
+
+	req := httptest.NewRequest(http.MethodDelete, "/v1/batches/batch-1", nil)
+	req.Header.Set("Authorization", "Bearer token")
+	rec := httptest.NewRecorder()
+	handler.ServeHTTP(rec, req)
+	if rec.Code != http.StatusForbidden {
+		t.Errorf("expected 403 on delete /v1/batches/{id} for operator, got %d", rec.Code)
+	}
+}
+
+func TestAuthRejectsUnknownProvisionedUser(t *testing.T) {
+	cfg := config.AuthConfig{Mode: config.AuthModeOIDC}
+	mw := Auth(cfg, config.CORSConfig{}, fakeValidator{}, fakeResolver{err: service.ErrNotFound}, nil, slog.Default())
+	handler := mw(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		w.WriteHeader(http.StatusOK)
+	}))
+
+	req := httptest.NewRequest(http.MethodGet, "/v1/dashboard/overview", nil)
+	req.Header.Set("Authorization", "Bearer token")
+	rec := httptest.NewRecorder()
+	handler.ServeHTTP(rec, req)
+	if rec.Code != http.StatusForbidden {
+		t.Errorf("expected 403 for unknown user, got %d", rec.Code)
+	}
+}
+
+func TestAuthReturnsServiceUnavailableWhenValidatorUnavailable(t *testing.T) {
+	cfg := config.AuthConfig{Mode: config.AuthModeOIDC}
+	mw := Auth(cfg, config.CORSConfig{}, fakeValidator{err: fmt.Errorf("%w: jwks offline", oidc.ErrUnavailable)}, fakeResolver{}, nil, slog.Default())
+	handler := mw(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		w.WriteHeader(http.StatusOK)
+	}))
+
+	req := httptest.NewRequest(http.MethodGet, "/v1/auth/me", nil)
+	req.Header.Set("Authorization", "Bearer token")
+	rec := httptest.NewRecorder()
+	handler.ServeHTTP(rec, req)
+	if rec.Code != http.StatusServiceUnavailable {
+		t.Errorf("expected 503 for validator outage, got %d", rec.Code)
+	}
+}
+
+func TestAuthReturnsServiceUnavailableWhenResolverUnavailable(t *testing.T) {
+	cfg := config.AuthConfig{Mode: config.AuthModeOIDC}
+	mw := Auth(cfg, config.CORSConfig{}, fakeValidator{}, fakeResolver{err: service.ErrServiceUnavailable}, nil, slog.Default())
+	handler := mw(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		w.WriteHeader(http.StatusOK)
+	}))
+
+	req := httptest.NewRequest(http.MethodGet, "/v1/auth/me", nil)
+	req.Header.Set("Authorization", "Bearer token")
+	rec := httptest.NewRecorder()
+	handler.ServeHTTP(rec, req)
+	if rec.Code != http.StatusServiceUnavailable {
+		t.Errorf("expected 503 for resolver outage, got %d", rec.Code)
 	}
 }
 
@@ -210,6 +457,61 @@ func TestRateLimitAllows(t *testing.T) {
 	if rec.Code != http.StatusOK {
 		t.Errorf("expected 200, got %d", rec.Code)
 	}
+}
+
+type fakeValidator struct {
+	err error
+}
+
+func (f fakeValidator) Validate(_ context.Context, _ string) (domain.IdentityClaims, error) {
+	if f.err != nil {
+		return domain.IdentityClaims{}, f.err
+	}
+	return domain.IdentityClaims{
+		Subject:     "sub-1",
+		Email:       "admin@example.com",
+		DisplayName: "Admin",
+	}, nil
+}
+
+type fakeResolver struct {
+	principal domain.Principal
+	err       error
+}
+
+func (f fakeResolver) ResolvePrincipal(_ context.Context, _ domain.IdentityClaims, _ domain.AuthMode) (domain.Principal, error) {
+	if f.err != nil {
+		return domain.Principal{}, f.err
+	}
+	if f.principal.Role == "" {
+		return domain.Principal{
+			Subject:     "sub-1",
+			Email:       "admin@example.com",
+			DisplayName: "Admin",
+			Role:        domain.UserRoleAdmin,
+			Status:      domain.UserStatusActive,
+			AuthMode:    domain.AuthModeOIDC,
+		}, nil
+	}
+	if f.principal.AuthMode == "" {
+		f.principal.AuthMode = domain.AuthModeOIDC
+	}
+	return f.principal, nil
+}
+
+type fakeSessionResolver struct {
+	principal domain.Principal
+	err       error
+}
+
+func (f fakeSessionResolver) ResolveSessionPrincipal(_ context.Context, _ string) (domain.Principal, error) {
+	if f.err != nil {
+		return domain.Principal{}, f.err
+	}
+	if f.principal.AuthMode == "" {
+		f.principal.AuthMode = domain.AuthModeOIDC
+	}
+	return f.principal, nil
 }
 
 func TestRateLimitExceeded(t *testing.T) {
@@ -275,7 +577,7 @@ func TestCORSPreflight(t *testing.T) {
 	cfg := config.CORSConfig{
 		Enabled:        true,
 		AllowedOrigins: []string{"*"},
-		AllowedMethods: []string{"GET", "POST"},
+		AllowedMethods: []string{"GET", "POST", "PATCH", "DELETE"},
 		AllowedHeaders: []string{"Content-Type"},
 		MaxAgeS:        3600,
 	}
@@ -292,6 +594,9 @@ func TestCORSPreflight(t *testing.T) {
 	}
 	if rec.Header().Get("Access-Control-Allow-Origin") != "*" {
 		t.Error("missing CORS origin header")
+	}
+	if rec.Header().Get("Access-Control-Allow-Methods") != "GET, POST, PATCH, DELETE" {
+		t.Errorf("allow methods = %q, want GET, POST, PATCH, DELETE", rec.Header().Get("Access-Control-Allow-Methods"))
 	}
 }
 

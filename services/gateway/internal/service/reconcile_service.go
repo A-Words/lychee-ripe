@@ -22,6 +22,7 @@ const (
 	maxReconcileRetry       = 3
 	autoReconcileInterval   = 30 * time.Second
 	reconcileAcceptedPrompt = "reconcile accepted"
+	reconcileLostRaceReason = "batch claimed by another worker"
 )
 
 type ManualReconcileInput struct {
@@ -178,6 +179,23 @@ func (s *ReconcileService) reconcileOne(ctx context.Context, batch domain.BatchR
 	}
 
 	attemptNo := batch.RetryCount + 1
+	claimAt := s.nowFn().UTC()
+	if err := s.batchRepo.ClaimPendingBatch(ctx, batch.BatchID, batch.UpdatedAt, claimAt); err != nil {
+		if errors.Is(err, repository.ErrConflict) || errors.Is(err, repository.ErrNotFound) {
+			return domain.ReconcileJobItemRecord{
+				BatchID:      batch.BatchID,
+				BeforeStatus: domain.BatchStatusPendingAnchor,
+				AfterStatus:  domain.BatchStatusPendingAnchor,
+				AttemptNo:    attemptNo,
+				ErrorMessage: stringPtr(reconcileLostRaceReason),
+				CreatedAt:    claimAt,
+			}, nil
+		}
+		return domain.ReconcileJobItemRecord{}, fmt.Errorf("%w: %v", ErrServiceUnavailable, err)
+	}
+	batch.Status = domain.BatchStatusAnchoring
+	batch.UpdatedAt = claimAt
+
 	anchorHash, err := resolveAnchorHash(batch)
 	if err != nil {
 		return domain.ReconcileJobItemRecord{}, fmt.Errorf("%w: %v", ErrServiceUnavailable, err)
@@ -189,7 +207,17 @@ func (s *ReconcileService) reconcileOne(ctx context.Context, batch domain.BatchR
 		Timestamp:  s.nowFn().UTC(),
 	})
 	if err == nil {
-		if err := s.batchRepo.AttachAnchorProof(ctx, batch.BatchID, proof, s.nowFn().UTC()); err != nil {
+		if err := s.batchRepo.AttachAnchorProof(ctx, batch.BatchID, domain.BatchStatusAnchoring, batch.UpdatedAt, proof, s.nowFn().UTC()); err != nil {
+			if errors.Is(err, repository.ErrConflict) || errors.Is(err, repository.ErrNotFound) {
+				return domain.ReconcileJobItemRecord{
+					BatchID:      batch.BatchID,
+					BeforeStatus: domain.BatchStatusPendingAnchor,
+					AfterStatus:  domain.BatchStatusPendingAnchor,
+					AttemptNo:    attemptNo,
+					ErrorMessage: stringPtr(reconcileLostRaceReason),
+					CreatedAt:    s.nowFn().UTC(),
+				}, nil
+			}
 			return domain.ReconcileJobItemRecord{}, fmt.Errorf("%w: %v", ErrServiceUnavailable, err)
 		}
 		return domain.ReconcileJobItemRecord{
@@ -211,7 +239,17 @@ func (s *ReconcileService) reconcileOne(ctx context.Context, batch domain.BatchR
 	}
 	lastError := err.Error()
 	retryCount := attemptNo
-	if err := s.batchRepo.UpdateBatchStatus(ctx, batch.BatchID, nextStatus, &lastError, &retryCount, s.nowFn().UTC()); err != nil {
+	if err := s.batchRepo.UpdateBatchStatus(ctx, batch.BatchID, domain.BatchStatusAnchoring, batch.UpdatedAt, nextStatus, &lastError, &retryCount, s.nowFn().UTC()); err != nil {
+		if errors.Is(err, repository.ErrConflict) || errors.Is(err, repository.ErrNotFound) {
+			return domain.ReconcileJobItemRecord{
+				BatchID:      batch.BatchID,
+				BeforeStatus: domain.BatchStatusPendingAnchor,
+				AfterStatus:  domain.BatchStatusPendingAnchor,
+				AttemptNo:    attemptNo,
+				ErrorMessage: stringPtr(reconcileLostRaceReason),
+				CreatedAt:    s.nowFn().UTC(),
+			}, nil
+		}
 		return domain.ReconcileJobItemRecord{}, fmt.Errorf("%w: %v", ErrServiceUnavailable, err)
 	}
 
@@ -325,4 +363,8 @@ func normalizeReconcileLimit(limit *int) (int, error) {
 func defaultReconcileJobID() string {
 	id := ulid.MustNew(ulid.Timestamp(time.Now().UTC()), rand.Reader)
 	return "reconcile_" + strings.ToLower(id.String())
+}
+
+func stringPtr(value string) *string {
+	return &value
 }

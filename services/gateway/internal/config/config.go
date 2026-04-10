@@ -3,6 +3,7 @@ package config
 import (
 	"bytes"
 	"fmt"
+	"net"
 	"net/url"
 	"os"
 	"path/filepath"
@@ -11,6 +12,7 @@ import (
 	"strings"
 
 	"github.com/lychee-ripe/gateway/internal/domain"
+	"golang.org/x/net/publicsuffix"
 	"gopkg.in/yaml.v3"
 )
 
@@ -19,6 +21,7 @@ type Config struct {
 	Server    ServerConfig    `yaml:"server"`
 	Upstream  UpstreamConfig  `yaml:"upstream"`
 	DB        DBConfig        `yaml:"db"`
+	Seed      SeedConfig      `yaml:"seed"`
 	Trace     TraceConfig     `yaml:"trace"`
 	Chain     ChainConfig     `yaml:"chain"`
 	Auth      AuthConfig      `yaml:"auth"`
@@ -62,6 +65,10 @@ type PostgresDBConfig struct {
 	Schema  string `yaml:"schema"`
 }
 
+type SeedConfig struct {
+	DefaultResourcesEnabled bool `yaml:"default_resources_enabled"`
+}
+
 // TraceConfig defines the gateway trace runtime mode.
 type TraceConfig struct {
 	Mode domain.TraceMode `yaml:"mode"`
@@ -77,10 +84,41 @@ type ChainConfig struct {
 	ReceiptPollIntervalMS int    `yaml:"receipt_poll_interval_ms"`
 }
 
-// AuthConfig defines API key authentication settings.
+// AuthConfig defines authentication settings.
 type AuthConfig struct {
-	Enabled bool     `yaml:"enabled"`
-	APIKeys []string `yaml:"api_keys"`
+	Mode                AuthModeConfig `yaml:"mode"`
+	BootstrapAdminEmail string         `yaml:"bootstrap_admin_email"`
+	OIDC                OIDCConfig     `yaml:"oidc"`
+	Web                 WebAuthConfig  `yaml:"web"`
+}
+
+type AuthModeConfig string
+
+const (
+	AuthModeDisabled AuthModeConfig = "disabled"
+	AuthModeOIDC     AuthModeConfig = "oidc"
+)
+
+type OIDCConfig struct {
+	IssuerURL   string `yaml:"issuer_url"`
+	Audience    string `yaml:"audience"`
+	WebClientID string `yaml:"web_client_id"`
+}
+
+type WebAuthConfig struct {
+	PublicBaseURL  string `yaml:"public_base_url"`
+	AppBaseURL     string `yaml:"app_base_url"`
+	CookieName     string `yaml:"cookie_name"`
+	CookieSecure   bool   `yaml:"cookie_secure"`
+	CookieSameSite string `yaml:"cookie_same_site"`
+	// SessionTTLS is the fallback session duration in seconds when the OIDC
+	// token does not carry an explicit expiry (identity.ExpiresAt or
+	// token.ExpiresIn). Defaults to 3600 (1 hour).
+	SessionTTLS int `yaml:"session_ttl_s"`
+	// SessionCleanupIntervalS is the interval in seconds between background
+	// purges of expired web sessions and OIDC auth states. Defaults to 1800
+	// (30 minutes). Set to 0 to use the default.
+	SessionCleanupIntervalS int `yaml:"session_cleanup_interval_s"`
 }
 
 // RateLimitConfig defines token-bucket rate limiting settings.
@@ -93,17 +131,35 @@ type RateLimitConfig struct {
 
 // CORSConfig defines cross-origin request settings.
 type CORSConfig struct {
-	Enabled        bool     `yaml:"enabled"`
-	AllowedOrigins []string `yaml:"allowed_origins"`
-	AllowedMethods []string `yaml:"allowed_methods"`
-	AllowedHeaders []string `yaml:"allowed_headers"`
-	MaxAgeS        int      `yaml:"max_age_s"`
+	Enabled          bool     `yaml:"enabled"`
+	AllowedOrigins   []string `yaml:"allowed_origins"`
+	AllowedMethods   []string `yaml:"allowed_methods"`
+	AllowedHeaders   []string `yaml:"allowed_headers"`
+	AllowCredentials bool     `yaml:"allow_credentials"`
+	MaxAgeS          int      `yaml:"max_age_s"`
 }
 
 // LoggingConfig defines structured logging settings.
 type LoggingConfig struct {
 	Level  string `yaml:"level"`
 	Format string `yaml:"format"`
+}
+
+func (c CORSConfig) AllowsOrigin(origin string) bool {
+	origin = strings.TrimSpace(origin)
+	if origin == "" {
+		return false
+	}
+	for _, allowedOrigin := range c.AllowedOrigins {
+		allowedOrigin = strings.TrimSpace(allowedOrigin)
+		if allowedOrigin == "*" {
+			return true
+		}
+		if strings.EqualFold(allowedOrigin, origin) {
+			return true
+		}
+	}
+	return false
 }
 
 func isExplicitRelativePath(path string) bool {
@@ -212,6 +268,9 @@ func Defaults() Config {
 				Schema:  "public",
 			},
 		},
+		Seed: SeedConfig{
+			DefaultResourcesEnabled: false,
+		},
 		Trace: TraceConfig{
 			Mode: domain.TraceModeDatabase,
 		},
@@ -220,7 +279,14 @@ func Defaults() Config {
 			ReceiptPollIntervalMS: 500,
 		},
 		Auth: AuthConfig{
-			Enabled: false,
+			Mode: AuthModeDisabled,
+			Web: WebAuthConfig{
+				CookieName:     "lychee_session",
+				CookieSecure:   false,
+				CookieSameSite: "lax",
+				SessionTTLS:             3600,
+				SessionCleanupIntervalS: 1800,
+			},
 		},
 		RateLimit: RateLimitConfig{
 			Enabled:           true,
@@ -229,11 +295,12 @@ func Defaults() Config {
 			ExcludePaths:      []string{"/healthz"},
 		},
 		CORS: CORSConfig{
-			Enabled:        true,
-			AllowedOrigins: []string{"*"},
-			AllowedMethods: []string{"GET", "POST", "OPTIONS"},
-			AllowedHeaders: []string{"Content-Type", "Authorization", "X-API-Key"},
-			MaxAgeS:        3600,
+			Enabled:          true,
+			AllowedOrigins:   []string{"*"},
+			AllowedMethods:   []string{"GET", "POST", "PATCH", "DELETE", "OPTIONS"},
+			AllowedHeaders:   []string{"Content-Type", "Authorization", "X-API-Key"},
+			AllowCredentials: false,
+			MaxAgeS:          3600,
 		},
 		Logging: LoggingConfig{
 			Level:  "info",
@@ -270,6 +337,7 @@ func Load(path string) (Config, error) {
 	if strings.EqualFold(strings.TrimSpace(cfg.DB.Driver), "sqlite") {
 		cfg.DB.DSN = normalizeSQLiteDSN(path, cfg.DB.DSN)
 	}
+	applyEnvOverrides(&cfg)
 	if err := cfg.Validate(); err != nil {
 		return Config{}, fmt.Errorf("validate gateway config %s: %w", path, err)
 	}
@@ -329,40 +397,196 @@ func (c *Config) Validate() error {
 		c.Chain.ReceiptPollIntervalMS = 500
 	}
 
-	if c.Trace.Mode != domain.TraceModeBlockchain {
-		return nil
+	if c.Trace.Mode == domain.TraceModeBlockchain {
+		if strings.TrimSpace(c.Chain.RPCURL) == "" {
+			return fmt.Errorf("chain.rpc_url is required when trace.mode=blockchain")
+		}
+		parsedURL, err := url.Parse(strings.TrimSpace(c.Chain.RPCURL))
+		if err != nil || parsedURL.Scheme == "" || parsedURL.Host == "" {
+			return fmt.Errorf("chain.rpc_url must be a valid absolute url")
+		}
+
+		if strings.TrimSpace(c.Chain.ChainID) == "" {
+			return fmt.Errorf("chain.chain_id is required when trace.mode=blockchain")
+		}
+		chainID, err := strconv.ParseInt(strings.TrimSpace(c.Chain.ChainID), 10, 64)
+		if err != nil || chainID <= 0 {
+			return fmt.Errorf("chain.chain_id must be a positive integer string")
+		}
+
+		if strings.TrimSpace(c.Chain.ContractAddress) == "" {
+			return fmt.Errorf("chain.contract_address is required when trace.mode=blockchain")
+		}
+		if ok, _ := regexp.MatchString(`^0x[0-9a-fA-F]{40}$`, strings.TrimSpace(c.Chain.ContractAddress)); !ok {
+			return fmt.Errorf("chain.contract_address must be a 20-byte hex address")
+		}
+
+		if strings.TrimSpace(c.Chain.PrivateKey) == "" {
+			return fmt.Errorf("chain.private_key is required when trace.mode=blockchain")
+		}
+		key := strings.TrimPrefix(strings.TrimSpace(c.Chain.PrivateKey), "0x")
+		if ok, _ := regexp.MatchString(`^[0-9a-fA-F]{64}$`, key); !ok {
+			return fmt.Errorf("chain.private_key must be a 32-byte hex private key")
+		}
 	}
 
-	if strings.TrimSpace(c.Chain.RPCURL) == "" {
-		return fmt.Errorf("chain.rpc_url is required when trace.mode=blockchain")
+	if c.Auth.Mode == "" {
+		c.Auth.Mode = AuthModeDisabled
 	}
-	parsedURL, err := url.Parse(strings.TrimSpace(c.Chain.RPCURL))
-	if err != nil || parsedURL.Scheme == "" || parsedURL.Host == "" {
-		return fmt.Errorf("chain.rpc_url must be a valid absolute url")
+	switch c.Auth.Mode {
+	case AuthModeDisabled:
+	case AuthModeOIDC:
+		if strings.TrimSpace(c.Auth.OIDC.IssuerURL) == "" {
+			return fmt.Errorf("auth.oidc.issuer_url is required when auth.mode=oidc")
+		}
+		if strings.TrimSpace(c.Auth.OIDC.Audience) == "" {
+			return fmt.Errorf("auth.oidc.audience is required when auth.mode=oidc")
+		}
+		if strings.TrimSpace(c.Auth.OIDC.WebClientID) == "" {
+			return fmt.Errorf("auth.oidc.web_client_id is required when auth.mode=oidc")
+		}
+		if strings.TrimSpace(c.Auth.Web.PublicBaseURL) == "" {
+			return fmt.Errorf("auth.web.public_base_url is required when auth.mode=oidc")
+		}
+		if !isAbsoluteURL(c.Auth.Web.PublicBaseURL) {
+			return fmt.Errorf("auth.web.public_base_url must be a valid absolute url")
+		}
+		if strings.TrimSpace(c.Auth.Web.AppBaseURL) == "" {
+			return fmt.Errorf("auth.web.app_base_url is required when auth.mode=oidc")
+		}
+		if !isAbsoluteURL(c.Auth.Web.AppBaseURL) {
+			return fmt.Errorf("auth.web.app_base_url must be a valid absolute url")
+		}
+	default:
+		return fmt.Errorf("auth.mode must be one of disabled|oidc, got %q", c.Auth.Mode)
 	}
 
-	if strings.TrimSpace(c.Chain.ChainID) == "" {
-		return fmt.Errorf("chain.chain_id is required when trace.mode=blockchain")
-	}
-	chainID, err := strconv.ParseInt(strings.TrimSpace(c.Chain.ChainID), 10, 64)
-	if err != nil || chainID <= 0 {
-		return fmt.Errorf("chain.chain_id must be a positive integer string")
+	if c.Auth.Web.SessionTTLS <= 0 {
+		c.Auth.Web.SessionTTLS = 3600
 	}
 
-	if strings.TrimSpace(c.Chain.ContractAddress) == "" {
-		return fmt.Errorf("chain.contract_address is required when trace.mode=blockchain")
+	if strings.TrimSpace(c.Auth.Web.CookieName) == "" {
+		c.Auth.Web.CookieName = "lychee_session"
 	}
-	if ok, _ := regexp.MatchString(`^0x[0-9a-fA-F]{40}$`, strings.TrimSpace(c.Chain.ContractAddress)); !ok {
-		return fmt.Errorf("chain.contract_address must be a 20-byte hex address")
+	if strings.TrimSpace(c.Auth.Web.CookieSameSite) == "" {
+		c.Auth.Web.CookieSameSite = "lax"
+	}
+	c.Auth.Web.CookieSameSite = strings.ToLower(strings.TrimSpace(c.Auth.Web.CookieSameSite))
+	switch c.Auth.Web.CookieSameSite {
+	case "lax", "none":
+	default:
+		return fmt.Errorf("auth.web.cookie_same_site must be one of lax|none, got %q", c.Auth.Web.CookieSameSite)
+	}
+	if c.Auth.Web.CookieSameSite == "none" && !c.Auth.Web.CookieSecure {
+		return fmt.Errorf("auth.web.cookie_secure must be true when auth.web.cookie_same_site=none")
+	}
+	if c.Auth.Mode == AuthModeOIDC && c.Auth.Web.CookieSameSite != "none" && !isSameSitePair(c.Auth.Web.PublicBaseURL, c.Auth.Web.AppBaseURL) {
+		return fmt.Errorf("auth.web.public_base_url and auth.web.app_base_url must be same-site unless auth.web.cookie_same_site=none")
+	}
+	if c.Auth.Mode == AuthModeOIDC {
+		if !c.CORS.AllowCredentials {
+			return fmt.Errorf("cors.allow_credentials must be true when auth.mode=oidc")
+		}
+		if len(c.CORS.AllowedOrigins) == 0 {
+			return fmt.Errorf("cors.allowed_origins must list at least one trusted origin when auth.mode=oidc")
+		}
+		for _, origin := range c.CORS.AllowedOrigins {
+			if strings.TrimSpace(origin) == "*" {
+				return fmt.Errorf("cors.allowed_origins cannot contain * when auth.mode=oidc")
+			}
+		}
 	}
 
-	if strings.TrimSpace(c.Chain.PrivateKey) == "" {
-		return fmt.Errorf("chain.private_key is required when trace.mode=blockchain")
-	}
-	key := strings.TrimPrefix(strings.TrimSpace(c.Chain.PrivateKey), "0x")
-	if ok, _ := regexp.MatchString(`^[0-9a-fA-F]{64}$`, key); !ok {
-		return fmt.Errorf("chain.private_key must be a 32-byte hex private key")
+	if c.CORS.AllowCredentials {
+		for _, origin := range c.CORS.AllowedOrigins {
+			if strings.TrimSpace(origin) == "*" {
+				return fmt.Errorf("cors.allowed_origins cannot contain * when cors.allow_credentials=true")
+			}
+		}
 	}
 
 	return nil
+}
+
+func applyEnvOverrides(cfg *Config) {
+	if cfg == nil {
+		return
+	}
+	if value := strings.TrimSpace(os.Getenv("LYCHEE_AUTH_MODE")); value != "" {
+		cfg.Auth.Mode = AuthModeConfig(strings.ToLower(value))
+	}
+	if value := strings.TrimSpace(os.Getenv("LYCHEE_AUTH_OIDC_ISSUER_URL")); value != "" {
+		cfg.Auth.OIDC.IssuerURL = value
+	}
+	if value := strings.TrimSpace(os.Getenv("LYCHEE_AUTH_OIDC_AUDIENCE")); value != "" {
+		cfg.Auth.OIDC.Audience = value
+	}
+	if value := strings.TrimSpace(os.Getenv("LYCHEE_AUTH_OIDC_WEB_CLIENT_ID")); value != "" {
+		cfg.Auth.OIDC.WebClientID = value
+	}
+	if value := strings.TrimSpace(os.Getenv("LYCHEE_AUTH_BOOTSTRAP_ADMIN_EMAIL")); value != "" {
+		cfg.Auth.BootstrapAdminEmail = value
+	}
+	if value := strings.TrimSpace(os.Getenv("LYCHEE_AUTH_WEB_PUBLIC_BASE_URL")); value != "" {
+		cfg.Auth.Web.PublicBaseURL = value
+	}
+	if value := strings.TrimSpace(os.Getenv("LYCHEE_AUTH_WEB_APP_BASE_URL")); value != "" {
+		cfg.Auth.Web.AppBaseURL = value
+	}
+	if value := strings.TrimSpace(os.Getenv("LYCHEE_AUTH_WEB_COOKIE_NAME")); value != "" {
+		cfg.Auth.Web.CookieName = value
+	}
+	if value := strings.TrimSpace(os.Getenv("LYCHEE_AUTH_WEB_COOKIE_SECURE")); value != "" {
+		cfg.Auth.Web.CookieSecure = strings.EqualFold(value, "true") || value == "1"
+	}
+	if value := strings.TrimSpace(os.Getenv("LYCHEE_AUTH_WEB_COOKIE_SAME_SITE")); value != "" {
+		cfg.Auth.Web.CookieSameSite = value
+	}
+	if value := strings.TrimSpace(os.Getenv("LYCHEE_AUTH_WEB_SESSION_TTL_S")); value != "" {
+		if ttl, err := strconv.Atoi(value); err == nil && ttl > 0 {
+			cfg.Auth.Web.SessionTTLS = ttl
+		}
+	}
+	if value := strings.TrimSpace(os.Getenv("LYCHEE_SEED_DEFAULT_RESOURCES_ENABLED")); value != "" {
+		cfg.Seed.DefaultResourcesEnabled = strings.EqualFold(value, "true") || value == "1"
+	}
+	if value := strings.TrimSpace(os.Getenv("LYCHEE_CORS_ALLOW_CREDENTIALS")); value != "" {
+		cfg.CORS.AllowCredentials = strings.EqualFold(value, "true") || value == "1"
+	}
+}
+
+func isAbsoluteURL(raw string) bool {
+	parsed, err := url.Parse(strings.TrimSpace(raw))
+	return err == nil && parsed != nil && parsed.Scheme != "" && parsed.Host != ""
+}
+
+func isSameSitePair(leftRaw string, rightRaw string) bool {
+	left, err := url.Parse(strings.TrimSpace(leftRaw))
+	if err != nil || left == nil {
+		return false
+	}
+	right, err := url.Parse(strings.TrimSpace(rightRaw))
+	if err != nil || right == nil {
+		return false
+	}
+	return siteKey(left) != "" && siteKey(left) == siteKey(right)
+}
+
+func siteKey(parsed *url.URL) string {
+	if parsed == nil {
+		return ""
+	}
+	scheme := strings.ToLower(strings.TrimSpace(parsed.Scheme))
+	host := strings.ToLower(strings.TrimSpace(parsed.Hostname()))
+	if scheme == "" || host == "" {
+		return ""
+	}
+	if host == "localhost" || net.ParseIP(host) != nil {
+		return scheme + "://" + host
+	}
+	siteHost, err := publicsuffix.EffectiveTLDPlusOne(host)
+	if err != nil {
+		return scheme + "://" + host
+	}
+	return scheme + "://" + siteHost
 }

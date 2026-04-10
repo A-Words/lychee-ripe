@@ -4,6 +4,7 @@ import type {
   DashboardErrorResponse,
   DashboardOverviewResponse
 } from '~/types/dashboard'
+import { useAuth } from '~/composables/useAuth'
 
 const defaultDashboardApiError: DashboardApiError = {
   statusCode: 0,
@@ -12,12 +13,10 @@ const defaultDashboardApiError: DashboardApiError = {
 }
 
 export function useDashboardApi() {
-  const gatewayBase = useGatewayBase()
+  const auth = useAuth()
 
   const getOverview = async (): Promise<DashboardOverviewResponse> =>
-    await $fetch<DashboardOverviewResponse>('/v1/dashboard/overview', {
-      baseURL: gatewayBase.value
-    })
+    await auth.gatewayFetch<DashboardOverviewResponse>('/v1/dashboard/overview')
 
   const parseDashboardError = (error: unknown): DashboardApiError => {
     const fetchError = error as FetchError<DashboardErrorResponse>
@@ -41,7 +40,6 @@ export function useDashboardApi() {
   }
 
   return {
-    gatewayBase,
     getOverview,
     parseDashboardError
   }
@@ -49,7 +47,7 @@ export function useDashboardApi() {
 
 export function mapDashboardErrorMessage(statusCode: number, fallbackMessage: string): string {
   if (statusCode === 401 || statusCode === 403) {
-    return '网关开启了鉴权，本期页面不传 API Key。请先关闭鉴权或切换联调配置。'
+    return '当前账号无权访问看板，或登录态已失效。'
   }
   if (statusCode === 503) {
     return fallbackMessage || '服务暂不可用，请稍后重试。'

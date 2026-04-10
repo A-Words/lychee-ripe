@@ -1,8 +1,8 @@
 import { describe, expect, it } from 'vitest'
 import { buildTopNavItems } from '../../app/utils/top-nav-items'
 
-function getItem(path: string, key: 'batch_create' | 'dashboard' | 'trace') {
-  const item = buildTopNavItems(path).find((candidate) => candidate.key === key)
+function getItem(path: string, key: 'batch_create' | 'dashboard' | 'trace' | 'admin', includeAdmin = false) {
+  const item = buildTopNavItems(path, includeAdmin).find((candidate) => candidate.key === key)
   if (!item) {
     throw new Error(`missing nav item: ${key}`)
   }
@@ -29,5 +29,10 @@ describe('top nav items', () => {
   it('marks trace route prefix as active', () => {
     expect(getItem('/trace', 'trace').active).toBe(true)
     expect(getItem('/trace/TRC-9A7X-11QF', 'trace').active).toBe(true)
+  })
+
+  it('includes admin item only when requested', () => {
+    expect(() => getItem('/admin', 'admin')).toThrow()
+    expect(getItem('/admin', 'admin', true).active).toBe(true)
   })
 })

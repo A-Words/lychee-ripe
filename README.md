@@ -6,7 +6,7 @@
 
 - `clients/orchard-console`：Nuxt Web + Tauri Desktop，果园业务操作前端
 - `services/inference-api`：FastAPI 推理服务
-- `services/gateway`：Go 网关，负责鉴权、限流、日志、代理与 WebSocket 透传，并提供 `database / blockchain` 双溯源模式
+- `services/gateway`：Go 网关，负责 OIDC 鉴权、本地授权、限流、日志、代理与 WebSocket 透传，并提供 `database / blockchain` 双溯源模式
 - `shared/contracts`：共享常量与 OpenAPI 契约
 - `shared/python`：训练与推理共用的 Python helper
 - `mlops/training`：训练与评估脚本
@@ -23,6 +23,11 @@ Gateway 溯源模式：
 
 - `trace.mode=database`：默认模式，批次以数据库存证为主，不初始化链适配器、不执行补链或链上校验
 - `trace.mode=blockchain`：启用链上锚定、补链与公开验真能力
+
+Gateway 认证模式：
+
+- `auth.mode=disabled`：开发旁路，所有受保护接口默认以模拟 `admin` 身份放行
+- `auth.mode=oidc`：Web 端通过 Gateway 托管的 OIDC 授权码交换与 HttpOnly Session Cookie 登录，Tauri/原生端继续使用 Bearer Access Token；角色与启停状态由本地数据库维护
 
 成熟度映射固定为：
 
@@ -194,8 +199,39 @@ bun run test:stack
 
 默认模型路径、网关默认配置与本地 sqlite 路径都已改成 repo-root 相对解析，直接从仓库根或各服务目录运行都可以。
 `tooling/configs/gateway.yaml.example` 默认面向本地直启，`upstream.base_url` 使用 `http://127.0.0.1:8000`。
+网关代码默认不会向空库自动注入演示果园/地块；只有当 `seed.default_resources_enabled=true` 或 `LYCHEE_SEED_DEFAULT_RESOURCES_ENABLED=true` 时才会写入示例资源。仓库提供的 `gateway.yaml.example` 为了本地演示默认开启这一选项，而 `gateway.compose.yaml` 默认关闭，避免部署型环境污染业务库。
 `tooling/configs/gateway*.yaml` 现在以 `trace.mode` 作为权威运行模式，默认值为 `database`；仅当 `trace.mode=blockchain` 时才要求配置 `chain.rpc_url`、`chain.chain_id`、`chain.contract_address` 与 `chain.private_key`。
+`tooling/configs/gateway*.yaml` 现在以 `auth.mode` 作为认证开关，默认值为 `disabled`；启用 OIDC 时需配置 `auth.oidc.issuer_url`、`auth.oidc.audience`、`auth.oidc.web_client_id`，以及 `auth.web.public_base_url`、`auth.web.app_base_url`、`auth.web.cookie_name`、`auth.web.cookie_secure`、`auth.web.cookie_same_site`。如果是首次在空库上启用 OIDC，还必须提供 `auth.bootstrap_admin_email`，用于预置首个本地管理员账号并在首次登录时绑定 OIDC `sub`。首次绑定预创建用户时，网关把 `email in access_token` 作为硬要求：Bearer Token 必须自带 `email` claim，系统不会额外调用 `userinfo`。上述字段也可通过 `LYCHEE_AUTH_MODE`、`LYCHEE_AUTH_OIDC_ISSUER_URL`、`LYCHEE_AUTH_OIDC_AUDIENCE`、`LYCHEE_AUTH_OIDC_WEB_CLIENT_ID`、`LYCHEE_AUTH_BOOTSTRAP_ADMIN_EMAIL`、`LYCHEE_AUTH_WEB_PUBLIC_BASE_URL`、`LYCHEE_AUTH_WEB_APP_BASE_URL`、`LYCHEE_AUTH_WEB_COOKIE_NAME`、`LYCHEE_AUTH_WEB_COOKIE_SECURE`、`LYCHEE_AUTH_WEB_COOKIE_SAME_SITE` 覆盖。Web Cookie 模式下，`cors.allowed_origins` 不能使用 `*`，并且需要把 `cors.allow_credentials` 设为 `true`。默认 `cookie_same_site=lax` 只支持 same-site 部署；如果前端站点与 Gateway 是 cross-site，则必须改成 `cookie_same_site=none` 且同时启用 `cookie_secure=true`。另外，所有基于 Cookie 的不安全请求与 WebSocket 握手都会校验 `Origin`，只有命中 `cors.allowed_origins` 的浏览器来源才会被接受。
 Docker Compose 使用仓库自带的 `tooling/configs/gateway.compose.yaml`，其中容器内上游地址为 `http://inference-api:8000`。
+
+前端运行时认证配置：
+
+- `NUXT_PUBLIC_AUTH_MODE=disabled|oidc`
+- `NUXT_PUBLIC_OIDC_TAURI_CLIENT_ID`
+- `NUXT_PUBLIC_OIDC_SCOPE`
+
+其中 Web 端不再直接持有 OIDC token，也不再需要公开的 `issuer/client_id/redirect_uri` 配置；这些信息都由 Gateway 在 `/v1/auth/login`、`/v1/auth/callback`、`/v1/auth/logout` 上托管。
+
+本地开发默认建议：
+
+```sh
+LYCHEE_AUTH_MODE=disabled
+NUXT_PUBLIC_AUTH_MODE=disabled
+LYCHEE_SEED_DEFAULT_RESOURCES_ENABLED=true
+```
+
+如果需要在本地联调 OIDC 首次启用流程，至少补充：
+
+```sh
+LYCHEE_AUTH_MODE=oidc
+LYCHEE_AUTH_BOOTSTRAP_ADMIN_EMAIL=admin@example.com
+LYCHEE_AUTH_OIDC_WEB_CLIENT_ID=orchard-console-web
+LYCHEE_AUTH_WEB_PUBLIC_BASE_URL=http://127.0.0.1:9000
+LYCHEE_AUTH_WEB_APP_BASE_URL=http://127.0.0.1:3000
+LYCHEE_AUTH_WEB_COOKIE_SAME_SITE=lax
+```
+
+同时确认你的 IdP 会把 `email` 放进发给网关的 `access_token`。以 Keycloak 为例，需要检查对应 client scope / protocol mapper 的 `email` claim 已启用，并且 `Add to access token` 为开启状态；否则首次登录绑定预创建用户会被拒绝。
 
 ## Docker
 

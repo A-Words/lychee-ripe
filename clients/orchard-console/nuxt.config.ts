@@ -7,7 +7,11 @@ export default defineNuxtConfig({
   css: ['~/assets/css/main.css'],
   runtimeConfig: {
     public: {
-      gatewayBase: process.env.NUXT_PUBLIC_GATEWAY_BASE || 'http://127.0.0.1:9000'
+      gatewayBase: process.env.NUXT_PUBLIC_GATEWAY_BASE || 'http://127.0.0.1:9000',
+      authMode: process.env.NUXT_PUBLIC_AUTH_MODE || 'disabled',
+      oidcIssuerUrl: process.env.NUXT_PUBLIC_OIDC_ISSUER_URL || '',
+      oidcTauriClientId: process.env.NUXT_PUBLIC_OIDC_TAURI_CLIENT_ID || '',
+      oidcScope: process.env.NUXT_PUBLIC_OIDC_SCOPE || 'openid profile email'
     }
   },
   vite: {
