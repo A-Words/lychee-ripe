@@ -26,6 +26,7 @@ describe('dashboard chart components', () => {
     const chart = wrapper.get('[data-stub="VChart"]')
 
     expect(chartWrapper).toBeTruthy()
+    expect(wrapper.text()).toContain('已入库')
     expect(chart.classes()).toContain('h-full')
     expect(chart.classes()).toContain('w-full')
     expect(chart.classes()).not.toContain('h-72')
@@ -52,6 +53,7 @@ describe('dashboard chart components', () => {
     const chart = wrapper.get('[data-stub="VChart"]')
 
     expect(chartWrapper).toBeTruthy()
+    expect(wrapper.text()).toContain('青果 / 半熟 / 红果 / 嫩果')
     expect(chart.classes()).toContain('h-full')
     expect(chart.classes()).toContain('w-full')
     expect(chart.classes()).not.toContain('h-72')

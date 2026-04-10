@@ -1,4 +1,5 @@
 <script setup lang="ts">
+import { DASHBOARD_STATUS_META, getDashboardStatusOrder } from '~/constants/dashboard-status'
 import { buildStatusDonutOption } from '~/utils/dashboard-chart-options'
 import type { BatchStatusDistribution } from '~/types/dashboard'
 import type { TraceMode } from '~/types/trace'
@@ -9,6 +10,11 @@ const props = defineProps<{
 }>()
 
 const option = computed(() => buildStatusDonutOption(props.traceMode, props.statusDistribution))
+const statusSummary = computed(() =>
+  getDashboardStatusOrder(props.traceMode)
+    .map((key) => DASHBOARD_STATUS_META[key].label)
+    .join(' / ')
+)
 </script>
 
 <template>
@@ -19,7 +25,7 @@ const option = computed(() => buildStatusDonutOption(props.traceMode, props.stat
           批次状态分布
         </h3>
         <p class="mt-1 text-xs text-muted">
-          {{ props.traceMode === 'database' ? 'stored' : 'anchored / pending_anchor / anchor_failed' }}
+          {{ statusSummary }}
         </p>
       </div>
     </template>

@@ -1,4 +1,5 @@
 <script setup lang="ts">
+import { RIPENESS_CLASSES, RIPENESS_LABEL_MAP } from '~/constants/ripeness'
 import { buildRipenessBarOption } from '~/utils/dashboard-chart-options'
 import type { RipenessDistribution } from '~/types/dashboard'
 
@@ -7,6 +8,9 @@ const props = defineProps<{
 }>()
 
 const option = computed(() => buildRipenessBarOption(props.ripenessDistribution))
+const ripenessSummary = computed(() =>
+  RIPENESS_CLASSES.map((key) => RIPENESS_LABEL_MAP[key]).join(' / ')
+)
 </script>
 
 <template>
@@ -17,7 +21,7 @@ const option = computed(() => buildRipenessBarOption(props.ripenessDistribution)
           成熟度分布
         </h3>
         <p class="mt-1 text-xs text-muted">
-          green / half / red / young
+          {{ ripenessSummary }}
         </p>
       </div>
     </template>

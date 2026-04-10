@@ -109,6 +109,7 @@ describe('dashboard page', () => {
 
     expect(wrapper.text()).toContain('模式：数据库')
     expect(wrapper.text()).toContain('已入库')
+    expect(wrapper.text()).toContain('处理策略 已分拣')
     expect(wrapper.text()).not.toContain('补链统计')
     expect(wrapper.text()).not.toContain('最近链上记录')
     wrapper.unmount()
