@@ -28,7 +28,7 @@ const shouldStopAutoRefresh = computed(() => viewState.value === 'auth_blocked')
 const isReadyLike = computed(() => viewState.value === 'ready' || viewState.value === 'empty')
 const isEmpty = computed(() => viewState.value === 'empty')
 const isShowingStaleOverview = computed(() =>
-  Boolean(overview.value) && isReadyLike.value && Boolean(apiError.value)
+  !!overview.value && isReadyLike.value && !!apiError.value
 )
 
 const unavailableTitle = computed(() =>
@@ -73,6 +73,7 @@ function currentRefreshDelayMs() {
   if (consecutiveRefreshFailures.value <= 0) {
     return refreshIntervalMs
   }
+  // 指数退避：30s × 2^n，上限 120s，避免服务故障期间频繁轮询
   return Math.min(refreshIntervalMs * 2 ** consecutiveRefreshFailures.value, maxRefreshIntervalMs)
 }
 
@@ -121,9 +122,11 @@ function handleManualRefresh() {
 
 function handleVisibilityChange() {
   if (document.visibilityState === 'visible' && !shouldStopAutoRefresh.value) {
+    // tab 切回后立即刷新，刷新完成后 finally 块会调用 scheduleAutoRefresh 重建计时器
     void loadOverview(true)
     return
   }
+  // tab 隐藏时清除计时器，避免后台无效轮询；切回时由上方分支重建
   clearRefreshTimer()
 }
 

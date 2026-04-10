@@ -29,7 +29,7 @@ export function useAuth() {
   const isAuthenticated = computed(() => mode.value === 'disabled' || Boolean(principal.value))
   const isAdmin = computed(() => mode.value === 'disabled' || principal.value?.role === 'admin')
   const appBasePath = computed(() =>
-    import.meta.client ? inferAppBasePath(window.location.pathname, currentRoutePath()) : ''
+    import.meta.client ? inferAppBasePath(window.location.pathname, readRoutePath()) : ''
   )
 
   async function init(force = false) {
@@ -101,7 +101,7 @@ export function useAuth() {
 
   async function handleWebCallback() {
     await init(true)
-    const route = currentRoute()
+    const route = readCurrentRoute()
     const redirectPath = normalizeRedirectPath(String(route?.query.redirect || '/dashboard'))
     if (isAuthenticated.value) {
       return redirectPath
@@ -301,12 +301,12 @@ export function useAuth() {
     setPrincipal(nextPrincipal)
   }
 
-  function currentRoute() {
+  function readCurrentRoute() {
     return router.currentRoute.value
   }
 
-  function currentRoutePath() {
-    return currentRoute().path
+  function readRoutePath() {
+    return readCurrentRoute().path
   }
 }
 
