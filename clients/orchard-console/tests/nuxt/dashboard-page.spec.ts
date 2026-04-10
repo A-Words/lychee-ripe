@@ -183,6 +183,35 @@ describe('dashboard page', () => {
     expect(wrapper.text()).not.toContain('看板服务不可用')
     wrapper.unmount()
   })
+
+  it('backs off auto refresh after consecutive failures', async () => {
+    getOverviewMock
+      .mockResolvedValueOnce(buildDashboardOverview())
+      .mockRejectedValueOnce(new Error('refresh failed'))
+      .mockResolvedValueOnce(buildDashboardOverview())
+    parseDashboardErrorMock.mockReturnValue({
+      statusCode: 503,
+      error: 'service_unavailable',
+      message: '刷新数据失败，请稍后重试。'
+    })
+
+    const wrapper = await mountDashboardPage()
+    await flushUi()
+
+    await findButton(wrapper, '立即刷新').trigger('click')
+    await flushUi()
+
+    expect(getOverviewMock).toHaveBeenCalledTimes(2)
+
+    vi.advanceTimersByTime(30_000)
+    await flushUi()
+    expect(getOverviewMock).toHaveBeenCalledTimes(2)
+
+    vi.advanceTimersByTime(30_000)
+    await flushUi()
+    expect(getOverviewMock).toHaveBeenCalledTimes(3)
+    wrapper.unmount()
+  })
 })
 
 async function mountDashboardPage() {
