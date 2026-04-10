@@ -57,14 +57,14 @@
 ### 3.1 依赖与配置准备
 
 - 安装 JS 依赖：`bun install`
-- 安装 Python 依赖：`cd services/inference-api && uv sync --extra cpu`
+- 安装 Python 依赖：`uv sync --project services/inference-api --extra cpu`
 - 准备本地配置：
   - `tooling/configs/model.yaml.example -> tooling/configs/model.yaml`
   - `tooling/configs/service.yaml.example -> tooling/configs/service.yaml`
   - `tooling/configs/gateway.yaml.example -> tooling/configs/gateway.yaml`
 - Python 加速后端选择：
-  - CPU：`cd services/inference-api && uv sync --extra cpu`
-  - CUDA 12.8：`cd services/inference-api && uv sync --extra cu128`
+  - CPU：`uv sync --project services/inference-api --extra cpu`
+  - CUDA 12.8：`uv sync --project services/inference-api --extra cu128`
 
 ### 3.2 服务启动
 
@@ -76,7 +76,7 @@
   - Python 相关根入口默认显式使用 `cpu`；如需切到 CUDA 12.8，统一追加 `-- --target cu128`
   - `bun run dev` 现在以 `@lychee-ripe/orchard-console` 为入口，再由 Turbo `with` 关系联动带起 `gateway` 与 `inference-api`
 - 分服务直启：
-  - Inference API：`cd services/inference-api && uv run --extra cpu python -m uvicorn app.main:app --reload --host 127.0.0.1 --port 8000`
+  - Inference API：`uv run --project services/inference-api --extra cpu python -m uvicorn app.main:app --reload --host 127.0.0.1 --port 8000`
   - Gateway：`go run ./services/gateway/cmd/gateway --config tooling/configs/gateway.yaml`
   - Orchard Console Web：`bun --cwd clients/orchard-console run dev -- --host 127.0.0.1 --port 3000`
   - Orchard Console Desktop：`bun --cwd clients/orchard-console run tauri:dev`
@@ -99,7 +99,7 @@
 
 ### 3.4 校验与测试
 
-- Python：`cd services/inference-api && uv run --extra cpu python -m pytest -q`
+- Python：`uv run --project services/inference-api --extra cpu python -m pytest -q`
 - Go：`go test ./services/gateway/...`
 - Frontend：
   - `bun run --filter @lychee-ripe/orchard-console typecheck`

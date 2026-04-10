@@ -55,7 +55,7 @@ Gateway 认证模式：
 
 ```sh
 bun install
-cd services/inference-api && uv sync --extra cpu
+uv sync --project services/inference-api --extra cpu
 ```
 
 准备本地配置：
@@ -77,11 +77,11 @@ Copy-Item tooling/configs/gateway.yaml.example tooling/configs/gateway.yaml
 Python 加速后端通过 `uv` extra 选择：
 
 ```sh
-cd services/inference-api && uv sync --extra cpu
+uv sync --project services/inference-api --extra cpu
 ```
 
 ```powershell
-cd services/inference-api; uv sync --extra cu128
+uv sync --project services/inference-api --extra cu128
 ```
 
 ## Run
@@ -110,7 +110,7 @@ bun run verify -- --target cpu
 分服务直接启动：
 
 ```sh
-cd services/inference-api && uv run --extra cpu python -m uvicorn app.main:app --reload --host 127.0.0.1 --port 8000
+uv run --project services/inference-api --extra cpu python -m uvicorn app.main:app --reload --host 127.0.0.1 --port 8000
 go run ./services/gateway/cmd/gateway --config tooling/configs/gateway.yaml
 bun --cwd clients/orchard-console run dev -- --host 127.0.0.1 --port 3000
 bun --cwd clients/orchard-console run tauri:dev
@@ -183,7 +183,7 @@ Turbo 任务语义约定：
 单独执行：
 
 ```sh
-cd services/inference-api && uv run --extra cpu python -m pytest -q
+uv run --project services/inference-api --extra cpu python -m pytest -q
 go test ./services/gateway/...
 bun run --filter @lychee-ripe/orchard-console typecheck
 bun run --filter @lychee-ripe/orchard-console test
