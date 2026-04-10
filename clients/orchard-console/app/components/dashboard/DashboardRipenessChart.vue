@@ -23,7 +23,9 @@ const option = computed(() => buildRipenessBarOption(props.ripenessDistribution)
     </template>
 
     <ClientOnly>
-      <VChart :option="option" autoresize class="h-72 w-full" />
+      <div class="h-72 w-full">
+        <VChart :option="option" autoresize class="h-full w-full" />
+      </div>
       <template #fallback>
         <USkeleton class="h-72 w-full" />
       </template>

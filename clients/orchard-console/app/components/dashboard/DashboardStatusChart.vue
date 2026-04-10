@@ -25,7 +25,9 @@ const option = computed(() => buildStatusDonutOption(props.traceMode, props.stat
     </template>
 
     <ClientOnly>
-      <VChart :option="option" autoresize class="h-72 w-full" />
+      <div class="h-72 w-full">
+        <VChart :option="option" autoresize class="h-full w-full" />
+      </div>
       <template #fallback>
         <USkeleton class="h-72 w-full" />
       </template>
