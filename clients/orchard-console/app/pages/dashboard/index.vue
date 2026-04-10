@@ -18,8 +18,10 @@ const overview = ref<DashboardOverviewResponse | null>(null)
 const apiError = ref<DashboardApiError | null>(null)
 const loading = ref(false)
 const lastRefreshedAt = ref<Date | null>(null)
+const consecutiveRefreshFailures = ref(0)
 
 const refreshIntervalMs = 30_000
+const maxRefreshIntervalMs = 120_000
 const refreshTimer = ref<number | null>(null)
 
 const shouldStopAutoRefresh = computed(() => viewState.value === 'auth_blocked')
@@ -58,16 +60,20 @@ function clearRefreshTimer() {
 function scheduleAutoRefresh() {
   clearRefreshTimer()
 
-  if (!import.meta.client || shouldStopAutoRefresh.value) {
+  if (!import.meta.client || shouldStopAutoRefresh.value || document.visibilityState !== 'visible') {
     return
   }
 
-  refreshTimer.value = window.setInterval(() => {
-    if (document.visibilityState !== 'visible') {
-      return
-    }
+  refreshTimer.value = window.setTimeout(() => {
     void loadOverview(true)
-  }, refreshIntervalMs)
+  }, currentRefreshDelayMs())
+}
+
+function currentRefreshDelayMs() {
+  if (consecutiveRefreshFailures.value <= 0) {
+    return refreshIntervalMs
+  }
+  return Math.min(refreshIntervalMs * 2 ** consecutiveRefreshFailures.value, maxRefreshIntervalMs)
 }
 
 async function loadOverview(manual: boolean) {
@@ -85,6 +91,7 @@ async function loadOverview(manual: boolean) {
     overview.value = data
     apiError.value = null
     lastRefreshedAt.value = new Date()
+    consecutiveRefreshFailures.value = 0
     viewState.value = data.totals.batch_total === 0 ? 'empty' : 'ready'
   } catch (error) {
     const parsed = parseDashboardError(error)
@@ -95,9 +102,11 @@ async function loadOverview(manual: boolean) {
       overview.value = null
       viewState.value = 'auth_blocked'
     } else if (currentOverview) {
+      consecutiveRefreshFailures.value += 1
       viewState.value = currentOverview.totals.batch_total === 0 ? 'empty' : 'ready'
     } else {
       overview.value = null
+      consecutiveRefreshFailures.value += 1
       viewState.value = 'unavailable'
     }
   } finally {
@@ -113,7 +122,9 @@ function handleManualRefresh() {
 function handleVisibilityChange() {
   if (document.visibilityState === 'visible' && !shouldStopAutoRefresh.value) {
     void loadOverview(true)
+    return
   }
+  clearRefreshTimer()
 }
 
 onMounted(() => {
