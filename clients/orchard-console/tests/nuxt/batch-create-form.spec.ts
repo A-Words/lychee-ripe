@@ -106,6 +106,29 @@ describe('batch create form', () => {
       }
     ]])
   })
+
+  it('reconciles stale plot presets after orchard data refresh', async () => {
+    const wrapper = await mountForm({ orchards: structuredClone(ORCHARDS) })
+
+    await getField(wrapper, 'orchardPresetId').get('select').setValue('orchard-east-02')
+    await getField(wrapper, 'plotPresetId').get('select').setValue('plot-e02')
+    await flushUi()
+
+    const nextOrchards = structuredClone(ORCHARDS)
+    nextOrchards[1] = {
+      orchard_id: 'orchard-east-02',
+      orchard_name: '东麓果园',
+      plots: [
+        { plot_id: 'plot-e01', plot_name: '东坡 1 号地块' }
+      ]
+    }
+    await wrapper.setProps({ orchards: nextOrchards })
+    await flushUi()
+
+    expect(getField(wrapper, 'plotPresetId').get('select').element.value).toBe('plot-e01')
+    expect(getField(wrapper, 'plot_id').get('input').element.value).toBe('plot-e01')
+    expect(getField(wrapper, 'plot_name').get('input').element.value).toBe('东坡 1 号地块')
+  })
 })
 
 async function mountForm(overrides: Partial<InstanceType<typeof BatchCreateForm>['$props']> = {}) {

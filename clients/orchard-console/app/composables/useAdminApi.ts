@@ -41,7 +41,7 @@ export function useAdminApi() {
       body: payload
     })
 
-  const updatePlot = async (plotId: string, payload: { orchard_id: string, plot_name: string, status: ResourceStatus }) =>
+  const updatePlot = async (plotId: string, payload: Partial<{ orchard_id: string, plot_name: string, status: ResourceStatus }>) =>
     await auth.gatewayFetch<Plot>(`/v1/plots/${encodeURIComponent(plotId)}`, {
       method: 'PATCH',
       body: payload

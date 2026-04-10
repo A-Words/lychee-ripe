@@ -134,6 +134,23 @@ describe('admin page', () => {
       status: 'disabled'
     })
   })
+
+  it('patches plots using only dirty fields', async () => {
+    const wrapper = await mountAdminPage()
+    await flushUi()
+
+    const plotCard = wrapper.findAll('[data-stub="UCard"]')[4]
+    const inputs = plotCard.findAll('input')
+    const selects = plotCard.findAll('select')
+
+    await selects[0].setValue('archived')
+    await findButton(plotCard, '保存').trigger('click')
+    await flushUi()
+
+    expect(updatePlotMock).toHaveBeenCalledWith('plot-1', {
+      status: 'archived'
+    })
+  })
 })
 
 async function mountAdminPage() {

@@ -106,16 +106,39 @@ watch(() => props.requireConfirmUnripe, (required) => {
 })
 
 watch(() => props.orchards, (orchards) => {
-  if (state.orchardPresetId || orchards.length === 0) {
+  syncPresetState(orchards)
+}, { immediate: true })
+
+function syncPresetState(orchards: OrchardWithPlots[]) {
+  if (orchards.length === 0) {
+    state.orchardPresetId = undefined
+    state.orchard_id = ''
+    state.orchard_name = ''
+    state.plotPresetId = undefined
+    state.plot_id = ''
+    state.plot_name = ''
     return
   }
-  state.orchardPresetId = orchards[0]?.orchard_id
-  state.orchard_id = orchards[0]?.orchard_id || ''
-  state.orchard_name = orchards[0]?.orchard_name || ''
-  state.plotPresetId = orchards[0]?.plots[0]?.plot_id
-  state.plot_id = orchards[0]?.plots[0]?.plot_id || ''
-  state.plot_name = orchards[0]?.plots[0]?.plot_name || ''
-}, { immediate: true })
+
+  const orchard = orchards.find((item) => item.orchard_id === state.orchardPresetId) ?? orchards[0]
+  if (!orchard) {
+    state.orchardPresetId = undefined
+    state.orchard_id = ''
+    state.orchard_name = ''
+    state.plotPresetId = undefined
+    state.plot_id = ''
+    state.plot_name = ''
+    return
+  }
+  state.orchardPresetId = orchard.orchard_id
+  state.orchard_id = orchard.orchard_id
+  state.orchard_name = orchard.orchard_name
+
+  const plot = orchard.plots.find((item) => item.plot_id === state.plotPresetId) ?? orchard.plots[0]
+  state.plotPresetId = plot?.plot_id
+  state.plot_id = plot?.plot_id || ''
+  state.plot_name = plot?.plot_name || ''
+}
 
 function validate(current: FormState): FormError[] {
   const errors: FormError[] = []

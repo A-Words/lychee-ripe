@@ -15,6 +15,7 @@ const errorMessage = ref('')
 const orchards = ref<Orchard[]>([])
 const plots = ref<Plot[]>([])
 const users = ref<UserRecord[]>([])
+const originalPlots = ref<Record<string, Pick<Plot, 'orchard_id' | 'plot_name' | 'status'>>>({})
 
 const orchardForm = reactive({
   orchard_id: '',
@@ -62,6 +63,13 @@ async function loadAll() {
     orchards.value = orchardItems
     plots.value = plotItems
     users.value = userItems
+    originalPlots.value = Object.fromEntries(
+      plotItems.map((item) => [item.plot_id, {
+        orchard_id: item.orchard_id,
+        plot_name: item.plot_name,
+        status: item.status
+      }])
+    )
   } catch (error) {
     errorMessage.value = error instanceof Error ? error.message : '加载管理数据失败'
   } finally {
@@ -136,11 +144,23 @@ async function toggleOrchardStatus(item: Orchard) {
 
 async function togglePlotStatus(item: Plot) {
   await runAdminMutation(async () => {
-    await api.updatePlot(item.plot_id, {
-      orchard_id: item.orchard_id,
-      plot_name: item.plot_name,
-      status: item.status
-    })
+    const original = originalPlots.value[item.plot_id]
+    const payload: Partial<Pick<Plot, 'orchard_id' | 'plot_name' | 'status'>> = {}
+
+    if (!original || item.orchard_id !== original.orchard_id) {
+      payload.orchard_id = item.orchard_id
+    }
+    if (!original || item.plot_name !== original.plot_name) {
+      payload.plot_name = item.plot_name
+    }
+    if (!original || item.status !== original.status) {
+      payload.status = item.status
+    }
+    if (Object.keys(payload).length === 0) {
+      return
+    }
+
+    await api.updatePlot(item.plot_id, payload)
     await loadAll()
   }, '保存地块失败')
 }

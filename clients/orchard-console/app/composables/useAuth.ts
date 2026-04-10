@@ -87,20 +87,31 @@ export function useAuth() {
   }
 
   async function login(redirectPath = '/dashboard') {
+    const normalizedRedirectPath = normalizeRedirectPath(redirectPath)
     if (mode.value === 'disabled') {
-      await navigateTo(redirectPath)
+      await navigateTo(resolveClientRedirect(appBasePath.value, normalizedRedirectPath))
       return
     }
     if (isTauriRuntime()) {
-      await startTauriLogin(redirectPath)
+      await startTauriLogin(normalizedRedirectPath)
       return
     }
-    startWebLogin(redirectPath)
+    startWebLogin(normalizedRedirectPath)
   }
 
   async function handleWebCallback() {
     await init(true)
-    return isAuthenticated.value ? '/dashboard' : '/login'
+    const redirectPath = normalizeRedirectPath(String(route.query.redirect || '/dashboard'))
+    if (isAuthenticated.value) {
+      return redirectPath
+    }
+    const query = new URLSearchParams()
+    query.set('redirect', redirectPath)
+    const authError = String(route.query.auth_error || '').trim()
+    if (authError) {
+      query.set('auth_error', authError)
+    }
+    return `/login?${query.toString()}`
   }
 
   async function logout() {
@@ -259,7 +270,7 @@ export function useAuth() {
     const nextPrincipal = await fetchPrincipal(authSession.accessToken)
     setAuthenticatedState(authSession, nextPrincipal)
     initialized.value = true
-    await navigateTo(redirectPath)
+    await navigateTo(resolveClientRedirect(appBasePath.value, redirectPath))
   }
 
   async function fetchPrincipal(accessToken?: string) {
@@ -329,10 +340,14 @@ function isTauriRuntime() {
   return typeof window !== 'undefined' && ('__TAURI_INTERNALS__' in window || '__TAURI__' in window)
 }
 
-function normalizeRedirectPath(raw: string) {
+export function normalizeRedirectPath(raw: string) {
   const trimmed = String(raw || '').trim()
   if (!trimmed || !trimmed.startsWith('/') || trimmed.startsWith('//')) {
     return '/dashboard'
   }
   return trimmed
+}
+
+export function resolveClientRedirect(appBasePath: string, raw: string) {
+  return buildAppPath(appBasePath, normalizeRedirectPath(raw))
 }
