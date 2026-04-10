@@ -125,6 +125,7 @@
 - 前端任务应显式声明 `NUXT_PUBLIC_*` 环境变量；Python 任务应显式声明 `LYCHEE_PY_TARGET`
 - `shared/contracts/{constants,schemas}` 与 `shared/python/lychee_common` 的变化必须能触发依赖任务重算
 - 远程缓存接入保持平台中立，通过 `TURBO_TOKEN`、`TURBO_TEAM`、可选 `TURBO_API` 在运行环境中开启，仓库内不写死团队信息
+- 仓库自带脚本产生的工程工具缓存统一收口到根 `.cache/`，当前包括 `go-build`、`uv`、`xdg`、`torchinductor`；`mlops/artifacts/` 仅承载业务产物
 
 ### 3.6 容器
 

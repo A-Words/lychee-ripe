@@ -15,6 +15,7 @@ param(
 
 Set-StrictMode -Version Latest
 $ErrorActionPreference = "Stop"
+. (Join-Path $PSScriptRoot "cache-env.ps1")
 
 $trainArgs = @(
     "run", "--project", "services/inference-api", "--extra", $Target, "python", "mlops/training/train.py",

@@ -1,0 +1,17 @@
+#!/usr/bin/env sh
+
+SCRIPT_DIR="$(CDPATH= cd -- "$(dirname -- "$0")" && pwd)"
+REPO_ROOT="$(CDPATH= cd -- "$SCRIPT_DIR/../.." && pwd)"
+CACHE_ROOT="$REPO_ROOT/.cache"
+
+UV_CACHE_DIR="$CACHE_ROOT/uv"
+XDG_CACHE_HOME="$CACHE_ROOT/xdg"
+TORCHINDUCTOR_CACHE_DIR="$CACHE_ROOT/torchinductor"
+GOCACHE="$CACHE_ROOT/go-build"
+
+mkdir -p "$UV_CACHE_DIR" "$XDG_CACHE_HOME" "$TORCHINDUCTOR_CACHE_DIR" "$GOCACHE"
+
+export UV_CACHE_DIR
+export XDG_CACHE_HOME
+export TORCHINDUCTOR_CACHE_DIR
+export GOCACHE

@@ -1,6 +1,8 @@
 #!/usr/bin/env sh
 set -eu
 
+. "$(CDPATH= cd -- "$(dirname -- "$0")" && pwd)/cache-env.sh"
+
 CONFIG="${CONFIG:-tooling/configs/gateway.yaml}"
 
 while [ "$#" -gt 0 ]; do

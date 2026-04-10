@@ -230,6 +230,8 @@ TURBO_API=https://your-cache.example.com
 
 仓库内不会写死 team、token 或平台专属配置；是否启用远程缓存由运行环境中的 `TURBO_TOKEN` / `TURBO_TEAM` / `TURBO_API` 决定。
 
+仓库自带脚本会把工程工具缓存统一收口到根目录 `.cache/`，当前包括 `go-build`、`uv`、`xdg`、`torchinductor`；`mlops/artifacts/` 只保留模型、指标、日志与数据库等业务产物。
+
 ## Config
 
 - 推理模型配置：`tooling/configs/model.yaml`

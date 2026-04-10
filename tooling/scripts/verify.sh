@@ -1,6 +1,8 @@
 #!/usr/bin/env sh
 set -eu
 
+. "$(CDPATH= cd -- "$(dirname -- "$0")" && pwd)/cache-env.sh"
+
 TARGET="${TARGET:-cpu}"
 
 while [ "$#" -gt 0 ]; do

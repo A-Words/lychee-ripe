@@ -1,3 +1,4 @@
+import { mkdirSync } from 'node:fs'
 import { spawnSync } from 'node:child_process'
 import { fileURLToPath } from 'node:url'
 
@@ -18,6 +19,14 @@ if (!['cpu', 'cu128'].includes(target)) {
 
 const serviceDir = fileURLToPath(new URL('../', import.meta.url))
 const repoRoot = fileURLToPath(new URL('../../../', import.meta.url))
+const cacheRoot = fileURLToPath(new URL('../../../.cache/', import.meta.url))
+const uvCacheDir = fileURLToPath(new URL('../../../.cache/uv', import.meta.url))
+const xdgCacheHome = fileURLToPath(new URL('../../../.cache/xdg', import.meta.url))
+const torchInductorCacheDir = fileURLToPath(new URL('../../../.cache/torchinductor', import.meta.url))
+
+for (const path of [cacheRoot, uvCacheDir, xdgCacheHome, torchInductorCacheDir]) {
+  mkdirSync(path, { recursive: true })
+}
 
 const commands = {
   dev: {
@@ -94,6 +103,12 @@ if (!selected) {
 
 const result = spawnSync('uv', selected.args, {
   cwd: selected.cwd,
+  env: {
+    ...process.env,
+    UV_CACHE_DIR: uvCacheDir,
+    XDG_CACHE_HOME: xdgCacheHome,
+    TORCHINDUCTOR_CACHE_DIR: torchInductorCacheDir
+  },
   shell: process.platform === 'win32',
   stdio: 'inherit'
 })

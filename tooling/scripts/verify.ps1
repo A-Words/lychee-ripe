@@ -6,6 +6,7 @@ param(
 
 Set-StrictMode -Version Latest
 $ErrorActionPreference = "Stop"
+. (Join-Path $PSScriptRoot "cache-env.ps1")
 
 Write-Host "[check] Running tests..."
 Push-Location "services/inference-api"

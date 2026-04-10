@@ -1,6 +1,8 @@
 #!/usr/bin/env sh
 set -eu
 
+. "$(CDPATH= cd -- "$(dirname -- "$0")" && pwd)/cache-env.sh"
+
 HOST="${HOST:-127.0.0.1}"
 PORT="${PORT:-8000}"
 TARGET="${TARGET:-cpu}"

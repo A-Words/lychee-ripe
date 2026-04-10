@@ -11,6 +11,7 @@ param(
 
 Set-StrictMode -Version Latest
 $ErrorActionPreference = "Stop"
+. (Join-Path $PSScriptRoot "cache-env.ps1")
 $RepoRoot = (Resolve-Path (Join-Path $PSScriptRoot "..\\..")).Path
 $AppWorkingDirectory = Join-Path $RepoRoot "services/inference-api"
 $GatewayWorkingDirectory = Join-Path $RepoRoot "services/gateway"
