@@ -61,6 +61,27 @@ func TestValidatorGetKeyFallsBackToCachedKeyWhenRefreshFails(t *testing.T) {
 	}
 }
 
+func TestValidatorGetKeyRejectsExpiredStaleCachedKeyWhenRefreshFails(t *testing.T) {
+	t.Parallel()
+
+	key := mustGenerateRSAKey(t)
+	validator := &Validator{
+		client: &http.Client{
+			Timeout: defaultTimeout,
+			Transport: roundTripFunc(func(*http.Request) (*http.Response, error) {
+				return nil, errors.New("jwks unavailable")
+			}),
+		},
+		keys:       map[string]*rsa.PublicKey{"known": &key.PublicKey},
+		lastSynced: time.Now().Add(-maxStaleJWKS - time.Minute),
+		issuer:     "https://issuer.example.com",
+	}
+
+	if _, err := validator.getKey(context.Background(), "known"); !errors.Is(err, ErrUnavailable) {
+		t.Fatalf("error = %v, want ErrUnavailable", err)
+	}
+}
+
 func TestValidatorGetKeyReturnsRefreshErrorForUnknownKidWhenRefreshFails(t *testing.T) {
 	t.Parallel()
 

@@ -80,3 +80,23 @@ func TestResolveAppRedirectRejectsEncodedSchemeBearingRedirectPaths(t *testing.T
 		t.Fatalf("resolveAppRedirect() = %q, want %q", got, want)
 	}
 }
+
+func TestResolveAppRedirectNormalizesDotSegmentsUnderBasePrefix(t *testing.T) {
+	t.Parallel()
+
+	got := resolveAppRedirect("https://example.com/console", "/../admin")
+	want := "https://example.com/console/admin"
+	if got != want {
+		t.Fatalf("resolveAppRedirect() = %q, want %q", got, want)
+	}
+}
+
+func TestResolveAppRedirectNormalizesEncodedDotSegmentsUnderBasePrefix(t *testing.T) {
+	t.Parallel()
+
+	got := resolveAppRedirect("https://example.com/console", "/%2e%2e/admin?tab=users")
+	want := "https://example.com/console/admin?tab=users"
+	if got != want {
+		t.Fatalf("resolveAppRedirect() = %q, want %q", got, want)
+	}
+}

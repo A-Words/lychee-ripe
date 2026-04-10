@@ -339,10 +339,13 @@ func normalizeRedirectPath(raw string) string {
 	if containsSchemeLikePrefix(parsed.Path) {
 		return "/dashboard"
 	}
-	if !strings.HasPrefix(path.Clean(parsed.Path), "/") {
+	cleanPath := path.Clean(parsed.Path)
+	if !strings.HasPrefix(cleanPath, "/") {
 		return "/dashboard"
 	}
-	return trimmed
+	parsed.Path = cleanPath
+	parsed.RawPath = ""
+	return parsed.String()
 }
 
 func resolveAppRedirect(appBaseURL string, redirectPath string) string {

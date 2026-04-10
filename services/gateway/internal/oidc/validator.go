@@ -24,6 +24,7 @@ const (
 	discoveryPath  = "/.well-known/openid-configuration"
 	defaultTimeout = 10 * time.Second
 	jwksTTL        = 5 * time.Minute
+	maxStaleJWKS   = 15 * time.Minute
 )
 
 var (
@@ -242,6 +243,7 @@ func (v *Validator) getKey(ctx context.Context, kid string) (*rsa.PublicKey, err
 	v.mu.RLock()
 	cachedKey, kidKnown := v.keys[kid]
 	cacheFresh := time.Since(v.lastSynced) < jwksTTL
+	cacheAcceptableStale := time.Since(v.lastSynced) < maxStaleJWKS
 	v.mu.RUnlock()
 	if kidKnown && cacheFresh {
 		return cachedKey, nil
@@ -249,7 +251,7 @@ func (v *Validator) getKey(ctx context.Context, kid string) (*rsa.PublicKey, err
 
 	forceRefresh := !kidKnown
 	if err := v.refreshKeys(ctx, forceRefresh); err != nil {
-		if kidKnown {
+		if kidKnown && cacheAcceptableStale {
 			return cachedKey, nil
 		}
 		return nil, err
