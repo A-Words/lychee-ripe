@@ -9,7 +9,7 @@ if (!command) {
   process.exit(1)
 }
 
-const goCache = fileURLToPath(new URL('../../../mlops/artifacts/.cache/go-build', import.meta.url))
+const goCache = fileURLToPath(new URL('../../../.cache/go-build', import.meta.url))
 mkdirSync(goCache, { recursive: true })
 
 const result = spawnSync('go', [command, ...args], {
