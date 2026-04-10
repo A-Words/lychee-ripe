@@ -111,7 +111,7 @@ bun run verify -- --target cpu
 
 ```sh
 cd services/inference-api && uv run --extra cpu python -m uvicorn app.main:app --reload --host 127.0.0.1 --port 8000
-go run ./services/gateway/cmd/gateway --config tooling/configs/gateway.yaml
+bun run dev:gateway
 cd clients/orchard-console && bun run dev -- --host 127.0.0.1 --port 3000
 cd clients/orchard-console && bun run tauri:dev
 ```
@@ -277,7 +277,7 @@ LYCHEE_AUTH_WEB_COOKIE_SAME_SITE=lax
 docker compose up --build
 ```
 
-Compose 默认会让 gateway 读取 `tooling/configs/gateway.compose.yaml`；本地 `go run` 与 `bun run dev:gateway` 继续使用 `tooling/configs/gateway.yaml`。
+Compose 默认会让 gateway 读取 `tooling/configs/gateway.compose.yaml`；本地 `bun run dev:gateway` 继续使用 `tooling/configs/gateway.yaml`，并在运行前构建固定的 Gateway 二进制以避免 Windows 防火墙重复提示。
 
 ## Notes
 

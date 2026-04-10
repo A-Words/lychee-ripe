@@ -10,15 +10,46 @@ if (!command) {
 }
 
 const goCache = fileURLToPath(new URL('../../../.cache/go-build', import.meta.url))
+const binDir = fileURLToPath(new URL('../../../.cache/bin', import.meta.url))
+const gatewayBinary = fileURLToPath(
+  new URL(`../../../.cache/bin/gateway${process.platform === 'win32' ? '.exe' : ''}`, import.meta.url)
+)
 mkdirSync(goCache, { recursive: true })
+mkdirSync(binDir, { recursive: true })
 
-const result = spawnSync('go', [command, ...args], {
-  env: {
-    ...process.env,
-    GOCACHE: goCache
-  },
-  shell: process.platform === 'win32',
-  stdio: 'inherit'
-})
+const env = {
+  ...process.env,
+  GOCACHE: goCache
+}
+
+let result
+if (command === 'run') {
+  const [packagePath, ...binaryArgs] = args
+  if (!packagePath) {
+    console.error('Missing package path for go run. Expected a package such as ./cmd/gateway.')
+    process.exit(1)
+  }
+
+  const buildResult = spawnSync('go', ['build', '-o', gatewayBinary, packagePath], {
+    env,
+    shell: process.platform === 'win32',
+    stdio: 'inherit'
+  })
+
+  if ((buildResult.status ?? 1) !== 0) {
+    process.exit(buildResult.status ?? 1)
+  }
+
+  result = spawnSync(gatewayBinary, binaryArgs, {
+    env,
+    stdio: 'inherit'
+  })
+} else {
+  result = spawnSync('go', [command, ...args], {
+    env,
+    shell: process.platform === 'win32',
+    stdio: 'inherit'
+  })
+}
 
 process.exit(result.status ?? 1)

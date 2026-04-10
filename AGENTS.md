@@ -77,7 +77,7 @@
   - `bun run dev` 现在以 `@lychee-ripe/orchard-console` 为入口，再由 Turbo `with` 关系联动带起 `gateway` 与 `inference-api`
 - 分服务直启：
   - Inference API：`cd services/inference-api && uv run --extra cpu python -m uvicorn app.main:app --reload --host 127.0.0.1 --port 8000`
-  - Gateway：`go run ./services/gateway/cmd/gateway --config tooling/configs/gateway.yaml`
+  - Gateway：`bun run dev:gateway`
   - Orchard Console Web：`cd clients/orchard-console && bun run dev -- --host 127.0.0.1 --port 3000`
   - Orchard Console Desktop：`cd clients/orchard-console && bun run tauri:dev`
 ### 3.3 训练与评估
