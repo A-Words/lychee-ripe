@@ -1,6 +1,5 @@
 <script setup lang="ts">
 import type { ReconcileStats, UnripeMetrics } from '~/types/dashboard'
-import { getUnripeHandlingLabel } from '~/constants/unripe-handling'
 import { formatDateTime, formatPercent } from '~/utils/dashboard-format'
 
 const props = defineProps<{
@@ -10,7 +9,6 @@ const props = defineProps<{
 
 const unripePercent = computed(() => formatPercent(props.unripeMetrics.unripe_batch_ratio))
 const thresholdPercent = computed(() => formatPercent(props.unripeMetrics.threshold))
-const handlingLabel = computed(() => getUnripeHandlingLabel(props.unripeMetrics.unripe_handling))
 const progressWidth = computed(() =>
   Math.min(Math.max(props.unripeMetrics.unripe_batch_ratio * 100, 0), 100)
 )
@@ -25,7 +23,7 @@ const progressWidth = computed(() =>
             未成熟指标
           </h3>
           <p class="mt-1 text-xs text-muted">
-            阈值 {{ thresholdPercent }}，处理策略 {{ handlingLabel }}
+            阈值 {{ thresholdPercent }}，处理策略 {{ unripeMetrics.unripe_handling }}
           </p>
         </div>
       </template>

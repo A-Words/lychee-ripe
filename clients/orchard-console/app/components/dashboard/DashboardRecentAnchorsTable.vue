@@ -28,7 +28,7 @@ const props = defineProps<{
         variant="subtle"
         icon="i-lucide-database-zap"
         title="暂无链上记录"
-        description="当前环境尚未产生区块链模式的已上链批次。"
+        description="当前环境尚未产生 blockchain 模式的 anchored 批次。"
       />
     </div>
 

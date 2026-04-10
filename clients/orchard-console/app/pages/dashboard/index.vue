@@ -18,18 +18,13 @@ const overview = ref<DashboardOverviewResponse | null>(null)
 const apiError = ref<DashboardApiError | null>(null)
 const loading = ref(false)
 const lastRefreshedAt = ref<Date | null>(null)
-const consecutiveRefreshFailures = ref(0)
 
 const refreshIntervalMs = 30_000
-const maxRefreshIntervalMs = 120_000
 const refreshTimer = ref<number | null>(null)
 
 const shouldStopAutoRefresh = computed(() => viewState.value === 'auth_blocked')
 const isReadyLike = computed(() => viewState.value === 'ready' || viewState.value === 'empty')
 const isEmpty = computed(() => viewState.value === 'empty')
-const isShowingStaleOverview = computed(() =>
-  Boolean(overview.value) && isReadyLike.value && Boolean(apiError.value)
-)
 
 const unavailableTitle = computed(() =>
   viewState.value === 'auth_blocked' ? '网关鉴权已开启' : '看板服务不可用'
@@ -46,10 +41,6 @@ const lastRefreshText = computed(() =>
   lastRefreshedAt.value ? formatDateTime(lastRefreshedAt.value.toISOString()) : '--'
 )
 
-const staleOverviewMessage = computed(() =>
-  apiError.value?.message || '刷新失败，当前展示的是上一次成功加载的数据。'
-)
-
 function clearRefreshTimer() {
   if (refreshTimer.value !== null) {
     window.clearInterval(refreshTimer.value)
@@ -60,20 +51,16 @@ function clearRefreshTimer() {
 function scheduleAutoRefresh() {
   clearRefreshTimer()
 
-  if (!import.meta.client || shouldStopAutoRefresh.value || document.visibilityState !== 'visible') {
+  if (!import.meta.client || shouldStopAutoRefresh.value) {
     return
   }
 
-  refreshTimer.value = window.setTimeout(() => {
+  refreshTimer.value = window.setInterval(() => {
+    if (document.visibilityState !== 'visible') {
+      return
+    }
     void loadOverview(true)
-  }, currentRefreshDelayMs())
-}
-
-function currentRefreshDelayMs() {
-  if (consecutiveRefreshFailures.value <= 0) {
-    return refreshIntervalMs
-  }
-  return Math.min(refreshIntervalMs * 2 ** consecutiveRefreshFailures.value, maxRefreshIntervalMs)
+  }, refreshIntervalMs)
 }
 
 async function loadOverview(manual: boolean) {
@@ -91,22 +78,15 @@ async function loadOverview(manual: boolean) {
     overview.value = data
     apiError.value = null
     lastRefreshedAt.value = new Date()
-    consecutiveRefreshFailures.value = 0
     viewState.value = data.totals.batch_total === 0 ? 'empty' : 'ready'
   } catch (error) {
     const parsed = parseDashboardError(error)
-    const currentOverview = overview.value
     apiError.value = parsed
+    overview.value = null
 
     if (parsed.statusCode === 401 || parsed.statusCode === 403) {
-      overview.value = null
       viewState.value = 'auth_blocked'
-    } else if (currentOverview) {
-      consecutiveRefreshFailures.value += 1
-      viewState.value = currentOverview.totals.batch_total === 0 ? 'empty' : 'ready'
     } else {
-      overview.value = null
-      consecutiveRefreshFailures.value += 1
       viewState.value = 'unavailable'
     }
   } finally {
@@ -122,9 +102,7 @@ function handleManualRefresh() {
 function handleVisibilityChange() {
   if (document.visibilityState === 'visible' && !shouldStopAutoRefresh.value) {
     void loadOverview(true)
-    return
   }
-  clearRefreshTimer()
 }
 
 onMounted(() => {
@@ -189,23 +167,6 @@ watch(shouldStopAutoRefresh, () => {
       </div>
 
       <div v-else-if="isReadyLike && overview" class="space-y-4">
-        <UAlert
-          v-if="isShowingStaleOverview"
-          color="warning"
-          variant="subtle"
-          icon="i-lucide-triangle-alert"
-          title="刷新失败，当前展示的是上一次成功加载的数据"
-        >
-          <template #description>
-            <p class="text-sm">
-              {{ staleOverviewMessage }}
-            </p>
-            <p v-if="apiError?.requestId" class="mt-1 text-xs text-muted">
-              请求 ID：{{ apiError.requestId }}
-            </p>
-          </template>
-        </UAlert>
-
         <UAlert
           v-if="isEmpty"
           color="neutral"

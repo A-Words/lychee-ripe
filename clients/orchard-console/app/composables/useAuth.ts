@@ -19,7 +19,7 @@ let initPromise: Promise<void> | null = null
 export function useAuth() {
   const config = useRuntimeConfig()
   const gatewayBase = useGatewayBase()
-  const router = useRouter()
+  const route = useRoute()
   const mode = computed<AuthMode>(() => normalizeAuthMode(config.public.authMode))
   const principal = useState<Principal | null>('auth.principal', () => null)
   const session = useState<AuthSession | null>('auth.session', () => null)
@@ -29,7 +29,7 @@ export function useAuth() {
   const isAuthenticated = computed(() => mode.value === 'disabled' || Boolean(principal.value))
   const isAdmin = computed(() => mode.value === 'disabled' || principal.value?.role === 'admin')
   const appBasePath = computed(() =>
-    import.meta.client ? inferAppBasePath(window.location.pathname, currentRoutePath()) : ''
+    import.meta.client ? inferAppBasePath(window.location.pathname, route.path) : ''
   )
 
   async function init(force = false) {
@@ -101,14 +101,13 @@ export function useAuth() {
 
   async function handleWebCallback() {
     await init(true)
-    const route = currentRoute()
-    const redirectPath = normalizeRedirectPath(String(route?.query.redirect || '/dashboard'))
+    const redirectPath = normalizeRedirectPath(String(route.query.redirect || '/dashboard'))
     if (isAuthenticated.value) {
       return redirectPath
     }
     const query = new URLSearchParams()
     query.set('redirect', redirectPath)
-    const authError = String(route?.query.auth_error || '').trim()
+    const authError = String(route.query.auth_error || '').trim()
     if (authError) {
       query.set('auth_error', authError)
     }
@@ -299,14 +298,6 @@ export function useAuth() {
   function setAuthenticatedState(nextSession: AuthSession, nextPrincipal: Principal) {
     setSession(nextSession)
     setPrincipal(nextPrincipal)
-  }
-
-  function currentRoute() {
-    return router.currentRoute.value
-  }
-
-  function currentRoutePath() {
-    return currentRoute().path
   }
 }
 
