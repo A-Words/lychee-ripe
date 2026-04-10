@@ -12,7 +12,7 @@ export default defineNuxtRouteMiddleware(async (to, from) => {
 
   const auth = useAuth()
   await auth.init()
-  const appBasePath = inferAppBasePath(window.location.pathname, [from.path, to.path])
+  const appBasePath = inferAppBasePath(window.location.pathname, [to.path, from.path])
 
   const decision = resolveAuthGuardDecision({
     path: to.path,

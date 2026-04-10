@@ -60,3 +60,23 @@ func TestLoginFailureRedirectURLKeepsAppBasePathAndErrorCode(t *testing.T) {
 		t.Fatalf("LoginFailureRedirectURL() = %q, want %q", got, want)
 	}
 }
+
+func TestResolveAppRedirectRejectsSchemeBearingRedirectPaths(t *testing.T) {
+	t.Parallel()
+
+	got := resolveAppRedirect("https://example.com/console", "/https://evil.example")
+	want := "https://example.com/console/dashboard"
+	if got != want {
+		t.Fatalf("resolveAppRedirect() = %q, want %q", got, want)
+	}
+}
+
+func TestResolveAppRedirectRejectsEncodedSchemeBearingRedirectPaths(t *testing.T) {
+	t.Parallel()
+
+	got := resolveAppRedirect("https://example.com/console", "/http:%2F%2Fevil.example")
+	want := "https://example.com/console/dashboard"
+	if got != want {
+		t.Fatalf("resolveAppRedirect() = %q, want %q", got, want)
+	}
+}

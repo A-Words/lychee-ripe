@@ -13,6 +13,10 @@ describe('app path helpers', () => {
     expect(inferAppBasePath('/console/admin', ['/dashboard', '/admin'])).toBe('/console')
   })
 
+  it('does not let the root route candidate override a more specific destination route', () => {
+    expect(inferAppBasePath('/console/dashboard', ['/dashboard', '/'])).toBe('/console')
+  })
+
   it('infers base path for the app root route', () => {
     expect(inferAppBasePath('/console', '/')).toBe('/console')
     expect(inferAppBasePath('/console/', '/')).toBe('/console')

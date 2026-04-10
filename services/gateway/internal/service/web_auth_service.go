@@ -329,8 +329,14 @@ func normalizeRedirectPath(raw string) string {
 	if trimmed == "" || !strings.HasPrefix(trimmed, "/") || strings.HasPrefix(trimmed, "//") {
 		return "/dashboard"
 	}
+	if containsSchemeLikePrefix(trimmed) {
+		return "/dashboard"
+	}
 	parsed, err := url.Parse(trimmed)
 	if err != nil || parsed == nil || parsed.IsAbs() {
+		return "/dashboard"
+	}
+	if containsSchemeLikePrefix(parsed.Path) {
 		return "/dashboard"
 	}
 	if !strings.HasPrefix(path.Clean(parsed.Path), "/") {
@@ -383,6 +389,29 @@ func normalizeLoginErrorCode(errorCode string) string {
 	default:
 		return "login_failed"
 	}
+}
+
+func containsSchemeLikePrefix(value string) bool {
+	trimmed := strings.TrimSpace(value)
+	if trimmed == "" || !strings.HasPrefix(trimmed, "/") {
+		return false
+	}
+	withoutLeadingSlash := strings.TrimLeft(trimmed, "/")
+	if withoutLeadingSlash == "" {
+		return false
+	}
+	colonIndex := strings.Index(withoutLeadingSlash, ":")
+	if colonIndex <= 0 {
+		return false
+	}
+	scheme := withoutLeadingSlash[:colonIndex]
+	for _, r := range scheme {
+		if (r >= 'a' && r <= 'z') || (r >= 'A' && r <= 'Z') || (r >= '0' && r <= '9') || r == '+' || r == '-' || r == '.' {
+			continue
+		}
+		return false
+	}
+	return true
 }
 
 // resolveURLUnderBase joins absolutePath under base while preserving base's
