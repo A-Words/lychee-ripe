@@ -27,6 +27,7 @@ describe('dashboard chart components', () => {
 
     expect(chartWrapper).toBeTruthy()
     expect(wrapper.text()).toContain('已入库')
+    expect(wrapper.text()).toContain('已入库 3')
     expect(chart.classes()).toContain('h-full')
     expect(chart.classes()).toContain('w-full')
     expect(chart.classes()).not.toContain('h-72')
@@ -54,6 +55,10 @@ describe('dashboard chart components', () => {
 
     expect(chartWrapper).toBeTruthy()
     expect(wrapper.text()).toContain('青果 / 半熟 / 红果 / 嫩果')
+    expect(wrapper.text()).toContain('青果 1')
+    expect(wrapper.text()).toContain('半熟 2')
+    expect(wrapper.text()).toContain('红果 3')
+    expect(wrapper.text()).toContain('嫩果 4')
     expect(chart.classes()).toContain('h-full')
     expect(chart.classes()).toContain('w-full')
     expect(chart.classes()).not.toContain('h-72')

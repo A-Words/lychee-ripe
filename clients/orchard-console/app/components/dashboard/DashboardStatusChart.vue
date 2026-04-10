@@ -15,6 +15,13 @@ const statusSummary = computed(() =>
     .map((key) => DASHBOARD_STATUS_META[key].label)
     .join(' / ')
 )
+const statusBreakdown = computed(() =>
+  getDashboardStatusOrder(props.traceMode).map((key) => ({
+    key,
+    label: DASHBOARD_STATUS_META[key].label,
+    value: props.statusDistribution[key] ?? 0
+  }))
+)
 </script>
 
 <template>
@@ -38,5 +45,15 @@ const statusSummary = computed(() =>
         <USkeleton class="h-72 w-full" />
       </template>
     </ClientOnly>
+
+    <div class="mt-4 flex flex-wrap gap-2 text-xs text-toned">
+      <span
+        v-for="item in statusBreakdown"
+        :key="item.key"
+        class="rounded-full bg-muted px-2.5 py-1"
+      >
+        {{ item.label }} {{ item.value }}
+      </span>
+    </div>
   </UCard>
 </template>

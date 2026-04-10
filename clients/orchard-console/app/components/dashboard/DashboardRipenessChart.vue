@@ -11,6 +11,13 @@ const option = computed(() => buildRipenessBarOption(props.ripenessDistribution)
 const ripenessSummary = computed(() =>
   RIPENESS_CLASSES.map((key) => RIPENESS_LABEL_MAP[key]).join(' / ')
 )
+const ripenessBreakdown = computed(() =>
+  RIPENESS_CLASSES.map((key) => ({
+    key,
+    label: RIPENESS_LABEL_MAP[key],
+    value: props.ripenessDistribution[key]
+  }))
+)
 </script>
 
 <template>
@@ -34,5 +41,15 @@ const ripenessSummary = computed(() =>
         <USkeleton class="h-72 w-full" />
       </template>
     </ClientOnly>
+
+    <div class="mt-4 flex flex-wrap gap-2 text-xs text-toned">
+      <span
+        v-for="item in ripenessBreakdown"
+        :key="item.key"
+        class="rounded-full bg-muted px-2.5 py-1"
+      >
+        {{ item.label }} {{ item.value }}
+      </span>
+    </div>
   </UCard>
 </template>
