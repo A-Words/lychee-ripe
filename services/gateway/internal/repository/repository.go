@@ -19,8 +19,9 @@ type BatchRepository interface {
 	CreateBatch(ctx context.Context, params domain.CreateBatchParams) (domain.BatchRecord, error)
 	GetBatchByID(ctx context.Context, batchID string, traceMode domain.TraceMode) (domain.BatchRecord, error)
 	GetBatchByTraceCode(ctx context.Context, traceCode string, traceMode domain.TraceMode) (domain.BatchRecord, error)
-	UpdateBatchStatus(ctx context.Context, batchID string, status domain.BatchStatus, lastError *string, retryCount *int, updatedAt time.Time) error
-	AttachAnchorProof(ctx context.Context, batchID string, proof domain.AnchorProofRecord, updatedAt time.Time) error
+	ClaimPendingBatch(ctx context.Context, batchID string, expectedUpdatedAt time.Time, claimedAt time.Time) error
+	UpdateBatchStatus(ctx context.Context, batchID string, expectedStatus domain.BatchStatus, expectedUpdatedAt time.Time, status domain.BatchStatus, lastError *string, retryCount *int, updatedAt time.Time) error
+	AttachAnchorProof(ctx context.Context, batchID string, expectedStatus domain.BatchStatus, expectedUpdatedAt time.Time, proof domain.AnchorProofRecord, updatedAt time.Time) error
 	ListPendingBatches(ctx context.Context, limit int) ([]domain.BatchRecord, error)
 }
 
@@ -50,7 +51,7 @@ type UserRepository interface {
 	GetUserByOIDCSubject(ctx context.Context, subject string) (domain.UserRecord, error)
 	ListUsers(ctx context.Context) ([]domain.UserRecord, error)
 	CreateUser(ctx context.Context, user domain.UserRecord) (domain.UserRecord, error)
-	UpdateUser(ctx context.Context, user domain.UserRecord) (domain.UserRecord, error)
+	UpdateUser(ctx context.Context, expectedUpdatedAt time.Time, user domain.UserRecord) (domain.UserRecord, error)
 }
 
 type WebSessionRepository interface {
@@ -66,8 +67,8 @@ type WebSessionRepository interface {
 type OrchardRepository interface {
 	ListOrchards(ctx context.Context, includeArchived bool) ([]domain.OrchardRecord, error)
 	CreateOrchard(ctx context.Context, orchard domain.OrchardRecord) (domain.OrchardRecord, error)
-	UpdateOrchard(ctx context.Context, orchard domain.OrchardRecord) (domain.OrchardRecord, error)
-	ArchiveOrchard(ctx context.Context, orchard domain.OrchardRecord) (domain.OrchardRecord, error)
+	UpdateOrchard(ctx context.Context, expectedUpdatedAt time.Time, orchard domain.OrchardRecord) (domain.OrchardRecord, error)
+	ArchiveOrchard(ctx context.Context, expectedUpdatedAt time.Time, orchard domain.OrchardRecord) (domain.OrchardRecord, error)
 	GetOrchard(ctx context.Context, orchardID string) (domain.OrchardRecord, error)
 }
 
@@ -75,8 +76,8 @@ type PlotRepository interface {
 	ListPlots(ctx context.Context, orchardID string, includeArchived bool) ([]domain.PlotRecord, error)
 	CreatePlot(ctx context.Context, plot domain.PlotRecord) (domain.PlotRecord, error)
 	CreatePlotGuarded(ctx context.Context, plot domain.PlotRecord) (domain.PlotRecord, error)
-	UpdatePlot(ctx context.Context, plot domain.PlotRecord) (domain.PlotRecord, error)
-	UpdatePlotGuarded(ctx context.Context, plot domain.PlotRecord) (domain.PlotRecord, error)
+	UpdatePlot(ctx context.Context, expectedUpdatedAt time.Time, plot domain.PlotRecord) (domain.PlotRecord, error)
+	UpdatePlotGuarded(ctx context.Context, expectedUpdatedAt time.Time, plot domain.PlotRecord) (domain.PlotRecord, error)
 	GetPlot(ctx context.Context, plotID string) (domain.PlotRecord, error)
 }
 

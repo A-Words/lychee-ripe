@@ -167,15 +167,15 @@ func (r *Repository) CreateUser(ctx context.Context, user domain.UserRecord) (do
 	return userModelToDomain(model), nil
 }
 
-func (r *Repository) UpdateUser(ctx context.Context, user domain.UserRecord) (domain.UserRecord, error) {
+func (r *Repository) UpdateUser(ctx context.Context, expectedUpdatedAt time.Time, user domain.UserRecord) (domain.UserRecord, error) {
 	model := userModelFromDomain(user)
 
 	var err error
 	switch r.db.Dialector.Name() {
 	case "postgres":
-		err = r.updateUserPostgres(ctx, model)
+		err = r.updateUserPostgres(ctx, expectedUpdatedAt, model)
 	default:
-		err = r.updateUserAtomically(ctx, model)
+		err = r.updateUserAtomically(ctx, expectedUpdatedAt, model)
 	}
 	if err != nil {
 		return domain.UserRecord{}, err
@@ -183,7 +183,7 @@ func (r *Repository) UpdateUser(ctx context.Context, user domain.UserRecord) (do
 	return r.GetPrincipalByID(ctx, model.ID)
 }
 
-func (r *Repository) updateUserPostgres(ctx context.Context, model UserModel) error {
+func (r *Repository) updateUserPostgres(ctx context.Context, expectedUpdatedAt time.Time, model UserModel) error {
 	return r.db.WithContext(ctx).Transaction(func(tx *gorm.DB) error {
 		var current UserModel
 		if err := tx.Clauses(clause.Locking{Strength: "UPDATE"}).
@@ -205,14 +205,14 @@ func (r *Repository) updateUserPostgres(ctx context.Context, model UserModel) er
 			}
 		}
 
-		return updateUserRecord(tx, model)
+		return updateUserRecord(tx, expectedUpdatedAt, model)
 	})
 }
 
-func (r *Repository) updateUserAtomically(ctx context.Context, model UserModel) error {
+func (r *Repository) updateUserAtomically(ctx context.Context, expectedUpdatedAt time.Time, model UserModel) error {
 	var lastErr error
 	for attempt := 0; attempt < 5; attempt++ {
-		lastErr = r.updateUserAtomicallyOnce(ctx, model)
+		lastErr = r.updateUserAtomicallyOnce(ctx, expectedUpdatedAt, model)
 		if lastErr == nil {
 			return nil
 		}
@@ -229,10 +229,11 @@ func (r *Repository) updateUserAtomically(ctx context.Context, model UserModel) 
 	return mapGormErr(lastErr)
 }
 
-func (r *Repository) updateUserAtomicallyOnce(ctx context.Context, model UserModel) error {
+func (r *Repository) updateUserAtomicallyOnce(ctx context.Context, expectedUpdatedAt time.Time, model UserModel) error {
 	res := r.db.WithContext(ctx).
 		Model(&UserModel{}).
 		Where("id = ?", model.ID).
+		Where("updated_at = ?", normalizeTime(expectedUpdatedAt)).
 		Where(
 			`NOT (role = ? AND status = ?) OR (? = ? AND ? = ?) OR EXISTS (
 				SELECT 1 FROM users AS other
@@ -265,18 +266,26 @@ func (r *Repository) updateUserAtomicallyOnce(ctx context.Context, model UserMod
 	if exists == 0 {
 		return repository.ErrNotFound
 	}
-	return fmt.Errorf("%w: system must retain at least one active admin account", repository.ErrInvalidState)
+	var current UserModel
+	if err := r.db.WithContext(ctx).Where("id = ?", model.ID).First(&current).Error; err != nil {
+		return mapGormErr(err)
+	}
+	if removesActiveAdmin(current, model) {
+		return fmt.Errorf("%w: system must retain at least one active admin account", repository.ErrInvalidState)
+	}
+	return repository.ErrConflict
 }
 
-func updateUserRecord(tx *gorm.DB, model UserModel) error {
+func updateUserRecord(tx *gorm.DB, expectedUpdatedAt time.Time, model UserModel) error {
 	res := tx.Model(&UserModel{}).
 		Where("id = ?", model.ID).
+		Where("updated_at = ?", normalizeTime(expectedUpdatedAt)).
 		Updates(userUpdateAssignments(model))
 	if res.Error != nil {
 		return mapGormErr(res.Error)
 	}
 	if res.RowsAffected == 0 {
-		return repository.ErrNotFound
+		return classifyCASConflict(tx, "users", "id", model.ID)
 	}
 	return nil
 }

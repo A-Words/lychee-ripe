@@ -14,6 +14,7 @@ type BatchStatus string
 const (
 	BatchStatusStored        BatchStatus = "stored"
 	BatchStatusPendingAnchor BatchStatus = "pending_anchor"
+	BatchStatusAnchoring     BatchStatus = "anchoring"
 	BatchStatusAnchored      BatchStatus = "anchored"
 	BatchStatusAnchorFailed  BatchStatus = "anchor_failed"
 )

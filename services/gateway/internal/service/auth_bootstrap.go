@@ -15,7 +15,7 @@ type BootstrapAdminRepo interface {
 	CountActiveAdmins(ctx context.Context) (int64, error)
 	CreateUser(ctx context.Context, user domain.UserRecord) (domain.UserRecord, error)
 	ListUsers(ctx context.Context) ([]domain.UserRecord, error)
-	UpdateUser(ctx context.Context, user domain.UserRecord) (domain.UserRecord, error)
+	UpdateUser(ctx context.Context, expectedUpdatedAt time.Time, user domain.UserRecord) (domain.UserRecord, error)
 }
 
 func EnsureBootstrapAdmin(
@@ -84,10 +84,11 @@ func promoteBootstrapAdminByEmail(
 		if strings.TrimSpace(user.DisplayName) == "" {
 			user.DisplayName = email
 		}
+		expectedUpdatedAt := user.UpdatedAt
 		user.Role = domain.UserRoleAdmin
 		user.Status = domain.UserStatusActive
 		user.UpdatedAt = now
-		if _, err := repo.UpdateUser(ctx, user); err != nil {
+		if _, err := repo.UpdateUser(ctx, expectedUpdatedAt, user); err != nil {
 			switch {
 			case errors.Is(err, repository.ErrConflict):
 				return fmt.Errorf("%w: bootstrap admin email conflicts with another user record", ErrInvalidRequest)

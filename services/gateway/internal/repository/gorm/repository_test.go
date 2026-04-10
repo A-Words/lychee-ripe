@@ -71,7 +71,7 @@ func TestBatchCRUDAndStatusFlowSQLite(t *testing.T) {
 	lastError := "chain unavailable"
 	retryCount := 2
 	updatedAt := time.Now().UTC().Add(2 * time.Minute)
-	if err := repo.UpdateBatchStatus(ctx, create.BatchID, domain.BatchStatusAnchorFailed, &lastError, &retryCount, updatedAt); err != nil {
+	if err := repo.UpdateBatchStatus(ctx, create.BatchID, domain.BatchStatusPendingAnchor, batch.UpdatedAt, domain.BatchStatusAnchorFailed, &lastError, &retryCount, updatedAt); err != nil {
 		t.Fatalf("update batch status: %v", err)
 	}
 
@@ -97,7 +97,7 @@ func TestBatchCRUDAndStatusFlowSQLite(t *testing.T) {
 		AnchorHash:      "0xhash",
 		AnchoredAt:      time.Now().UTC(),
 	}
-	if err := repo.AttachAnchorProof(ctx, create.BatchID, proof, time.Now().UTC()); err != nil {
+	if err := repo.AttachAnchorProof(ctx, create.BatchID, domain.BatchStatusAnchorFailed, updated.UpdatedAt, proof, time.Now().UTC()); err != nil {
 		t.Fatalf("attach anchor proof: %v", err)
 	}
 
@@ -110,6 +110,77 @@ func TestBatchCRUDAndStatusFlowSQLite(t *testing.T) {
 	}
 	if anchored.AnchorProof == nil || anchored.AnchorProof.TxHash != proof.TxHash {
 		t.Fatalf("anchor_proof = %+v, want tx_hash %q", anchored.AnchorProof, proof.TxHash)
+	}
+}
+
+func TestClaimPendingBatchPreventsDuplicateClaimSQLite(t *testing.T) {
+	t.Parallel()
+	ctx := context.Background()
+	repo, sqlDB := mustNewSQLiteRepo(t)
+	defer sqlDB.Close()
+
+	create := sampleCreateBatchParams("batch-claim-1", "trace-claim-1")
+	create.Status = domain.BatchStatusPendingAnchor
+	batch, err := repo.CreateBatch(ctx, create)
+	if err != nil {
+		t.Fatalf("create batch: %v", err)
+	}
+
+	claimAt := batch.UpdatedAt.Add(time.Minute)
+	if err := repo.ClaimPendingBatch(ctx, batch.BatchID, batch.UpdatedAt, claimAt); err != nil {
+		t.Fatalf("first claim: %v", err)
+	}
+	if err := repo.ClaimPendingBatch(ctx, batch.BatchID, batch.UpdatedAt, claimAt.Add(time.Minute)); !errors.Is(err, repository.ErrConflict) {
+		t.Fatalf("second claim error = %v, want ErrConflict", err)
+	}
+}
+
+func TestStaleBatchStatusWriteCannotOverrideAnchoredSQLite(t *testing.T) {
+	t.Parallel()
+	ctx := context.Background()
+	repo, sqlDB := mustNewSQLiteRepo(t)
+	defer sqlDB.Close()
+
+	create := sampleCreateBatchParams("batch-stale-1", "trace-stale-1")
+	create.Status = domain.BatchStatusPendingAnchor
+	batch, err := repo.CreateBatch(ctx, create)
+	if err != nil {
+		t.Fatalf("create batch: %v", err)
+	}
+
+	claimAt := batch.UpdatedAt.Add(time.Minute)
+	if err := repo.ClaimPendingBatch(ctx, batch.BatchID, batch.UpdatedAt, claimAt); err != nil {
+		t.Fatalf("claim batch: %v", err)
+	}
+
+	proof := domain.AnchorProofRecord{
+		TxHash:          "0xstale",
+		BlockNumber:     200,
+		ChainID:         "31337",
+		ContractAddress: "0xdef",
+		AnchorHash:      "0xstalehash",
+		AnchoredAt:      time.Now().UTC(),
+	}
+	anchoredAt := claimAt.Add(time.Minute)
+	if err := repo.AttachAnchorProof(ctx, batch.BatchID, domain.BatchStatusAnchoring, claimAt, proof, anchoredAt); err != nil {
+		t.Fatalf("attach anchor proof: %v", err)
+	}
+
+	lastError := "timeout"
+	retryCount := 1
+	if err := repo.UpdateBatchStatus(ctx, batch.BatchID, domain.BatchStatusAnchoring, claimAt, domain.BatchStatusAnchorFailed, &lastError, &retryCount, anchoredAt.Add(time.Minute)); !errors.Is(err, repository.ErrConflict) {
+		t.Fatalf("stale update error = %v, want ErrConflict", err)
+	}
+
+	updated, err := repo.GetBatchByID(ctx, batch.BatchID, domain.TraceModeBlockchain)
+	if err != nil {
+		t.Fatalf("get updated batch: %v", err)
+	}
+	if updated.Status != domain.BatchStatusAnchored {
+		t.Fatalf("status = %q, want anchored", updated.Status)
+	}
+	if updated.AnchorProof == nil || updated.AnchorProof.TxHash != proof.TxHash {
+		t.Fatalf("anchor_proof = %+v, want tx_hash %q", updated.AnchorProof, proof.TxHash)
 	}
 }
 
@@ -413,7 +484,11 @@ func TestModeScopedReadsAndDashboardAggregationsSQLite(t *testing.T) {
 	if _, err := repo.CreateBatch(ctx, blockchainBatch); err != nil {
 		t.Fatalf("create blockchain batch: %v", err)
 	}
-	if err := repo.AttachAnchorProof(ctx, blockchainBatch.BatchID, domain.AnchorProofRecord{
+	freshBlockchainBatch, err := repo.GetBatchByID(ctx, blockchainBatch.BatchID, domain.TraceModeBlockchain)
+	if err != nil {
+		t.Fatalf("reload blockchain batch: %v", err)
+	}
+	if err := repo.AttachAnchorProof(ctx, blockchainBatch.BatchID, domain.BatchStatusAnchored, freshBlockchainBatch.UpdatedAt, domain.AnchorProofRecord{
 		TxHash:          "0xtest",
 		BlockNumber:     100,
 		ChainID:         "31337",
@@ -850,7 +925,7 @@ func TestUpdateUserRejectsDemotingLastActiveAdmin(t *testing.T) {
 		t.Fatalf("seed admin: %v", err)
 	}
 
-	_, err := repo.UpdateUser(ctx, domain.UserRecord{
+	_, err := repo.UpdateUser(ctx, admin.UpdatedAt, domain.UserRecord{
 		ID:          admin.ID,
 		Email:       admin.Email,
 		DisplayName: admin.DisplayName,
@@ -896,7 +971,7 @@ func TestUpdateUserAllowsDemotingAdminWhenAnotherActiveAdminExists(t *testing.T)
 		t.Fatalf("seed admins: %v", err)
 	}
 
-	updated, err := repo.UpdateUser(ctx, domain.UserRecord{
+	updated, err := repo.UpdateUser(ctx, admins[0].UpdatedAt, domain.UserRecord{
 		ID:          admins[0].ID,
 		Email:       admins[0].Email,
 		DisplayName: admins[0].DisplayName,
@@ -945,7 +1020,7 @@ func TestUpdateUserMapsSQLiteUniqueEmailViolationToConflict(t *testing.T) {
 		t.Fatalf("seed users: %v", err)
 	}
 
-	_, err := repo.UpdateUser(ctx, domain.UserRecord{
+	_, err := repo.UpdateUser(ctx, users[0].UpdatedAt, domain.UserRecord{
 		ID:          users[0].ID,
 		Email:       users[1].Email,
 		DisplayName: users[0].DisplayName,
@@ -1019,7 +1094,7 @@ func TestUpdateUserConcurrentDemotionsPreserveActiveAdmin(t *testing.T) {
 		go func() {
 			defer wg.Done()
 			<-start
-			_, err := repo.UpdateUser(ctx, domain.UserRecord{
+			_, err := repo.UpdateUser(ctx, admin.UpdatedAt, domain.UserRecord{
 				ID:          admin.ID,
 				Email:       admin.Email,
 				DisplayName: admin.DisplayName,
@@ -1098,7 +1173,7 @@ func TestArchiveOrchardRejectsWhenActivePlotsExistSQLite(t *testing.T) {
 		t.Fatalf("seed plot: %v", err)
 	}
 
-	_, err := repo.ArchiveOrchard(ctx, domain.OrchardRecord{
+	_, err := repo.ArchiveOrchard(ctx, orchard.UpdatedAt, domain.OrchardRecord{
 		OrchardID:   orchard.OrchardID,
 		OrchardName: orchard.OrchardName,
 		Status:      domain.ResourceStatusArchived,
@@ -1169,7 +1244,7 @@ func TestUpdatePlotGuardedRejectsActivePlotUnderArchivedOrchardSQLite(t *testing
 		t.Fatalf("seed plot: %v", err)
 	}
 
-	_, err := repo.UpdatePlotGuarded(ctx, domain.PlotRecord{
+	_, err := repo.UpdatePlotGuarded(ctx, plot.UpdatedAt, domain.PlotRecord{
 		PlotID:    plot.PlotID,
 		OrchardID: "orchard-archived",
 		PlotName:  plot.PlotName,
@@ -1223,7 +1298,7 @@ func TestArchiveOrchardAndCreatePlotGuardedConcurrentPreserveInvariantSQLite(t *
 	go func() {
 		defer wg.Done()
 		<-start
-		_, err := repoA.ArchiveOrchard(ctx, domain.OrchardRecord{
+		_, err := repoA.ArchiveOrchard(ctx, orchard.UpdatedAt, domain.OrchardRecord{
 			OrchardID:   orchard.OrchardID,
 			OrchardName: orchard.OrchardName,
 			Status:      domain.ResourceStatusArchived,
@@ -1326,7 +1401,7 @@ func TestArchiveOrchardAndUpdatePlotGuardedConcurrentPreserveInvariantSQLite(t *
 	go func() {
 		defer wg.Done()
 		<-start
-		_, err := repoA.ArchiveOrchard(ctx, domain.OrchardRecord{
+		_, err := repoA.ArchiveOrchard(ctx, orchards[0].UpdatedAt, domain.OrchardRecord{
 			OrchardID:   "orchard-1",
 			OrchardName: "Target Orchard",
 			Status:      domain.ResourceStatusArchived,
@@ -1342,7 +1417,7 @@ func TestArchiveOrchardAndUpdatePlotGuardedConcurrentPreserveInvariantSQLite(t *
 	go func() {
 		defer wg.Done()
 		<-start
-		_, err := repoB.UpdatePlotGuarded(ctx, domain.PlotRecord{
+		_, err := repoB.UpdatePlotGuarded(ctx, plot.UpdatedAt, domain.PlotRecord{
 			PlotID:    plot.PlotID,
 			OrchardID: "orchard-1",
 			PlotName:  plot.PlotName,

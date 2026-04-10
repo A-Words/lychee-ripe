@@ -6,6 +6,7 @@ import (
 	"fmt"
 	"sort"
 	"strings"
+	"time"
 
 	"github.com/lychee-ripe/gateway/internal/domain"
 	"github.com/lychee-ripe/gateway/internal/repository"
@@ -47,9 +48,9 @@ func (r *Repository) CreateOrchard(ctx context.Context, orchard domain.OrchardRe
 	return orchardModelToDomain(model), nil
 }
 
-func (r *Repository) UpdateOrchard(ctx context.Context, orchard domain.OrchardRecord) (domain.OrchardRecord, error) {
+func (r *Repository) UpdateOrchard(ctx context.Context, expectedUpdatedAt time.Time, orchard domain.OrchardRecord) (domain.OrchardRecord, error) {
 	model := orchardModelFromDomain(orchard)
-	res := r.db.WithContext(ctx).Model(&OrchardModel{}).Where("orchard_id = ?", model.OrchardID).Updates(map[string]any{
+	res := r.db.WithContext(ctx).Model(&OrchardModel{}).Where("orchard_id = ?", model.OrchardID).Where("updated_at = ?", normalizeTime(expectedUpdatedAt)).Updates(map[string]any{
 		"orchard_name": model.OrchardName,
 		"status":       model.Status,
 		"updated_at":   model.UpdatedAt,
@@ -58,20 +59,20 @@ func (r *Repository) UpdateOrchard(ctx context.Context, orchard domain.OrchardRe
 		return domain.OrchardRecord{}, mapGormErr(res.Error)
 	}
 	if res.RowsAffected == 0 {
-		return domain.OrchardRecord{}, repository.ErrNotFound
+		return domain.OrchardRecord{}, classifyCASConflict(r.db.WithContext(ctx), "orchards", "orchard_id", model.OrchardID)
 	}
 	return r.GetOrchard(ctx, model.OrchardID)
 }
 
-func (r *Repository) ArchiveOrchard(ctx context.Context, orchard domain.OrchardRecord) (domain.OrchardRecord, error) {
+func (r *Repository) ArchiveOrchard(ctx context.Context, expectedUpdatedAt time.Time, orchard domain.OrchardRecord) (domain.OrchardRecord, error) {
 	model := orchardModelFromDomain(orchard)
 
 	var err error
 	switch r.db.Dialector.Name() {
 	case "postgres":
-		err = r.archiveOrchardPostgres(ctx, model)
+		err = r.archiveOrchardPostgres(ctx, expectedUpdatedAt, model)
 	default:
-		err = retrySQLiteBusy(ctx, func() error { return r.archiveOrchardSQLite(ctx, model) })
+		err = retrySQLiteBusy(ctx, func() error { return r.archiveOrchardSQLite(ctx, expectedUpdatedAt, model) })
 	}
 	if err != nil {
 		return domain.OrchardRecord{}, err
@@ -159,9 +160,9 @@ func (r *Repository) CreatePlotGuarded(ctx context.Context, plot domain.PlotReco
 	return r.GetPlot(ctx, model.PlotID)
 }
 
-func (r *Repository) UpdatePlot(ctx context.Context, plot domain.PlotRecord) (domain.PlotRecord, error) {
+func (r *Repository) UpdatePlot(ctx context.Context, expectedUpdatedAt time.Time, plot domain.PlotRecord) (domain.PlotRecord, error) {
 	model := plotModelFromDomain(plot)
-	res := r.db.WithContext(ctx).Model(&PlotModel{}).Where("plot_id = ?", model.PlotID).Updates(map[string]any{
+	res := r.db.WithContext(ctx).Model(&PlotModel{}).Where("plot_id = ?", model.PlotID).Where("updated_at = ?", normalizeTime(expectedUpdatedAt)).Updates(map[string]any{
 		"orchard_id": model.OrchardID,
 		"plot_name":  model.PlotName,
 		"status":     model.Status,
@@ -171,20 +172,20 @@ func (r *Repository) UpdatePlot(ctx context.Context, plot domain.PlotRecord) (do
 		return domain.PlotRecord{}, mapGormErr(res.Error)
 	}
 	if res.RowsAffected == 0 {
-		return domain.PlotRecord{}, repository.ErrNotFound
+		return domain.PlotRecord{}, classifyCASConflict(r.db.WithContext(ctx), "plots", "plot_id", model.PlotID)
 	}
 	return r.GetPlot(ctx, model.PlotID)
 }
 
-func (r *Repository) UpdatePlotGuarded(ctx context.Context, plot domain.PlotRecord) (domain.PlotRecord, error) {
+func (r *Repository) UpdatePlotGuarded(ctx context.Context, expectedUpdatedAt time.Time, plot domain.PlotRecord) (domain.PlotRecord, error) {
 	model := plotModelFromDomain(plot)
 
 	var err error
 	switch r.db.Dialector.Name() {
 	case "postgres":
-		err = r.updatePlotGuardedPostgres(ctx, model)
+		err = r.updatePlotGuardedPostgres(ctx, expectedUpdatedAt, model)
 	default:
-		err = retrySQLiteBusy(ctx, func() error { return r.updatePlotGuardedSQLite(ctx, model) })
+		err = retrySQLiteBusy(ctx, func() error { return r.updatePlotGuardedSQLite(ctx, expectedUpdatedAt, model) })
 	}
 	if err != nil {
 		return domain.PlotRecord{}, err
@@ -210,7 +211,7 @@ func (r *Repository) CreatePlotIfNotExists(ctx context.Context, plot domain.Plot
 // Internal helpers — orchard
 // ---------------------------------------------------------------------------
 
-func (r *Repository) archiveOrchardPostgres(ctx context.Context, model OrchardModel) error {
+func (r *Repository) archiveOrchardPostgres(ctx context.Context, expectedUpdatedAt time.Time, model OrchardModel) error {
 	return r.db.WithContext(ctx).Transaction(func(tx *gorm.DB) error {
 		if _, err := lockOrchardByID(tx, model.OrchardID); err != nil {
 			return err
@@ -224,14 +225,15 @@ func (r *Repository) archiveOrchardPostgres(ctx context.Context, model OrchardMo
 		if count > 0 {
 			return fmt.Errorf("%w: orchard has active plots; archive or move plots first", repository.ErrInvalidState)
 		}
-		return updateOrchardRecord(tx, model)
+		return updateOrchardRecord(tx, expectedUpdatedAt, model)
 	})
 }
 
-func (r *Repository) archiveOrchardSQLite(ctx context.Context, model OrchardModel) error {
+func (r *Repository) archiveOrchardSQLite(ctx context.Context, expectedUpdatedAt time.Time, model OrchardModel) error {
 	res := r.db.WithContext(ctx).
 		Model(&OrchardModel{}).
 		Where("orchard_id = ?", model.OrchardID).
+		Where("updated_at = ?", normalizeTime(expectedUpdatedAt)).
 		Where(
 			`NOT EXISTS (
 				SELECT 1 FROM plots
@@ -250,12 +252,18 @@ func (r *Repository) archiveOrchardSQLite(ctx context.Context, model OrchardMode
 	if res.RowsAffected > 0 {
 		return nil
 	}
-	return classifyBlockedOrchardArchive(r.db.WithContext(ctx), model.OrchardID)
+	if err := classifyBlockedOrchardArchive(r.db.WithContext(ctx), model.OrchardID); err != nil {
+		if errors.Is(err, repository.ErrInvalidState) || errors.Is(err, repository.ErrNotFound) {
+			return err
+		}
+	}
+	return classifyCASConflict(r.db.WithContext(ctx), "orchards", "orchard_id", model.OrchardID)
 }
 
-func updateOrchardRecord(tx *gorm.DB, model OrchardModel) error {
+func updateOrchardRecord(tx *gorm.DB, expectedUpdatedAt time.Time, model OrchardModel) error {
 	res := tx.Model(&OrchardModel{}).
 		Where("orchard_id = ?", model.OrchardID).
+		Where("updated_at = ?", normalizeTime(expectedUpdatedAt)).
 		Updates(map[string]any{
 			"orchard_name": model.OrchardName,
 			"status":       model.Status,
@@ -265,7 +273,7 @@ func updateOrchardRecord(tx *gorm.DB, model OrchardModel) error {
 		return mapGormErr(res.Error)
 	}
 	if res.RowsAffected == 0 {
-		return repository.ErrNotFound
+		return classifyCASConflict(tx, "orchards", "orchard_id", model.OrchardID)
 	}
 	return nil
 }
@@ -322,7 +330,7 @@ func (r *Repository) createPlotGuardedSQLite(ctx context.Context, model PlotMode
 	return classifyBlockedPlotWrite(r.db.WithContext(ctx), "", model.OrchardID, model.Status)
 }
 
-func (r *Repository) updatePlotGuardedPostgres(ctx context.Context, model PlotModel) error {
+func (r *Repository) updatePlotGuardedPostgres(ctx context.Context, expectedUpdatedAt time.Time, model PlotModel) error {
 	return r.db.WithContext(ctx).Transaction(func(tx *gorm.DB) error {
 		current, err := lockPlotByID(tx, model.PlotID)
 		if err != nil {
@@ -340,14 +348,15 @@ func (r *Repository) updatePlotGuardedPostgres(ctx context.Context, model PlotMo
 		if target.Status == string(domain.ResourceStatusArchived) && model.Status == string(domain.ResourceStatusActive) {
 			return fmt.Errorf("%w: active plots cannot belong to archived orchards", repository.ErrInvalidState)
 		}
-		return updatePlotRecord(tx, model)
+		return updatePlotRecord(tx, expectedUpdatedAt, model)
 	})
 }
 
-func (r *Repository) updatePlotGuardedSQLite(ctx context.Context, model PlotModel) error {
+func (r *Repository) updatePlotGuardedSQLite(ctx context.Context, expectedUpdatedAt time.Time, model PlotModel) error {
 	res := r.db.WithContext(ctx).
 		Model(&PlotModel{}).
 		Where("plot_id = ?", model.PlotID).
+		Where("updated_at = ?", normalizeTime(expectedUpdatedAt)).
 		Where(
 			`EXISTS (
 				SELECT 1 FROM orchards
@@ -371,12 +380,18 @@ func (r *Repository) updatePlotGuardedSQLite(ctx context.Context, model PlotMode
 	if res.RowsAffected > 0 {
 		return nil
 	}
-	return classifyBlockedPlotWrite(r.db.WithContext(ctx), model.PlotID, model.OrchardID, model.Status)
+	if err := classifyBlockedPlotWrite(r.db.WithContext(ctx), model.PlotID, model.OrchardID, model.Status); err != nil {
+		if errors.Is(err, repository.ErrInvalidState) || errors.Is(err, repository.ErrNotFound) {
+			return err
+		}
+	}
+	return classifyCASConflict(r.db.WithContext(ctx), "plots", "plot_id", model.PlotID)
 }
 
-func updatePlotRecord(tx *gorm.DB, model PlotModel) error {
+func updatePlotRecord(tx *gorm.DB, expectedUpdatedAt time.Time, model PlotModel) error {
 	res := tx.Model(&PlotModel{}).
 		Where("plot_id = ?", model.PlotID).
+		Where("updated_at = ?", normalizeTime(expectedUpdatedAt)).
 		Updates(map[string]any{
 			"orchard_id": model.OrchardID,
 			"plot_name":  model.PlotName,
@@ -387,9 +402,20 @@ func updatePlotRecord(tx *gorm.DB, model PlotModel) error {
 		return mapGormErr(res.Error)
 	}
 	if res.RowsAffected == 0 {
-		return repository.ErrNotFound
+		return classifyCASConflict(tx, "plots", "plot_id", model.PlotID)
 	}
 	return nil
+}
+
+func classifyCASConflict(db *gorm.DB, table string, keyColumn string, keyValue string) error {
+	var count int64
+	if err := db.Table(table).Where(fmt.Sprintf("%s = ?", keyColumn), strings.TrimSpace(keyValue)).Count(&count).Error; err != nil {
+		return mapGormErr(err)
+	}
+	if count == 0 {
+		return repository.ErrNotFound
+	}
+	return repository.ErrConflict
 }
 
 // ---------------------------------------------------------------------------

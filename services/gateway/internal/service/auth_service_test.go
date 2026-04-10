@@ -30,14 +30,18 @@ func TestUserAdminServiceUpdateUserRejectsDemotingLastActiveAdmin(t *testing.T) 
 	svc.nowFn = func() time.Time { return now.Add(time.Minute) }
 
 	_, err := svc.UpdateUser(context.Background(), UserUpdateInput{
-		ID:          "user-1",
-		Email:       "admin@example.com",
-		DisplayName: "Admin",
-		Role:        domain.UserRoleOperator,
-		Status:      domain.UserStatusActive,
+		ID:                 "user-1",
+		Email:              "admin@example.com",
+		DisplayName:        "Admin",
+		Role:               domain.UserRoleOperator,
+		Status:             domain.UserStatusActive,
+		EmailPresent:       true,
+		DisplayNamePresent: true,
+		RolePresent:        true,
+		StatusPresent:      true,
 	})
-	if !errors.Is(err, ErrInvalidRequest) {
-		t.Fatalf("error = %v, want ErrInvalidRequest", err)
+	if !errors.Is(err, ErrConflict) {
+		t.Fatalf("error = %v, want ErrConflict", err)
 	}
 	if !repo.updateCalled {
 		t.Fatal("expected repository update to be called")
@@ -64,14 +68,18 @@ func TestUserAdminServiceUpdateUserRejectsDisablingLastActiveAdmin(t *testing.T)
 	svc.nowFn = func() time.Time { return now.Add(time.Minute) }
 
 	_, err := svc.UpdateUser(context.Background(), UserUpdateInput{
-		ID:          "user-1",
-		Email:       "admin@example.com",
-		DisplayName: "Admin",
-		Role:        domain.UserRoleAdmin,
-		Status:      domain.UserStatusDisabled,
+		ID:                 "user-1",
+		Email:              "admin@example.com",
+		DisplayName:        "Admin",
+		Role:               domain.UserRoleAdmin,
+		Status:             domain.UserStatusDisabled,
+		EmailPresent:       true,
+		DisplayNamePresent: true,
+		RolePresent:        true,
+		StatusPresent:      true,
 	})
-	if !errors.Is(err, ErrInvalidRequest) {
-		t.Fatalf("error = %v, want ErrInvalidRequest", err)
+	if !errors.Is(err, ErrConflict) {
+		t.Fatalf("error = %v, want ErrConflict", err)
 	}
 	if !repo.updateCalled {
 		t.Fatal("expected repository update to be called")
@@ -97,11 +105,15 @@ func TestUserAdminServiceUpdateUserAllowsChangingOneAdminWhenAnotherExists(t *te
 	svc.nowFn = func() time.Time { return now.Add(time.Minute) }
 
 	updated, err := svc.UpdateUser(context.Background(), UserUpdateInput{
-		ID:          "user-1",
-		Email:       "admin@example.com",
-		DisplayName: "Admin",
-		Role:        domain.UserRoleOperator,
-		Status:      domain.UserStatusActive,
+		ID:                 "user-1",
+		Email:              "admin@example.com",
+		DisplayName:        "Admin",
+		Role:               domain.UserRoleOperator,
+		Status:             domain.UserStatusActive,
+		EmailPresent:       true,
+		DisplayNamePresent: true,
+		RolePresent:        true,
+		StatusPresent:      true,
 	})
 	if err != nil {
 		t.Fatalf("UpdateUser returned error: %v", err)
@@ -133,11 +145,15 @@ func TestUserAdminServiceUpdateUserAllowsUpdatingLastAdminProfile(t *testing.T) 
 	svc.nowFn = func() time.Time { return now.Add(time.Minute) }
 
 	updated, err := svc.UpdateUser(context.Background(), UserUpdateInput{
-		ID:          "user-1",
-		Email:       "renamed-admin@example.com",
-		DisplayName: "Renamed Admin",
-		Role:        domain.UserRoleAdmin,
-		Status:      domain.UserStatusActive,
+		ID:                 "user-1",
+		Email:              "renamed-admin@example.com",
+		DisplayName:        "Renamed Admin",
+		Role:               domain.UserRoleAdmin,
+		Status:             domain.UserStatusActive,
+		EmailPresent:       true,
+		DisplayNamePresent: true,
+		RolePresent:        true,
+		StatusPresent:      true,
 	})
 	if err != nil {
 		t.Fatalf("UpdateUser returned error: %v", err)
@@ -173,11 +189,15 @@ func TestUserAdminServiceUpdateUserReturnsServiceUnavailableOnRepositoryFailure(
 	svc.nowFn = func() time.Time { return now.Add(time.Minute) }
 
 	_, err := svc.UpdateUser(context.Background(), UserUpdateInput{
-		ID:          "user-1",
-		Email:       "admin@example.com",
-		DisplayName: "Admin",
-		Role:        domain.UserRoleOperator,
-		Status:      domain.UserStatusActive,
+		ID:                 "user-1",
+		Email:              "admin@example.com",
+		DisplayName:        "Admin",
+		Role:               domain.UserRoleOperator,
+		Status:             domain.UserStatusActive,
+		EmailPresent:       true,
+		DisplayNamePresent: true,
+		RolePresent:        true,
+		StatusPresent:      true,
 	})
 	if !errors.Is(err, ErrServiceUnavailable) {
 		t.Fatalf("error = %v, want ErrServiceUnavailable", err)
@@ -207,11 +227,15 @@ func TestUserAdminServiceUpdateUserMapsConflictFromRepository(t *testing.T) {
 	svc.nowFn = func() time.Time { return now.Add(time.Minute) }
 
 	_, err := svc.UpdateUser(context.Background(), UserUpdateInput{
-		ID:          "user-1",
-		Email:       "duplicate@example.com",
-		DisplayName: "Admin",
-		Role:        domain.UserRoleAdmin,
-		Status:      domain.UserStatusActive,
+		ID:                 "user-1",
+		Email:              "duplicate@example.com",
+		DisplayName:        "Admin",
+		Role:               domain.UserRoleAdmin,
+		Status:             domain.UserStatusActive,
+		EmailPresent:       true,
+		DisplayNamePresent: true,
+		RolePresent:        true,
+		StatusPresent:      true,
 	})
 	if !errors.Is(err, ErrConflict) {
 		t.Fatalf("error = %v, want ErrConflict", err)
@@ -246,7 +270,7 @@ func (f *fakeUserAdminRepo) CreateUser(_ context.Context, user domain.UserRecord
 	return user, nil
 }
 
-func (f *fakeUserAdminRepo) UpdateUser(_ context.Context, user domain.UserRecord) (domain.UserRecord, error) {
+func (f *fakeUserAdminRepo) UpdateUser(_ context.Context, _ time.Time, user domain.UserRecord) (domain.UserRecord, error) {
 	f.updateCalled = true
 	if f.updateErr != nil {
 		return domain.UserRecord{}, f.updateErr

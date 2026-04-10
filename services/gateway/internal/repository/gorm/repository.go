@@ -53,12 +53,14 @@ func (r *Repository) GetBatchByTraceCode(ctx context.Context, traceCode string, 
 func (r *Repository) UpdateBatchStatus(
 	ctx context.Context,
 	batchID string,
+	expectedStatus domain.BatchStatus,
+	expectedUpdatedAt time.Time,
 	status domain.BatchStatus,
 	lastError *string,
 	retryCount *int,
 	updatedAt time.Time,
 ) error {
-	if !isValidBatchStatus(status) {
+	if !isValidBatchStatus(expectedStatus) || !isValidBatchStatus(status) {
 		return repository.ErrInvalidState
 	}
 
@@ -73,12 +75,35 @@ func (r *Repository) UpdateBatchStatus(
 		updates["retry_count"] = *retryCount
 	}
 
-	res := r.db.WithContext(ctx).Model(&BatchModel{}).Where("batch_id = ?", batchID).Updates(updates)
+	res := r.db.WithContext(ctx).Model(&BatchModel{}).
+		Where("batch_id = ? AND status = ? AND updated_at = ?", batchID, string(expectedStatus), normalizeTime(expectedUpdatedAt)).
+		Updates(updates)
 	if res.Error != nil {
 		return mapGormErr(res.Error)
 	}
 	if res.RowsAffected == 0 {
-		return repository.ErrNotFound
+		return classifyCASConflict(r.db.WithContext(ctx), "batches", "batch_id", batchID)
+	}
+	return nil
+}
+
+func (r *Repository) ClaimPendingBatch(
+	ctx context.Context,
+	batchID string,
+	expectedUpdatedAt time.Time,
+	claimedAt time.Time,
+) error {
+	res := r.db.WithContext(ctx).Model(&BatchModel{}).
+		Where("batch_id = ? AND status = ? AND updated_at = ?", batchID, string(domain.BatchStatusPendingAnchor), normalizeTime(expectedUpdatedAt)).
+		Updates(map[string]any{
+			"status":     string(domain.BatchStatusAnchoring),
+			"updated_at": normalizeTime(claimedAt),
+		})
+	if res.Error != nil {
+		return mapGormErr(res.Error)
+	}
+	if res.RowsAffected == 0 {
+		return classifyCASConflict(r.db.WithContext(ctx), "batches", "batch_id", batchID)
 	}
 	return nil
 }
@@ -86,36 +111,17 @@ func (r *Repository) UpdateBatchStatus(
 func (r *Repository) AttachAnchorProof(
 	ctx context.Context,
 	batchID string,
+	expectedStatus domain.BatchStatus,
+	expectedUpdatedAt time.Time,
 	proof domain.AnchorProofRecord,
 	updatedAt time.Time,
 ) error {
+	if !isValidBatchStatus(expectedStatus) {
+		return repository.ErrInvalidState
+	}
 	return r.db.WithContext(ctx).Transaction(func(tx *gorm.DB) error {
-		proofModel := AnchorProofModel{
-			BatchID:         batchID,
-			TxHash:          proof.TxHash,
-			BlockNumber:     proof.BlockNumber,
-			ChainID:         proof.ChainID,
-			ContractAddress: proof.ContractAddress,
-			AnchorHash:      proof.AnchorHash,
-			AnchoredAt:      normalizeTime(proof.AnchoredAt),
-		}
-
-		if err := tx.Clauses(clause.OnConflict{
-			Columns: []clause.Column{{Name: "batch_id"}},
-			DoUpdates: clause.Assignments(map[string]any{
-				"tx_hash":          proofModel.TxHash,
-				"block_number":     proofModel.BlockNumber,
-				"chain_id":         proofModel.ChainID,
-				"contract_address": proofModel.ContractAddress,
-				"anchor_hash":      proofModel.AnchorHash,
-				"anchored_at":      proofModel.AnchoredAt,
-			}),
-		}).Create(&proofModel).Error; err != nil {
-			return mapGormErr(err)
-		}
-
 		res := tx.Model(&BatchModel{}).
-			Where("batch_id = ?", batchID).
+			Where("batch_id = ? AND status = ? AND updated_at = ?", batchID, string(expectedStatus), normalizeTime(expectedUpdatedAt)).
 			Updates(map[string]any{
 				"status":      string(domain.BatchStatusAnchored),
 				"anchor_hash": proof.AnchorHash,
@@ -125,7 +131,27 @@ func (r *Repository) AttachAnchorProof(
 			return mapGormErr(res.Error)
 		}
 		if res.RowsAffected == 0 {
-			return repository.ErrNotFound
+			return classifyCASConflict(tx, "batches", "batch_id", batchID)
+		}
+
+		proofModel := AnchorProofModel{
+			BatchID:         batchID,
+			TxHash:          proof.TxHash,
+			BlockNumber:     proof.BlockNumber,
+			ChainID:         proof.ChainID,
+			ContractAddress: proof.ContractAddress,
+			AnchorHash:      proof.AnchorHash,
+			AnchoredAt:      normalizeTime(proof.AnchoredAt),
+		}
+		proofRes := tx.Clauses(clause.OnConflict{
+			Columns:   []clause.Column{{Name: "batch_id"}},
+			DoNothing: true,
+		}).Create(&proofModel)
+		if proofRes.Error != nil {
+			return mapGormErr(proofRes.Error)
+		}
+		if proofRes.RowsAffected == 0 {
+			return repository.ErrConflict
 		}
 		return nil
 	})
@@ -651,7 +677,7 @@ func retrySQLiteBusy(ctx context.Context, fn func() error) error {
 
 func isValidBatchStatus(status domain.BatchStatus) bool {
 	switch status {
-	case domain.BatchStatusStored, domain.BatchStatusPendingAnchor, domain.BatchStatusAnchored, domain.BatchStatusAnchorFailed:
+	case domain.BatchStatusStored, domain.BatchStatusPendingAnchor, domain.BatchStatusAnchoring, domain.BatchStatusAnchored, domain.BatchStatusAnchorFailed:
 		return true
 	default:
 		return false

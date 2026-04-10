@@ -437,6 +437,8 @@ func (f *fakeBatchRepository) GetBatchByTraceCode(_ context.Context, traceCode s
 func (f *fakeBatchRepository) UpdateBatchStatus(
 	_ context.Context,
 	batchID string,
+	expectedStatus domain.BatchStatus,
+	expectedUpdatedAt time.Time,
 	status domain.BatchStatus,
 	lastError *string,
 	retryCount *int,
@@ -445,6 +447,9 @@ func (f *fakeBatchRepository) UpdateBatchStatus(
 	record, ok := f.batches[batchID]
 	if !ok {
 		return repository.ErrNotFound
+	}
+	if record.Status != expectedStatus || !record.UpdatedAt.Equal(expectedUpdatedAt) {
+		return repository.ErrConflict
 	}
 	record.Status = status
 	if lastError != nil {
@@ -459,15 +464,39 @@ func (f *fakeBatchRepository) UpdateBatchStatus(
 	return nil
 }
 
+func (f *fakeBatchRepository) ClaimPendingBatch(
+	_ context.Context,
+	batchID string,
+	expectedUpdatedAt time.Time,
+	claimedAt time.Time,
+) error {
+	record, ok := f.batches[batchID]
+	if !ok {
+		return repository.ErrNotFound
+	}
+	if record.Status != domain.BatchStatusPendingAnchor || !record.UpdatedAt.Equal(expectedUpdatedAt) {
+		return repository.ErrConflict
+	}
+	record.Status = domain.BatchStatusAnchoring
+	record.UpdatedAt = claimedAt
+	f.batches[batchID] = record
+	return nil
+}
+
 func (f *fakeBatchRepository) AttachAnchorProof(
 	_ context.Context,
 	batchID string,
+	expectedStatus domain.BatchStatus,
+	expectedUpdatedAt time.Time,
 	proof domain.AnchorProofRecord,
 	updatedAt time.Time,
 ) error {
 	record, ok := f.batches[batchID]
 	if !ok {
 		return repository.ErrNotFound
+	}
+	if record.Status != expectedStatus || !record.UpdatedAt.Equal(expectedUpdatedAt) {
+		return repository.ErrConflict
 	}
 	record.Status = domain.BatchStatusAnchored
 	record.AnchorProof = &proof

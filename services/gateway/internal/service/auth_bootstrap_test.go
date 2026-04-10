@@ -221,7 +221,7 @@ func (f *fakeBootstrapAdminRepo) ListUsers(_ context.Context) ([]domain.UserReco
 	return append([]domain.UserRecord(nil), f.users...), nil
 }
 
-func (f *fakeBootstrapAdminRepo) UpdateUser(_ context.Context, user domain.UserRecord) (domain.UserRecord, error) {
+func (f *fakeBootstrapAdminRepo) UpdateUser(_ context.Context, _ time.Time, user domain.UserRecord) (domain.UserRecord, error) {
 	f.updateCallCount++
 	f.updated = user
 	for idx := range f.users {

@@ -14,8 +14,8 @@ import (
 type OrchardRepo interface {
 	ListOrchards(ctx context.Context, includeArchived bool) ([]domain.OrchardRecord, error)
 	CreateOrchard(ctx context.Context, orchard domain.OrchardRecord) (domain.OrchardRecord, error)
-	UpdateOrchard(ctx context.Context, orchard domain.OrchardRecord) (domain.OrchardRecord, error)
-	ArchiveOrchard(ctx context.Context, orchard domain.OrchardRecord) (domain.OrchardRecord, error)
+	UpdateOrchard(ctx context.Context, expectedUpdatedAt time.Time, orchard domain.OrchardRecord) (domain.OrchardRecord, error)
+	ArchiveOrchard(ctx context.Context, expectedUpdatedAt time.Time, orchard domain.OrchardRecord) (domain.OrchardRecord, error)
 	GetOrchard(ctx context.Context, orchardID string) (domain.OrchardRecord, error)
 }
 
@@ -23,8 +23,8 @@ type PlotRepo interface {
 	ListPlots(ctx context.Context, orchardID string, includeArchived bool) ([]domain.PlotRecord, error)
 	CreatePlot(ctx context.Context, plot domain.PlotRecord) (domain.PlotRecord, error)
 	CreatePlotGuarded(ctx context.Context, plot domain.PlotRecord) (domain.PlotRecord, error)
-	UpdatePlot(ctx context.Context, plot domain.PlotRecord) (domain.PlotRecord, error)
-	UpdatePlotGuarded(ctx context.Context, plot domain.PlotRecord) (domain.PlotRecord, error)
+	UpdatePlot(ctx context.Context, expectedUpdatedAt time.Time, plot domain.PlotRecord) (domain.PlotRecord, error)
+	UpdatePlotGuarded(ctx context.Context, expectedUpdatedAt time.Time, plot domain.PlotRecord) (domain.PlotRecord, error)
 	GetPlot(ctx context.Context, plotID string) (domain.PlotRecord, error)
 }
 
@@ -48,6 +48,8 @@ type OrchardInput struct {
 	OrchardID   string
 	OrchardName string
 	Status      domain.ResourceStatus
+	OrchardNamePresent bool
+	StatusPresent      bool
 }
 
 type PlotInput struct {
@@ -55,6 +57,9 @@ type PlotInput struct {
 	OrchardID string
 	PlotName  string
 	Status    domain.ResourceStatus
+	OrchardIDPresent bool
+	PlotNamePresent  bool
+	StatusPresent    bool
 }
 
 func NewOrchardService(repo OrchardRepo) *OrchardService {
@@ -96,9 +101,15 @@ func (s *OrchardService) Update(ctx context.Context, orchardID string, input Orc
 		}
 		return domain.OrchardRecord{}, ErrServiceUnavailable
 	}
+	if !input.OrchardNamePresent && !input.StatusPresent {
+		return current, nil
+	}
+	expectedUpdatedAt := current.UpdatedAt
 	previousStatus := current.Status
-	current.OrchardName = strings.TrimSpace(input.OrchardName)
-	if input.Status != "" {
+	if input.OrchardNamePresent {
+		current.OrchardName = strings.TrimSpace(input.OrchardName)
+	}
+	if input.StatusPresent {
 		current.Status = input.Status
 	}
 	current.UpdatedAt = s.nowFn()
@@ -112,16 +123,16 @@ func (s *OrchardService) Update(ctx context.Context, orchardID string, input Orc
 	current.Status = status
 	var updated domain.OrchardRecord
 	if previousStatus != domain.ResourceStatusArchived && status == domain.ResourceStatusArchived {
-		updated, err = s.repo.ArchiveOrchard(ctx, current)
+		updated, err = s.repo.ArchiveOrchard(ctx, expectedUpdatedAt, current)
 	} else {
-		updated, err = s.repo.UpdateOrchard(ctx, current)
+		updated, err = s.repo.UpdateOrchard(ctx, expectedUpdatedAt, current)
 	}
 	if err != nil {
 		if errors.Is(err, repository.ErrNotFound) {
 			return domain.OrchardRecord{}, ErrNotFound
 		}
-		if errors.Is(err, repository.ErrInvalidState) {
-			return domain.OrchardRecord{}, fmt.Errorf("%w: %v", ErrInvalidRequest, err)
+		if errors.Is(err, repository.ErrInvalidState) || errors.Is(err, repository.ErrConflict) {
+			return domain.OrchardRecord{}, fmt.Errorf("%w: %v", ErrConflict, err)
 		}
 		return domain.OrchardRecord{}, ErrServiceUnavailable
 	}
@@ -136,12 +147,13 @@ func (s *OrchardService) Archive(ctx context.Context, orchardID string) (domain.
 		}
 		return domain.OrchardRecord{}, ErrServiceUnavailable
 	}
+	expectedUpdatedAt := current.UpdatedAt
 	current.Status = domain.ResourceStatusArchived
 	current.UpdatedAt = s.nowFn()
-	updated, err := s.repo.ArchiveOrchard(ctx, current)
+	updated, err := s.repo.ArchiveOrchard(ctx, expectedUpdatedAt, current)
 	if err != nil {
-		if errors.Is(err, repository.ErrInvalidState) {
-			return domain.OrchardRecord{}, fmt.Errorf("%w: %v", ErrInvalidRequest, err)
+		if errors.Is(err, repository.ErrInvalidState) || errors.Is(err, repository.ErrConflict) {
+			return domain.OrchardRecord{}, fmt.Errorf("%w: %v", ErrConflict, err)
 		}
 		return domain.OrchardRecord{}, ErrServiceUnavailable
 	}
@@ -167,7 +179,7 @@ func (s *PlotService) Create(ctx context.Context, input PlotInput) (domain.PlotR
 			return domain.PlotRecord{}, ErrConflict
 		}
 		if errors.Is(err, repository.ErrInvalidState) {
-			return domain.PlotRecord{}, fmt.Errorf("%w: %v", ErrInvalidRequest, err)
+			return domain.PlotRecord{}, fmt.Errorf("%w: %v", ErrConflict, err)
 		}
 		return domain.PlotRecord{}, ErrServiceUnavailable
 	}
@@ -182,13 +194,25 @@ func (s *PlotService) Update(ctx context.Context, plotID string, input PlotInput
 		}
 		return domain.PlotRecord{}, ErrServiceUnavailable
 	}
-	if trimmed := strings.TrimSpace(input.OrchardID); trimmed != "" {
+	if !input.OrchardIDPresent && !input.PlotNamePresent && !input.StatusPresent {
+		return current, nil
+	}
+	expectedUpdatedAt := current.UpdatedAt
+	if input.OrchardIDPresent {
+		trimmed := strings.TrimSpace(input.OrchardID)
+		if trimmed == "" {
+			return domain.PlotRecord{}, ErrInvalidRequest
+		}
 		current.OrchardID = trimmed
 	}
-	if trimmed := strings.TrimSpace(input.PlotName); trimmed != "" {
+	if input.PlotNamePresent {
+		trimmed := strings.TrimSpace(input.PlotName)
+		if trimmed == "" {
+			return domain.PlotRecord{}, ErrInvalidRequest
+		}
 		current.PlotName = trimmed
 	}
-	if input.Status != "" {
+	if input.StatusPresent {
 		current.Status = input.Status
 	}
 	current.UpdatedAt = s.nowFn()
@@ -197,13 +221,13 @@ func (s *PlotService) Update(ctx context.Context, plotID string, input PlotInput
 		return domain.PlotRecord{}, err
 	}
 	current.Status = status
-	updated, err := s.repo.UpdatePlotGuarded(ctx, current)
+	updated, err := s.repo.UpdatePlotGuarded(ctx, expectedUpdatedAt, current)
 	if err != nil {
 		if errors.Is(err, repository.ErrNotFound) {
 			return domain.PlotRecord{}, ErrNotFound
 		}
-		if errors.Is(err, repository.ErrInvalidState) {
-			return domain.PlotRecord{}, fmt.Errorf("%w: %v", ErrInvalidRequest, err)
+		if errors.Is(err, repository.ErrInvalidState) || errors.Is(err, repository.ErrConflict) {
+			return domain.PlotRecord{}, fmt.Errorf("%w: %v", ErrConflict, err)
 		}
 		return domain.PlotRecord{}, ErrServiceUnavailable
 	}

@@ -38,6 +38,11 @@ type orchardRequest struct {
 	Status      string `json:"status"`
 }
 
+type orchardPatchRequest struct {
+	OrchardName *string `json:"orchard_name"`
+	Status      *string `json:"status"`
+}
+
 type plotRequest struct {
 	PlotID    string `json:"plot_id"`
 	OrchardID string `json:"orchard_id"`
@@ -45,11 +50,24 @@ type plotRequest struct {
 	Status    string `json:"status"`
 }
 
+type plotPatchRequest struct {
+	OrchardID *string `json:"orchard_id"`
+	PlotName  *string `json:"plot_name"`
+	Status    *string `json:"status"`
+}
+
 type userRequest struct {
 	Email       string `json:"email"`
 	DisplayName string `json:"display_name"`
 	Role        string `json:"role"`
 	Status      string `json:"status"`
+}
+
+type userPatchRequest struct {
+	Email       *string `json:"email"`
+	DisplayName *string `json:"display_name"`
+	Role        *string `json:"role"`
+	Status      *string `json:"status"`
 }
 
 type orchardResponse struct {
@@ -107,6 +125,8 @@ func CreateOrchard(svc orchardService) http.HandlerFunc {
 			OrchardID:   req.OrchardID,
 			OrchardName: req.OrchardName,
 			Status:      domain.ResourceStatus(strings.TrimSpace(req.Status)),
+			OrchardNamePresent: true,
+			StatusPresent: strings.TrimSpace(req.Status) != "",
 		})
 		if err != nil {
 			writeServiceError(w, r, err)
@@ -118,14 +138,16 @@ func CreateOrchard(svc orchardService) http.HandlerFunc {
 
 func UpdateOrchard(svc orchardService) http.HandlerFunc {
 	return func(w http.ResponseWriter, r *http.Request) {
-		var req orchardRequest
+		var req orchardPatchRequest
 		if err := decodeJSONBody(r, &req); err != nil {
 			writeError(w, r, http.StatusBadRequest, "invalid_request", err.Error(), nil)
 			return
 		}
 		updated, err := svc.Update(r.Context(), r.PathValue("orchard_id"), service.OrchardInput{
-			OrchardName: req.OrchardName,
-			Status:      domain.ResourceStatus(strings.TrimSpace(req.Status)),
+			OrchardName:       derefString(req.OrchardName),
+			Status:            domain.ResourceStatus(strings.TrimSpace(derefString(req.Status))),
+			OrchardNamePresent: req.OrchardName != nil,
+			StatusPresent:      req.Status != nil,
 		})
 		if err != nil {
 			writeServiceError(w, r, err)
@@ -173,6 +195,9 @@ func CreatePlot(svc plotService) http.HandlerFunc {
 			OrchardID: req.OrchardID,
 			PlotName:  req.PlotName,
 			Status:    domain.ResourceStatus(strings.TrimSpace(req.Status)),
+			OrchardIDPresent: true,
+			PlotNamePresent:  true,
+			StatusPresent:    strings.TrimSpace(req.Status) != "",
 		})
 		if err != nil {
 			writeServiceError(w, r, err)
@@ -184,15 +209,18 @@ func CreatePlot(svc plotService) http.HandlerFunc {
 
 func UpdatePlot(svc plotService) http.HandlerFunc {
 	return func(w http.ResponseWriter, r *http.Request) {
-		var req plotRequest
+		var req plotPatchRequest
 		if err := decodeJSONBody(r, &req); err != nil {
 			writeError(w, r, http.StatusBadRequest, "invalid_request", err.Error(), nil)
 			return
 		}
 		updated, err := svc.Update(r.Context(), r.PathValue("plot_id"), service.PlotInput{
-			OrchardID: req.OrchardID,
-			PlotName:  req.PlotName,
-			Status:    domain.ResourceStatus(strings.TrimSpace(req.Status)),
+			OrchardID:        derefString(req.OrchardID),
+			PlotName:         derefString(req.PlotName),
+			Status:           domain.ResourceStatus(strings.TrimSpace(derefString(req.Status))),
+			OrchardIDPresent: req.OrchardID != nil,
+			PlotNamePresent:  req.PlotName != nil,
+			StatusPresent:    req.Status != nil,
 		})
 		if err != nil {
 			writeServiceError(w, r, err)
@@ -251,17 +279,21 @@ func CreateUser(svc userAdminService) http.HandlerFunc {
 
 func UpdateUser(svc userAdminService) http.HandlerFunc {
 	return func(w http.ResponseWriter, r *http.Request) {
-		var req userRequest
+		var req userPatchRequest
 		if err := decodeJSONBody(r, &req); err != nil {
 			writeError(w, r, http.StatusBadRequest, "invalid_request", err.Error(), nil)
 			return
 		}
 		updated, err := svc.UpdateUser(r.Context(), service.UserUpdateInput{
-			ID:          r.PathValue("user_id"),
-			Email:       req.Email,
-			DisplayName: req.DisplayName,
-			Role:        domain.UserRole(strings.TrimSpace(req.Role)),
-			Status:      domain.UserStatus(strings.TrimSpace(req.Status)),
+			ID:                 r.PathValue("user_id"),
+			Email:              derefString(req.Email),
+			DisplayName:        derefString(req.DisplayName),
+			Role:               domain.UserRole(strings.TrimSpace(derefString(req.Role))),
+			Status:             domain.UserStatus(strings.TrimSpace(derefString(req.Status))),
+			EmailPresent:       req.Email != nil,
+			DisplayNamePresent: req.DisplayName != nil,
+			RolePresent:        req.Role != nil,
+			StatusPresent:      req.Status != nil,
 		})
 		if err != nil {
 			writeServiceError(w, r, err)
@@ -269,6 +301,13 @@ func UpdateUser(svc userAdminService) http.HandlerFunc {
 		}
 		writeJSON(w, http.StatusOK, toUserResponse(updated))
 	}
+}
+
+func derefString(value *string) string {
+	if value == nil {
+		return ""
+	}
+	return *value
 }
 
 func writeServiceError(w http.ResponseWriter, r *http.Request, err error) {

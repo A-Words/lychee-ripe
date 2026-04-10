@@ -213,6 +213,86 @@ func TestRunAutoReconcileOnce(t *testing.T) {
 	}
 }
 
+func TestTriggerManualReconcileSkipsBatchWhenClaimLost(t *testing.T) {
+	t.Parallel()
+
+	batchRepo := newFakeReconcileBatchRepo()
+	rec := samplePendingBatch("batch_claim_lost", 0)
+	batchRepo.batches[rec.BatchID] = rec
+	batchRepo.claimErr = repository.ErrConflict
+	reconcileRepo := newFakeReconcileRepo()
+	anchor := &fakeReconcileAnchorClient{}
+	svc := NewReconcileService(batchRepo, reconcileRepo, anchor, domain.TraceModeBlockchain, nil)
+
+	result, err := svc.TriggerManualReconcile(context.Background(), ManualReconcileInput{
+		BatchIDs: []string{rec.BatchID},
+	})
+	if err != nil {
+		t.Fatalf("TriggerManualReconcile failed: %v", err)
+	}
+	if !result.Accepted || result.ScheduledCount != 1 {
+		t.Fatalf("unexpected result: %+v", result)
+	}
+	if len(reconcileRepo.jobs) != 1 {
+		t.Fatalf("jobs = %d, want 1", len(reconcileRepo.jobs))
+	}
+	job := reconcileRepo.latestJob()
+	items := reconcileRepo.items[job.JobID]
+	if len(items) != 1 {
+		t.Fatalf("items = %d, want 1", len(items))
+	}
+	if items[0].AfterStatus != domain.BatchStatusPendingAnchor {
+		t.Fatalf("after_status = %q, want pending_anchor", items[0].AfterStatus)
+	}
+	if items[0].ErrorMessage == nil || *items[0].ErrorMessage != reconcileLostRaceReason {
+		t.Fatalf("error_message = %v, want lost race reason", items[0].ErrorMessage)
+	}
+	if updated := batchRepo.batches[rec.BatchID]; updated.Status != domain.BatchStatusPendingAnchor {
+		t.Fatalf("status = %q, want pending_anchor", updated.Status)
+	}
+}
+
+func TestReconcileOneDoesNotOverwriteAnchoredBatchOnStaleFailure(t *testing.T) {
+	t.Parallel()
+
+	batchRepo := newFakeReconcileBatchRepo()
+	rec := samplePendingBatch("batch_stale_failure", 1)
+	batchRepo.batches[rec.BatchID] = rec
+	reconcileRepo := newFakeReconcileRepo()
+	anchor := &fakeReconcileAnchorClient{
+		errs: map[string]error{
+			rec.BatchID: fmt.Errorf("%w: timeout", evm.ErrNodeUnavailable),
+		},
+	}
+	svc := NewReconcileService(batchRepo, reconcileRepo, anchor, domain.TraceModeBlockchain, nil)
+	claimAt := rec.UpdatedAt.Add(30 * time.Second)
+	if err := batchRepo.ClaimPendingBatch(context.Background(), rec.BatchID, rec.UpdatedAt, claimAt); err != nil {
+		t.Fatalf("ClaimPendingBatch setup failed: %v", err)
+	}
+	proof := sampleAnchorProof("0xtx-stale", *rec.AnchorHash)
+	if err := batchRepo.AttachAnchorProof(context.Background(), rec.BatchID, domain.BatchStatusAnchoring, claimAt, proof, claimAt.Add(30*time.Second)); err != nil {
+		t.Fatalf("AttachAnchorProof setup failed: %v", err)
+	}
+
+	item, err := svc.reconcileOne(context.Background(), rec)
+	if err != nil {
+		t.Fatalf("reconcileOne failed: %v", err)
+	}
+	if item.AfterStatus != domain.BatchStatusPendingAnchor {
+		t.Fatalf("after_status = %q, want pending_anchor", item.AfterStatus)
+	}
+	if item.ErrorMessage == nil || *item.ErrorMessage != reconcileLostRaceReason {
+		t.Fatalf("error_message = %v, want lost race reason", item.ErrorMessage)
+	}
+	updated := batchRepo.batches[rec.BatchID]
+	if updated.Status != domain.BatchStatusAnchored {
+		t.Fatalf("status = %q, want anchored", updated.Status)
+	}
+	if updated.AnchorProof == nil || updated.AnchorProof.TxHash != proof.TxHash {
+		t.Fatalf("anchor_proof = %+v, want %q", updated.AnchorProof, proof.TxHash)
+	}
+}
+
 func TestTriggerManualReconcileRejectsInvalidLimit(t *testing.T) {
 	t.Parallel()
 
@@ -230,6 +310,7 @@ type fakeReconcileBatchRepo struct {
 	batches        map[string]domain.BatchRecord
 	listPendingErr error
 	getByIDErr     error
+	claimErr       error
 	updateErr      error
 	attachErr      error
 }
@@ -265,6 +346,8 @@ func (f *fakeReconcileBatchRepo) GetBatchByTraceCode(_ context.Context, _ string
 func (f *fakeReconcileBatchRepo) UpdateBatchStatus(
 	_ context.Context,
 	batchID string,
+	expectedStatus domain.BatchStatus,
+	expectedUpdatedAt time.Time,
 	status domain.BatchStatus,
 	lastError *string,
 	retryCount *int,
@@ -276,6 +359,9 @@ func (f *fakeReconcileBatchRepo) UpdateBatchStatus(
 	record, ok := f.batches[batchID]
 	if !ok {
 		return repository.ErrNotFound
+	}
+	if record.Status != expectedStatus || !record.UpdatedAt.Equal(expectedUpdatedAt) {
+		return repository.ErrConflict
 	}
 	record.Status = status
 	record.UpdatedAt = updatedAt
@@ -290,9 +376,33 @@ func (f *fakeReconcileBatchRepo) UpdateBatchStatus(
 	return nil
 }
 
+func (f *fakeReconcileBatchRepo) ClaimPendingBatch(
+	_ context.Context,
+	batchID string,
+	expectedUpdatedAt time.Time,
+	claimedAt time.Time,
+) error {
+	if f.claimErr != nil {
+		return f.claimErr
+	}
+	record, ok := f.batches[batchID]
+	if !ok {
+		return repository.ErrNotFound
+	}
+	if record.Status != domain.BatchStatusPendingAnchor || !record.UpdatedAt.Equal(expectedUpdatedAt) {
+		return repository.ErrConflict
+	}
+	record.Status = domain.BatchStatusAnchoring
+	record.UpdatedAt = claimedAt
+	f.batches[batchID] = record
+	return nil
+}
+
 func (f *fakeReconcileBatchRepo) AttachAnchorProof(
 	_ context.Context,
 	batchID string,
+	expectedStatus domain.BatchStatus,
+	expectedUpdatedAt time.Time,
 	proof domain.AnchorProofRecord,
 	updatedAt time.Time,
 ) error {
@@ -302,6 +412,9 @@ func (f *fakeReconcileBatchRepo) AttachAnchorProof(
 	record, ok := f.batches[batchID]
 	if !ok {
 		return repository.ErrNotFound
+	}
+	if record.Status != expectedStatus || !record.UpdatedAt.Equal(expectedUpdatedAt) {
+		return repository.ErrConflict
 	}
 	record.Status = domain.BatchStatusAnchored
 	record.AnchorProof = &proof

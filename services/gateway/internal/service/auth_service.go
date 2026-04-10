@@ -20,7 +20,7 @@ type UserAdminRepository interface {
 	GetPrincipalByID(ctx context.Context, userID string) (domain.UserRecord, error)
 	ListUsers(ctx context.Context) ([]domain.UserRecord, error)
 	CreateUser(ctx context.Context, user domain.UserRecord) (domain.UserRecord, error)
-	UpdateUser(ctx context.Context, user domain.UserRecord) (domain.UserRecord, error)
+	UpdateUser(ctx context.Context, expectedUpdatedAt time.Time, user domain.UserRecord) (domain.UserRecord, error)
 }
 
 type AuthService struct {
@@ -87,6 +87,10 @@ type UserUpdateInput struct {
 	DisplayName string
 	Role        domain.UserRole
 	Status      domain.UserStatus
+	EmailPresent       bool
+	DisplayNamePresent bool
+	RolePresent        bool
+	StatusPresent      bool
 }
 
 func NewUserAdminService(repo UserAdminRepository) *UserAdminService {
@@ -129,15 +133,27 @@ func (s *UserAdminService) UpdateUser(ctx context.Context, input UserUpdateInput
 		}
 		return domain.UserRecord{}, ErrServiceUnavailable
 	}
-	current.Email = strings.ToLower(strings.TrimSpace(input.Email))
-	current.DisplayName = strings.TrimSpace(input.DisplayName)
-	current.Role = input.Role
-	current.Status = input.Status
+	if !input.EmailPresent && !input.DisplayNamePresent && !input.RolePresent && !input.StatusPresent {
+		return current, nil
+	}
+	expectedUpdatedAt := current.UpdatedAt
+	if input.EmailPresent {
+		current.Email = strings.ToLower(strings.TrimSpace(input.Email))
+	}
+	if input.DisplayNamePresent {
+		current.DisplayName = strings.TrimSpace(input.DisplayName)
+	}
+	if input.RolePresent {
+		current.Role = input.Role
+	}
+	if input.StatusPresent {
+		current.Status = input.Status
+	}
 	current.UpdatedAt = s.nowFn()
 	if err := validateUserRecord(current); err != nil {
 		return domain.UserRecord{}, err
 	}
-	updated, err := s.repo.UpdateUser(ctx, current)
+	updated, err := s.repo.UpdateUser(ctx, expectedUpdatedAt, current)
 	if err != nil {
 		switch {
 		case errors.Is(err, repository.ErrConflict):
@@ -145,7 +161,7 @@ func (s *UserAdminService) UpdateUser(ctx context.Context, input UserUpdateInput
 		case errors.Is(err, repository.ErrNotFound):
 			return domain.UserRecord{}, ErrNotFound
 		case errors.Is(err, repository.ErrInvalidState):
-			return domain.UserRecord{}, ErrInvalidRequest
+			return domain.UserRecord{}, ErrConflict
 		default:
 			return domain.UserRecord{}, ErrServiceUnavailable
 		}
