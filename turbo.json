@@ -1,14 +1,9 @@
 {
   "$schema": "https://turbo.build/schema.json",
+  "globalEnv": ["LYCHEE_PY_TARGET"],
   "tasks": {
     "build": {
-      "dependsOn": [
-        "^build"
-      ],
-      "outputs": [
-        ".output/**",
-        "dist/**"
-      ]
+      "outputs": [".output/**", "dist/**"]
     },
     "dev": {
       "cache": false,
@@ -18,30 +13,15 @@
       "cache": false
     },
     "generate": {
-      "dependsOn": [
-        "^build"
-      ],
-      "outputs": [
-        ".output/**",
-        "dist/**"
-      ]
+      "outputs": [".output/**"]
     },
     "test": {
-      "dependsOn": [
-        "^test"
-      ],
       "outputs": []
     },
     "typecheck": {
-      "dependsOn": [
-        "^typecheck"
-      ],
       "outputs": []
     },
     "verify": {
-      "dependsOn": [
-        "^verify"
-      ],
       "outputs": []
     }
   }

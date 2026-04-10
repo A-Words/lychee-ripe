@@ -1,0 +1,17 @@
+{
+  "extends": ["//"],
+  "tasks": {
+    "build": {
+      "inputs": ["app/**", "public/**", "nuxt.config.*", "app.config.*", "tsconfig.json", "package.json"]
+    },
+    "generate": {
+      "inputs": ["app/**", "public/**", "nuxt.config.*", "app.config.*", "tsconfig.json", "package.json"]
+    },
+    "test": {
+      "inputs": ["app/**", "tests/**", "vitest.config.*", "nuxt.config.*", "tsconfig.json", "package.json"]
+    },
+    "typecheck": {
+      "inputs": ["app/**", "nuxt.config.*", "app.config.*", "tsconfig.json", "package.json"]
+    }
+  }
+}
