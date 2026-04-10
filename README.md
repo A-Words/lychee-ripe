@@ -13,7 +13,7 @@
 - `mlops/data`：数据集与标注
 - `mlops/artifacts`：模型、指标、日志与网关本地数据库
 - `tooling/configs`：配置模板与本地配置
-- `tooling/scripts`：启动、训练、评估、校验脚本
+- `tooling/scripts`：训练、评估、缓存环境与跨服务联调脚本
 - `tooling/docker`：镜像构建文件
 - `tests/stack`：跨服务 smoke 测试
 
@@ -116,13 +116,9 @@ cd clients/orchard-console && bun run dev -- --host 127.0.0.1 --port 3000
 cd clients/orchard-console && bun run tauri:dev
 ```
 
-脚本入口：
+跨服务脚本入口：
 
 ```sh
-sh tooling/scripts/inference-api.sh --target cpu --host 127.0.0.1 --port 8000
-sh tooling/scripts/gateway.sh --config tooling/configs/gateway.yaml
-sh tooling/scripts/orchard-console.sh --host 127.0.0.1 --port 3000
-sh tooling/scripts/desktop.sh
 sh tooling/scripts/stack.sh --target cpu --app-host 127.0.0.1 --app-port 8000 --gateway-config tooling/configs/gateway.yaml --frontend-host 127.0.0.1 --frontend-port 3000
 ```
 
@@ -205,6 +201,8 @@ bun run test:stack
 ```
 
 `test:stack` 需要先把 API、Gateway、Frontend 启起来，再验证 `3000 -> 9000 -> api` 的基础联通。
+
+不再维护单独的 `tooling/scripts/verify.*`；统一校验入口以 `bun run verify` 为准。
 
 ## Turbo And Remote Cache
 
