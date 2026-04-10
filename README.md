@@ -194,7 +194,7 @@ bun run --filter @lychee-ripe/orchard-console generate
 bun run test:stack
 ```
 
-`test:stack` 需要先通过 `bun run dev` 把 API、Gateway、Frontend 启起来，再验证 `3000 -> 9000 -> api` 的基础联通。
+`test:stack` 会自动拉起 `bun run dev`，等待 API、Gateway、Frontend 就绪后，再验证 `3000 -> 9000 -> api` 的基础联通；结束后会自动清理进程。
 
 ## Turbo And Remote Cache
 

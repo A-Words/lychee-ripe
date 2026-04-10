@@ -15,7 +15,7 @@
     "dev:orchard-console": "bun ./tooling/scripts/turbo-task.mjs dev --filter=@lychee-ripe/orchard-console",
     "build": "bun ./tooling/scripts/turbo-task.mjs build --filter=@lychee-ripe/gateway --filter=@lychee-ripe/orchard-console",
     "test": "bun ./tooling/scripts/turbo-task.mjs test --filter=@lychee-ripe/gateway --filter=@lychee-ripe/inference-api --filter=@lychee-ripe/orchard-console",
-    "test:stack": "bun tests/stack/smoke-stack.mjs",
+    "test:stack": "bun tests/stack/run-stack.mjs",
     "typecheck": "bun ./tooling/scripts/turbo-task.mjs typecheck --filter=@lychee-ripe/orchard-console",
     "generate": "bun ./tooling/scripts/turbo-task.mjs generate --filter=@lychee-ripe/orchard-console",
     "verify": "bun ./tooling/scripts/turbo-task.mjs verify"

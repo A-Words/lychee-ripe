@@ -110,7 +110,7 @@
   - `bun run test:stack`
   - `LYCHEE_PY_TARGET` 仅参与 Python-backed Turbo task 的缓存键；`cpu` 与 `cu128` 的 `test` / `verify` 结果不得混用，非 Python workspace 继续复用跨 target 缓存
   - `bun run verify` 会额外执行 `@lychee-ripe/contracts#verify` 与 `@lychee-ripe/python-shared#verify`
-  - `bun run test:stack` 默认要求你先用 `bun run dev` 启动联调链路
+  - `bun run test:stack` 会自动拉起联调链路并在结束后清理进程
 
 ### 3.5 Turbo 约定
 
