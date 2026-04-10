@@ -4,6 +4,8 @@
 .nuxt
 .nitro
 .cache
+playwright-report
+test-results
 dist
 
 # Node dependencies
