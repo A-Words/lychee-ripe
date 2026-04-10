@@ -5,7 +5,7 @@
     "": {
       "name": "lychee-ripe",
       "devDependencies": {
-        "turbo": "^2.5.6",
+        "turbo": "^2.9.3",
       },
     },
     "clients/orchard-console": {
@@ -39,6 +39,12 @@
     },
     "shared/contracts": {
       "name": "@lychee-ripe/contracts",
+      "dependencies": {
+        "yaml": "^2.8.1",
+      },
+    },
+    "shared/python": {
+      "name": "@lychee-ripe/python-shared",
     },
   },
   "packages": {
@@ -221,6 +227,8 @@
     "@lychee-ripe/inference-api": ["@lychee-ripe/inference-api@workspace:services/inference-api"],
 
     "@lychee-ripe/orchard-console": ["@lychee-ripe/orchard-console@workspace:clients/orchard-console"],
+
+    "@lychee-ripe/python-shared": ["@lychee-ripe/python-shared@workspace:shared/python"],
 
     "@lychee-ripe/training": ["@lychee-ripe/training@workspace:mlops/training"],
 

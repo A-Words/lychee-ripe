@@ -1,4 +1,5 @@
 import { spawnSync } from 'node:child_process'
+import { fileURLToPath } from 'node:url'
 
 const [, , task, ...rawArgs] = process.argv
 
@@ -9,6 +10,8 @@ if (!task) {
 
 const parsed = parseArgs(rawArgs)
 const target = parsed.target ?? process.env.LYCHEE_PY_TARGET ?? 'cpu'
+const repoRoot = fileURLToPath(new URL('../../', import.meta.url))
+const turboBin = fileURLToPath(new URL('../../node_modules/turbo/bin/turbo', import.meta.url))
 
 if (!['cpu', 'cu128'].includes(target)) {
   console.error(`Invalid --target '${target}'. Expected cpu|cu128.`)
@@ -16,14 +19,14 @@ if (!['cpu', 'cu128'].includes(target)) {
 }
 
 const result = spawnSync(
-  'turbo',
-  ['run', task, ...parsed.turboArgs],
+  process.execPath,
+  [turboBin, 'run', task, ...parsed.turboArgs],
   {
+    cwd: repoRoot,
     env: {
       ...process.env,
       LYCHEE_PY_TARGET: target
     },
-    shell: process.platform === 'win32',
     stdio: 'inherit'
   }
 )

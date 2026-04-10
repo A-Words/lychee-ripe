@@ -1,28 +1,54 @@
 {
   "$schema": "https://turbo.build/schema.json",
-  "globalEnv": ["LYCHEE_PY_TARGET"],
+  "cacheDir": ".turbo/cache",
+  "envMode": "strict",
+  "futureFlags": {
+    "affectedUsingTaskInputs": true,
+    "filterUsingTasks": true,
+    "watchUsingTaskInputs": true
+  },
+  "globalDependencies": [
+    "package.json",
+    "bun.lock",
+    "turbo.json",
+    "tooling/configs/*.yaml.example",
+    "tooling/configs/gateway.compose.yaml"
+  ],
   "tasks": {
     "build": {
-      "outputs": [".output/**", "dist/**"]
+      "dependsOn": ["^build"],
+      "outputs": [".output/**", "dist/**"],
+      "outputLogs": "new-only"
     },
     "dev": {
       "cache": false,
-      "persistent": true
+      "interruptible": true,
+      "persistent": true,
+      "outputLogs": "new-only"
     },
     "eval": {
-      "cache": false
+      "cache": false,
+      "outputLogs": "new-only"
     },
     "generate": {
-      "outputs": [".output/**"]
+      "outputs": [".output/**"],
+      "outputLogs": "new-only"
     },
     "test": {
-      "outputs": []
+      "outputs": [],
+      "outputLogs": "new-only"
+    },
+    "train": {
+      "cache": false,
+      "outputLogs": "new-only"
     },
     "typecheck": {
-      "outputs": []
+      "outputs": [],
+      "outputLogs": "new-only"
     },
     "verify": {
-      "outputs": []
+      "outputs": [],
+      "outputLogs": "new-only"
     }
   }
 }

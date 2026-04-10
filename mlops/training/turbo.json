@@ -1,0 +1,36 @@
+{
+  "extends": ["//"],
+  "tasks": {
+    "eval": {
+      "env": ["LYCHEE_PY_TARGET"],
+      "inputs": [
+        "$TURBO_DEFAULT$",
+        "$TURBO_ROOT$/services/inference-api/scripts/uv-task.mjs",
+        "$TURBO_ROOT$/services/inference-api/pyproject.toml",
+        "$TURBO_ROOT$/services/inference-api/uv.lock",
+        "$TURBO_ROOT$/shared/contracts/constants/**",
+        "$TURBO_ROOT$/shared/contracts/schemas/**",
+        "$TURBO_ROOT$/shared/python/lychee_common/**",
+        "$TURBO_ROOT$/shared/python/pyproject.toml",
+        "$TURBO_ROOT$/mlops/data/**",
+        "$TURBO_ROOT$/mlops/pretrained/**",
+        "$TURBO_ROOT$/mlops/artifacts/models/**"
+      ]
+    },
+    "train": {
+      "env": ["LYCHEE_PY_TARGET"],
+      "inputs": [
+        "$TURBO_DEFAULT$",
+        "$TURBO_ROOT$/services/inference-api/scripts/uv-task.mjs",
+        "$TURBO_ROOT$/services/inference-api/pyproject.toml",
+        "$TURBO_ROOT$/services/inference-api/uv.lock",
+        "$TURBO_ROOT$/shared/contracts/constants/**",
+        "$TURBO_ROOT$/shared/contracts/schemas/**",
+        "$TURBO_ROOT$/shared/python/lychee_common/**",
+        "$TURBO_ROOT$/shared/python/pyproject.toml",
+        "$TURBO_ROOT$/mlops/data/**",
+        "$TURBO_ROOT$/mlops/pretrained/**"
+      ]
+    }
+  }
+}

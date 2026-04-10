@@ -6,21 +6,21 @@
     "clients/*",
     "services/*",
     "mlops/*",
-    "shared/contracts"
+    "shared/*"
   ],
   "scripts": {
-    "dev": "bun ./tooling/scripts/turbo-task.mjs dev --parallel --filter=@lychee-ripe/inference-api --filter=@lychee-ripe/gateway --filter=@lychee-ripe/orchard-console",
+    "dev": "bun ./tooling/scripts/turbo-task.mjs dev --filter=@lychee-ripe/orchard-console",
     "dev:inference-api": "bun ./tooling/scripts/turbo-task.mjs dev --filter=@lychee-ripe/inference-api",
-    "dev:gateway": "turbo run dev --filter=@lychee-ripe/gateway",
-    "dev:orchard-console": "turbo run dev --filter=@lychee-ripe/orchard-console",
-    "build": "turbo run build",
-    "test": "bun ./tooling/scripts/turbo-task.mjs test",
+    "dev:gateway": "bun ./tooling/scripts/turbo-task.mjs dev --filter=@lychee-ripe/gateway",
+    "dev:orchard-console": "bun ./tooling/scripts/turbo-task.mjs dev --filter=@lychee-ripe/orchard-console",
+    "build": "bun ./tooling/scripts/turbo-task.mjs build --filter=@lychee-ripe/gateway --filter=@lychee-ripe/orchard-console",
+    "test": "bun ./tooling/scripts/turbo-task.mjs test --filter=@lychee-ripe/gateway --filter=@lychee-ripe/inference-api --filter=@lychee-ripe/orchard-console",
     "test:stack": "bun tests/stack/smoke-stack.mjs",
-    "typecheck": "turbo run typecheck",
-    "generate": "turbo run generate",
+    "typecheck": "bun ./tooling/scripts/turbo-task.mjs typecheck --filter=@lychee-ripe/orchard-console",
+    "generate": "bun ./tooling/scripts/turbo-task.mjs generate --filter=@lychee-ripe/orchard-console",
     "verify": "bun ./tooling/scripts/turbo-task.mjs verify"
   },
   "devDependencies": {
-    "turbo": "^2.5.6"
+    "turbo": "^2.9.3"
   }
 }

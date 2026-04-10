@@ -2,11 +2,38 @@
   "extends": ["//"],
   "tasks": {
     "build": {
-      "inputs": ["cmd/**", "internal/**", "go.mod", "go.sum"],
+      "inputs": [
+        "$TURBO_DEFAULT$",
+        "$TURBO_ROOT$/shared/contracts/constants/**",
+        "$TURBO_ROOT$/shared/contracts/schemas/**",
+        "$TURBO_ROOT$/tooling/configs/gateway*.yaml"
+      ],
       "outputs": ["dist/**"]
     },
+    "dev": {
+      "inputs": [
+        "$TURBO_DEFAULT$",
+        "$TURBO_ROOT$/shared/contracts/constants/**",
+        "$TURBO_ROOT$/shared/contracts/schemas/**",
+        "$TURBO_ROOT$/tooling/configs/gateway*.yaml"
+      ]
+    },
     "test": {
-      "inputs": ["cmd/**", "internal/**", "go.mod", "go.sum"]
+      "inputs": [
+        "$TURBO_DEFAULT$",
+        "$TURBO_ROOT$/shared/contracts/constants/**",
+        "$TURBO_ROOT$/shared/contracts/schemas/**",
+        "$TURBO_ROOT$/tooling/configs/gateway*.yaml"
+      ]
+    },
+    "verify": {
+      "dependsOn": ["test"],
+      "inputs": [
+        "$TURBO_DEFAULT$",
+        "$TURBO_ROOT$/shared/contracts/constants/**",
+        "$TURBO_ROOT$/shared/contracts/schemas/**",
+        "$TURBO_ROOT$/tooling/configs/gateway*.yaml"
+      ]
     }
   }
 }
