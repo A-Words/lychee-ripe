@@ -343,6 +343,9 @@ func normalizeRedirectPath(raw string) string {
 	if !strings.HasPrefix(cleanPath, "/") {
 		return "/dashboard"
 	}
+	if containsSchemeLikePrefix(cleanPath) {
+		return "/dashboard"
+	}
 	parsed.Path = cleanPath
 	parsed.RawPath = ""
 	return parsed.String()
@@ -431,9 +434,16 @@ func resolveURLUnderBase(base *url.URL, absolutePath string) (*url.URL, error) {
 	if base == nil {
 		return nil, errors.New("base url is required")
 	}
-	relativeTarget, err := url.Parse(strings.TrimLeft(strings.TrimSpace(absolutePath), "/"))
+	normalizedPath := normalizeRedirectPath(absolutePath)
+	if containsSchemeLikePrefix(normalizedPath) {
+		return nil, errors.New("scheme-bearing redirect path is not allowed")
+	}
+	relativeTarget, err := url.Parse(strings.TrimLeft(strings.TrimSpace(normalizedPath), "/"))
 	if err != nil {
 		return nil, err
+	}
+	if relativeTarget.IsAbs() {
+		return nil, errors.New("absolute redirect target is not allowed")
 	}
 
 	baseCopy := *base
