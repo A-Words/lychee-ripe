@@ -25,6 +25,9 @@ const refreshTimer = ref<number | null>(null)
 const shouldStopAutoRefresh = computed(() => viewState.value === 'auth_blocked')
 const isReadyLike = computed(() => viewState.value === 'ready' || viewState.value === 'empty')
 const isEmpty = computed(() => viewState.value === 'empty')
+const isShowingStaleOverview = computed(() =>
+  Boolean(overview.value) && isReadyLike.value && Boolean(apiError.value)
+)
 
 const unavailableTitle = computed(() =>
   viewState.value === 'auth_blocked' ? '网关鉴权已开启' : '看板服务不可用'
@@ -39,6 +42,10 @@ const unavailableDescription = computed(() => {
 
 const lastRefreshText = computed(() =>
   lastRefreshedAt.value ? formatDateTime(lastRefreshedAt.value.toISOString()) : '--'
+)
+
+const staleOverviewMessage = computed(() =>
+  apiError.value?.message || '刷新失败，当前展示的是上一次成功加载的数据。'
 )
 
 function clearRefreshTimer() {
@@ -81,12 +88,16 @@ async function loadOverview(manual: boolean) {
     viewState.value = data.totals.batch_total === 0 ? 'empty' : 'ready'
   } catch (error) {
     const parsed = parseDashboardError(error)
+    const currentOverview = overview.value
     apiError.value = parsed
-    overview.value = null
 
     if (parsed.statusCode === 401 || parsed.statusCode === 403) {
+      overview.value = null
       viewState.value = 'auth_blocked'
+    } else if (currentOverview) {
+      viewState.value = currentOverview.totals.batch_total === 0 ? 'empty' : 'ready'
     } else {
+      overview.value = null
       viewState.value = 'unavailable'
     }
   } finally {
@@ -167,6 +178,23 @@ watch(shouldStopAutoRefresh, () => {
       </div>
 
       <div v-else-if="isReadyLike && overview" class="space-y-4">
+        <UAlert
+          v-if="isShowingStaleOverview"
+          color="warning"
+          variant="subtle"
+          icon="i-lucide-triangle-alert"
+          title="刷新失败，当前展示的是上一次成功加载的数据"
+        >
+          <template #description>
+            <p class="text-sm">
+              {{ staleOverviewMessage }}
+            </p>
+            <p v-if="apiError?.requestId" class="mt-1 text-xs text-muted">
+              请求 ID：{{ apiError.requestId }}
+            </p>
+          </template>
+        </UAlert>
+
         <UAlert
           v-if="isEmpty"
           color="neutral"

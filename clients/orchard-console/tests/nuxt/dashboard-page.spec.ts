@@ -155,6 +155,33 @@ describe('dashboard page', () => {
     expect(wrapper.text()).toContain('批次总数')
     wrapper.unmount()
   })
+
+  it('keeps the last successful overview visible when a later refresh fails', async () => {
+    getOverviewMock
+      .mockResolvedValueOnce(buildDashboardOverview())
+      .mockRejectedValueOnce(new Error('refresh failed'))
+    parseDashboardErrorMock.mockReturnValue({
+      statusCode: 503,
+      error: 'service_unavailable',
+      message: '刷新数据失败，请稍后重试。',
+      requestId: 'req-stale'
+    })
+
+    const wrapper = await mountDashboardPage()
+    await flushUi()
+
+    expect(wrapper.text()).toContain('批次总数')
+
+    await findButton(wrapper, '立即刷新').trigger('click')
+    await flushUi()
+
+    expect(wrapper.text()).toContain('刷新失败，当前展示的是上一次成功加载的数据')
+    expect(wrapper.text()).toContain('刷新数据失败，请稍后重试。')
+    expect(wrapper.text()).toContain('req-stale')
+    expect(wrapper.text()).toContain('批次总数')
+    expect(wrapper.text()).not.toContain('看板服务不可用')
+    wrapper.unmount()
+  })
 })
 
 async function mountDashboardPage() {
