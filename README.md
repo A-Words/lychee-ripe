@@ -13,7 +13,7 @@
 - `mlops/data`：数据集与标注
 - `mlops/artifacts`：模型、指标、日志与网关本地数据库
 - `tooling/configs`：配置模板与本地配置
-- `tooling/scripts`：训练、评估、缓存环境与跨服务联调脚本
+- `tooling/scripts`：训练、评估与缓存环境脚本
 - `tooling/docker`：镜像构建文件
 - `tests/stack`：跨服务 smoke 测试
 
@@ -116,12 +116,6 @@ cd clients/orchard-console && bun run dev -- --host 127.0.0.1 --port 3000
 cd clients/orchard-console && bun run tauri:dev
 ```
 
-跨服务脚本入口：
-
-```sh
-sh tooling/scripts/stack.sh --target cpu --app-host 127.0.0.1 --app-port 8000 --gateway-config tooling/configs/gateway.yaml --frontend-host 127.0.0.1 --frontend-port 3000
-```
-
 ## Training And Eval
 
 workspace 便捷入口：
@@ -200,9 +194,7 @@ bun run --filter @lychee-ripe/orchard-console generate
 bun run test:stack
 ```
 
-`test:stack` 需要先把 API、Gateway、Frontend 启起来，再验证 `3000 -> 9000 -> api` 的基础联通。
-
-不再维护单独的 `tooling/scripts/verify.*`；统一校验入口以 `bun run verify` 为准。
+`test:stack` 需要先通过 `bun run dev` 把 API、Gateway、Frontend 启起来，再验证 `3000 -> 9000 -> api` 的基础联通。
 
 ## Turbo And Remote Cache
 
@@ -285,7 +277,7 @@ LYCHEE_AUTH_WEB_COOKIE_SAME_SITE=lax
 docker compose up --build
 ```
 
-Compose 默认会让 gateway 读取 `tooling/configs/gateway.compose.yaml`；本地 `go run`、`bun run dev:gateway` 与 `tooling/scripts/stack.*` 继续使用 `tooling/configs/gateway.yaml`。
+Compose 默认会让 gateway 读取 `tooling/configs/gateway.compose.yaml`；本地 `go run` 与 `bun run dev:gateway` 继续使用 `tooling/configs/gateway.yaml`。
 
 ## Notes
 

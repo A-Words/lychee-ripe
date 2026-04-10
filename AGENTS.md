@@ -37,7 +37,7 @@
 - `mlops/artifacts/`：模型、指标、日志与本地 sqlite 数据
 - `mlops/pretrained/`：预训练权重
 - `tooling/configs/`：配置模板与本地配置
-- `tooling/scripts/`：训练、评估、缓存环境与跨服务联调脚本
+- `tooling/scripts/`：训练、评估与缓存环境脚本
 - `tooling/docker/`：容器构建文件
 - `tests/stack/`：跨服务 smoke 测试
 
@@ -80,9 +80,6 @@
   - Gateway：`go run ./services/gateway/cmd/gateway --config tooling/configs/gateway.yaml`
   - Orchard Console Web：`cd clients/orchard-console && bun run dev -- --host 127.0.0.1 --port 3000`
   - Orchard Console Desktop：`cd clients/orchard-console && bun run tauri:dev`
-- 脚本入口：
-  - `tooling/scripts/stack.*`
-
 ### 3.3 训练与评估
 
 - Workspace 便捷入口：
@@ -113,7 +110,7 @@
   - `bun run test:stack`
   - `LYCHEE_PY_TARGET` 仅参与 Python-backed Turbo task 的缓存键；`cpu` 与 `cu128` 的 `test` / `verify` 结果不得混用，非 Python workspace 继续复用跨 target 缓存
   - `bun run verify` 会额外执行 `@lychee-ripe/contracts#verify` 与 `@lychee-ripe/python-shared#verify`
-  - 不再维护单独的 `tooling/scripts/verify.*`；统一以根 Turbo 入口为准
+  - `bun run test:stack` 默认要求你先用 `bun run dev` 启动联调链路
 
 ### 3.5 Turbo 约定
 
