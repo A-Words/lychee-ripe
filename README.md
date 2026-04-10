@@ -103,6 +103,8 @@ bun run test -- --target cu128
 bun run verify -- --target cpu
 ```
 
+`bun run dev` 现在以 `@lychee-ripe/orchard-console` 为入口，再由 Turbo 任务图联动带起 `gateway` 与 `inference-api` 的 `dev` 任务；不再在根脚本里手工拼接并行过滤参数。
+
 `LYCHEE_PY_TARGET` 只会进入 Python-backed Turbo task 的缓存键，CPU 和 CUDA 的 `test` / `verify` 结果不会混用；非 Python workspace 继续复用跨 target 缓存。
 
 分服务直接启动：
@@ -173,6 +175,19 @@ bun run test
 bun run verify
 ```
 
+`bun run verify` 现在除了业务 workspace，还会执行：
+
+- `@lychee-ripe/contracts#verify`：校验 `openapi.yaml` 可解析且成熟度映射结构合法
+- `@lychee-ripe/python-shared#verify`：校验 `shared/python` 元数据与 `lychee_common` 可导入
+
+Turbo 任务语义约定：
+
+- `dev`、`train`、`eval` 不缓存
+- `build`、`test`、`typecheck`、`generate`、`verify` 走 Turbo 缓存
+- `clients/orchard-console` 的 `build/generate/typecheck/test/dev` 会把 `NUXT_PUBLIC_*` 变量纳入 hash
+- `services/inference-api` 与 `mlops/training` 的 Python 任务会把 `LYCHEE_PY_TARGET` 纳入 hash
+- `shared/contracts` 与 `shared/python` 的源码变化会触发依赖它们的前端、推理和训练任务重新计算
+
 单独执行：
 
 ```sh
@@ -190,6 +205,30 @@ bun run test:stack
 ```
 
 `test:stack` 需要先把 API、Gateway、Frontend 启起来，再验证 `3000 -> 9000 -> api` 的基础联通。
+
+## Turbo And Remote Cache
+
+仓库采用 Turborepo 统一编排 `build/test/typecheck/generate/verify/dev/train/eval`，并显式声明跨语言输入：
+
+- 前端任务额外跟踪 `shared/contracts/{constants,schemas}`，确保契约或成熟度映射变化会触发重算
+- 推理服务与训练任务额外跟踪 `shared/python/lychee_common`、共享契约，以及相关 `tooling/configs/*.yaml`
+- `verify` 是 Turbo 聚合任务；包内不再通过 shell `&&` 手工串联子任务
+
+平台中立远程缓存接入方式：
+
+```sh
+TURBO_TEAM=your-team
+TURBO_TOKEN=your-token
+bun run verify
+```
+
+如果使用自建 Remote Cache，再额外提供：
+
+```sh
+TURBO_API=https://your-cache.example.com
+```
+
+仓库内不会写死 team、token 或平台专属配置；是否启用远程缓存由运行环境中的 `TURBO_TOKEN` / `TURBO_TEAM` / `TURBO_API` 决定。
 
 ## Config
 

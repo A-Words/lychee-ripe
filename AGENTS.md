@@ -74,6 +74,7 @@
   - `bun run dev:gateway`
   - `bun run dev:orchard-console`
   - Python 相关根入口默认显式使用 `cpu`；如需切到 CUDA 12.8，统一追加 `-- --target cu128`
+  - `bun run dev` 现在以 `@lychee-ripe/orchard-console` 为入口，再由 Turbo `with` 关系联动带起 `gateway` 与 `inference-api`
 - 分服务直启：
   - Inference API：`cd services/inference-api && uv run --extra cpu python -m uvicorn app.main:app --reload --host 127.0.0.1 --port 8000`
   - Gateway：`go run ./services/gateway/cmd/gateway --config tooling/configs/gateway.yaml`
@@ -115,8 +116,17 @@
   - `bun run test`
   - `bun run test:stack`
   - `LYCHEE_PY_TARGET` 仅参与 Python-backed Turbo task 的缓存键；`cpu` 与 `cu128` 的 `test` / `verify` 结果不得混用，非 Python workspace 继续复用跨 target 缓存
+  - `bun run verify` 会额外执行 `@lychee-ripe/contracts#verify` 与 `@lychee-ripe/python-shared#verify`
 
-### 3.5 容器
+### 3.5 Turbo 约定
+
+- `dev`、`train`、`eval` 默认不缓存；`build`、`test`、`typecheck`、`generate`、`verify` 默认可缓存
+- package 级 `turbo.json` 应优先使用 `$TURBO_DEFAULT$`，再补充根级共享输入，避免漏掉默认文件感知
+- 前端任务应显式声明 `NUXT_PUBLIC_*` 环境变量；Python 任务应显式声明 `LYCHEE_PY_TARGET`
+- `shared/contracts/{constants,schemas}` 与 `shared/python/lychee_common` 的变化必须能触发依赖任务重算
+- 远程缓存接入保持平台中立，通过 `TURBO_TOKEN`、`TURBO_TEAM`、可选 `TURBO_API` 在运行环境中开启，仓库内不写死团队信息
+
+### 3.6 容器
 
 - Compose 入口：`docker-compose.yml`
 - Inference API 构建文件：`tooling/docker/Dockerfile.inference-api`
