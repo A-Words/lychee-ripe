@@ -59,6 +59,8 @@ type WebSessionRepository interface {
 	CreateWebSession(ctx context.Context, session domain.WebSessionRecord) (domain.WebSessionRecord, error)
 	GetWebSession(ctx context.Context, sessionIDHash string, now time.Time) (domain.WebSessionRecord, error)
 	DeleteWebSession(ctx context.Context, sessionIDHash string) error
+	DeleteExpiredSessions(ctx context.Context, now time.Time) (int64, error)
+	DeleteExpiredAuthStates(ctx context.Context, now time.Time) (int64, error)
 }
 
 type OrchardRepository interface {

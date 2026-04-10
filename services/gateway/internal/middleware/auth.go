@@ -322,7 +322,7 @@ func isBatchItemPath(path string) bool {
 	if !strings.HasPrefix(path, prefix) {
 		return false
 	}
-	rest := strings.TrimSpace(strings.TrimPrefix(path, prefix))
+	rest := strings.TrimPrefix(path, prefix)
 	if rest == "" || rest == "reconcile" || strings.Contains(rest, "/") {
 		return false
 	}

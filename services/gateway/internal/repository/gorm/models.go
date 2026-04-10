@@ -125,6 +125,13 @@ type PlotModel struct {
 
 func (PlotModel) TableName() string { return "plots" }
 
+// WebSessionModel stores server-side web sessions.
+// IDToken is kept in plaintext because it is a signed (not encrypted) JWT
+// that only carries public identity claims; it is not a credential. The sole
+// purpose of retaining it is to provide an id_token_hint to the IdP during
+// logout (RP-Initiated Logout). If the deployment threat model requires
+// protecting identity information at rest, consider adding application-level
+// encryption with a server-side key.
 type WebSessionModel struct {
 	ID            uint      `gorm:"primaryKey;autoIncrement"`
 	SessionIDHash string    `gorm:"column:session_id_hash;type:text;not null;uniqueIndex"`

@@ -115,6 +115,10 @@ type WebAuthConfig struct {
 	// token does not carry an explicit expiry (identity.ExpiresAt or
 	// token.ExpiresIn). Defaults to 3600 (1 hour).
 	SessionTTLS int `yaml:"session_ttl_s"`
+	// SessionCleanupIntervalS is the interval in seconds between background
+	// purges of expired web sessions and OIDC auth states. Defaults to 1800
+	// (30 minutes). Set to 0 to use the default.
+	SessionCleanupIntervalS int `yaml:"session_cleanup_interval_s"`
 }
 
 // RateLimitConfig defines token-bucket rate limiting settings.
@@ -280,7 +284,8 @@ func Defaults() Config {
 				CookieName:     "lychee_session",
 				CookieSecure:   false,
 				CookieSameSite: "lax",
-				SessionTTLS:    3600,
+				SessionTTLS:             3600,
+				SessionCleanupIntervalS: 1800,
 			},
 		},
 		RateLimit: RateLimitConfig{

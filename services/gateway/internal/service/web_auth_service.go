@@ -28,6 +28,8 @@ type WebAuthRepository interface {
 	CreateWebSession(ctx context.Context, session domain.WebSessionRecord) (domain.WebSessionRecord, error)
 	GetWebSession(ctx context.Context, sessionIDHash string, now time.Time) (domain.WebSessionRecord, error)
 	DeleteWebSession(ctx context.Context, sessionIDHash string) error
+	DeleteExpiredSessions(ctx context.Context, now time.Time) (int64, error)
+	DeleteExpiredAuthStates(ctx context.Context, now time.Time) (int64, error)
 	GetPrincipalByID(ctx context.Context, userID string) (domain.UserRecord, error)
 	GetUserByOIDCSubject(ctx context.Context, subject string) (domain.UserRecord, error)
 }
@@ -383,6 +385,16 @@ func normalizeLoginErrorCode(errorCode string) string {
 	}
 }
 
+// resolveURLUnderBase joins absolutePath under base while preserving base's
+// existing path prefix. It works by:
+//  1. Stripping the leading "/" from absolutePath to make it a relative
+//     reference (e.g. "/dashboard" → "dashboard").
+//  2. Normalizing base.Path to always end with "/" so that
+//     url.URL.ResolveReference appends rather than replaces the last segment.
+//  3. Clearing RawPath to avoid mismatches after path manipulation.
+//
+// Example: base="https://example.com/console", absolutePath="/admin"
+// → "https://example.com/console/admin"
 func resolveURLUnderBase(base *url.URL, absolutePath string) (*url.URL, error) {
 	if base == nil {
 		return nil, errors.New("base url is required")

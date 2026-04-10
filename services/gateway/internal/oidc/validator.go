@@ -41,6 +41,10 @@ type Validator struct {
 	keys       map[string]*rsa.PublicKey
 	lastSynced time.Time
 	jwksURI    string
+
+	discoveryMu         sync.RWMutex
+	cachedDiscovery     *discoveryDocument
+	discoveryLastSynced time.Time
 }
 
 type Claims struct {
@@ -183,7 +187,35 @@ func (v *Validator) ExchangeAuthorizationCode(ctx context.Context, input Authori
 	return token, nil
 }
 
+// Discover returns the OIDC discovery document, using a cached copy when it is
+// still within the jwksTTL window. On cache miss or expiry it fetches a fresh
+// copy; on fetch failure it falls back to the stale cache when available.
 func (v *Validator) Discover(ctx context.Context) (DiscoveryDocument, error) {
+	v.discoveryMu.RLock()
+	cached := v.cachedDiscovery
+	fresh := cached != nil && time.Since(v.discoveryLastSynced) < jwksTTL
+	v.discoveryMu.RUnlock()
+	if fresh {
+		return *cached, nil
+	}
+
+	doc, err := v.fetchDiscovery(ctx)
+	if err != nil {
+		// Fall back to stale cache when the upstream is temporarily unavailable.
+		if cached != nil {
+			return *cached, nil
+		}
+		return discoveryDocument{}, err
+	}
+
+	v.discoveryMu.Lock()
+	v.cachedDiscovery = &doc
+	v.discoveryLastSynced = time.Now()
+	v.discoveryMu.Unlock()
+	return doc, nil
+}
+
+func (v *Validator) fetchDiscovery(ctx context.Context) (discoveryDocument, error) {
 	req, err := http.NewRequestWithContext(ctx, http.MethodGet, v.issuer+discoveryPath, nil)
 	if err != nil {
 		return discoveryDocument{}, err

@@ -134,6 +134,10 @@ func main() {
 	if cfg.Trace.Mode == domain.TraceModeBlockchain {
 		go reconcileSvc.StartAutoReconcileWorker(appCtx)
 	}
+	if cfg.Auth.Mode == config.AuthModeOIDC {
+		sessionCleanupSvc := service.NewSessionCleanupService(repo, logger, cfg.Auth.Web.SessionCleanupIntervalS)
+		go sessionCleanupSvc.StartWorker(appCtx)
+	}
 
 	// Compose the middleware chain.
 	mux := http.NewServeMux()

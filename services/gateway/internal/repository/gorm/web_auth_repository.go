@@ -95,6 +95,22 @@ func (r *Repository) DeleteWebSession(ctx context.Context, sessionIDHash string)
 	return nil
 }
 
+func (r *Repository) DeleteExpiredSessions(ctx context.Context, now time.Time) (int64, error) {
+	res := r.db.WithContext(ctx).Where("expires_at < ?", normalizeTime(now)).Delete(&WebSessionModel{})
+	if res.Error != nil {
+		return 0, mapGormErr(res.Error)
+	}
+	return res.RowsAffected, nil
+}
+
+func (r *Repository) DeleteExpiredAuthStates(ctx context.Context, now time.Time) (int64, error) {
+	res := r.db.WithContext(ctx).Where("expires_at < ?", normalizeTime(now)).Delete(&WebAuthStateModel{})
+	if res.Error != nil {
+		return 0, mapGormErr(res.Error)
+	}
+	return res.RowsAffected, nil
+}
+
 func webSessionModelFromDomain(session domain.WebSessionRecord) WebSessionModel {
 	return WebSessionModel{
 		SessionIDHash: session.SessionIDHash,

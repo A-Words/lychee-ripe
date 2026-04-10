@@ -617,6 +617,38 @@ func mapGormErr(err error) error {
 	}
 }
 
+func isNotFound(err error) bool {
+	return errors.Is(err, gorm.ErrRecordNotFound)
+}
+
+func isSQLiteBusy(err error) bool {
+	if err == nil {
+		return false
+	}
+	msg := strings.ToLower(err.Error())
+	return strings.Contains(msg, "database is locked") || strings.Contains(msg, "sqlite_busy")
+}
+
+func retrySQLiteBusy(ctx context.Context, fn func() error) error {
+	var lastErr error
+	for attempt := 0; attempt < 5; attempt++ {
+		lastErr = fn()
+		if lastErr == nil {
+			return nil
+		}
+		if !isSQLiteBusy(lastErr) {
+			return lastErr
+		}
+
+		select {
+		case <-ctx.Done():
+			return fmt.Errorf("%w: %v", repository.ErrDBUnavailable, ctx.Err())
+		case <-time.After(time.Duration(attempt+1) * 25 * time.Millisecond):
+		}
+	}
+	return mapGormErr(lastErr)
+}
+
 func isValidBatchStatus(status domain.BatchStatus) bool {
 	switch status {
 	case domain.BatchStatusStored, domain.BatchStatusPendingAnchor, domain.BatchStatusAnchored, domain.BatchStatusAnchorFailed:
