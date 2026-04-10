@@ -2,7 +2,7 @@
   "name": "@lychee-ripe/gateway",
   "private": true,
   "scripts": {
-    "dev": "go run ./cmd/gateway",
+    "dev": "bun ./scripts/go-task.mjs run ./cmd/gateway --config ../../tooling/configs/gateway.yaml",
     "build": "bun ./scripts/go-task.mjs build ./cmd/gateway",
     "test": "bun ./scripts/go-task.mjs test ./...",
     "verify": "bun -e \"process.exit(0)\""
