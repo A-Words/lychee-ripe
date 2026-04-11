@@ -90,8 +90,8 @@ bun run test:stack
 ```sh
 uv run --project services/inference-api --extra cpu python -m uvicorn app.main:app --reload --host 127.0.0.1 --port 8000
 go run ./services/gateway/cmd/gateway --config tooling/configs/gateway.yaml
-bun --cwd clients/orchard-console run dev -- --host 127.0.0.1 --port 3000
-bun --cwd clients/orchard-console run tauri:dev
+bun run --cwd clients/orchard-console dev -- --host 127.0.0.1 --port 3000
+bun run --cwd clients/orchard-console tauri:dev
 ```
 
 Windows 上如果希望避免 `go run` 每次生成临时二进制触发防火墙重复提示，使用：
