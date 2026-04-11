@@ -16,14 +16,16 @@ if (process.env.TURBO_HASH || process.env.TURBO_TASK) {
 }
 
 for (const [index, command] of commands.entries()) {
-  const fullCommand =
-    index === commands.length - 1 && passthrough.length > 0
-      ? `${command} ${passthrough.map(quoteArg).join(' ')}`
-      : command
-  const result = spawnSync(fullCommand, {
+  const argv = parseCommand(command)
+  if (index === commands.length - 1 && passthrough.length > 0) {
+    argv.push(...passthrough)
+  }
+
+  const [file, ...args] = argv
+  const result = spawnSync(file, args, {
     cwd: process.cwd(),
     env: process.env,
-    shell: true,
+    shell: false,
     stdio: 'inherit'
   })
 
@@ -54,9 +56,17 @@ function parseArgs(args) {
   return { commands, passthrough }
 }
 
-function quoteArg(value) {
-  if (/^[A-Za-z0-9_./:=+-]+$/.test(value)) {
-    return value
+function parseCommand(command) {
+  if (/[`"'|&;<>()]/.test(command)) {
+    console.error(`Unsupported verify command: ${command}`)
+    process.exit(1)
   }
-  return `"${value.replaceAll('"', '\\"')}"`
+
+  const argv = command.trim().split(/\s+/).filter(Boolean)
+  if (argv.length === 0) {
+    console.error('Empty verify command.')
+    process.exit(1)
+  }
+
+  return argv
 }

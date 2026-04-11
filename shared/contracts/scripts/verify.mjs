@@ -1,8 +1,9 @@
 import { readFileSync } from 'node:fs'
+import { fileURLToPath } from 'node:url'
 import { resolve } from 'node:path'
 import { parse } from 'yaml'
 
-const workspaceRoot = resolve(import.meta.dir, '..')
+const workspaceRoot = fileURLToPath(new URL('..', import.meta.url))
 const ripenessPath = resolve(workspaceRoot, 'constants', 'ripeness.json')
 const openapiPath = resolve(workspaceRoot, 'schemas', 'openapi.yaml')
 
