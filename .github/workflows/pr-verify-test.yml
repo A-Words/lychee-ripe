@@ -75,7 +75,7 @@ jobs:
         run: |
           set -o pipefail
           bun run --cwd clients/orchard-console test -- \
-            --coverage --coverage.reporter=text --coverage.reporter=json \
+            --coverage --coverage.reporter=text --coverage.reporter=json-summary \
             --coverage.reportsDirectory=../../artifacts/coverage/orchard-console \
             | tee artifacts/logs/orchard-console-test.log
 
