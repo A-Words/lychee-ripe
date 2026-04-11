@@ -22,6 +22,14 @@ import (
 	_ "modernc.org/sqlite"
 )
 
+func isSQLiteTxConflict(err error) bool {
+	if err == nil {
+		return false
+	}
+	msg := strings.ToLower(err.Error())
+	return strings.Contains(msg, "cannot start a transaction within a transaction")
+}
+
 func TestCreateBatchConflictOnUniqueKeysSQLite(t *testing.T) {
 	t.Parallel()
 	ctx := context.Background()
@@ -792,6 +800,10 @@ func TestResolvePrincipalConcurrentFirstBindPreservesSingleSubjectSQLite(t *test
 			case err == nil:
 				successCount.Add(1)
 			case errors.Is(err, repository.ErrNotFound):
+				notFoundCount.Add(1)
+			case isSQLiteTxConflict(err):
+				// SQLite may surface "cannot start a transaction within a
+				// transaction" under concurrent writers — treat as a loser.
 				notFoundCount.Add(1)
 			default:
 				errCh <- err

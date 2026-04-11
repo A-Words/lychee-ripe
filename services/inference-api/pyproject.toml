@@ -33,6 +33,7 @@ cu128 = [
 [dependency-groups]
 dev = [
   "pytest>=9.0.2",
+  "pytest-cov>=6.2.1",
   "httpx>=0.28.1",
 ]
 
