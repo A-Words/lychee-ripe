@@ -28,7 +28,7 @@
 - `mlops/artifacts/`：模型、指标、日志与本地 sqlite 数据
 - `mlops/pretrained/`：预训练权重
 - `tooling/configs/`：配置模板与本地配置
-- `tooling/scripts/`：Turbo、训练、评估与缓存环境脚本
+- `tooling/scripts/`：Turbo、工作区 verify、训练、评估与缓存环境脚本
 - `tooling/docker/`：容器构建文件
 - `tests/stack/`：跨服务 smoke 测试
 
@@ -110,6 +110,7 @@ Gateway 运行语义：
   - `bun run --filter @lychee-ripe/orchard-console generate`
 - `bun run verify` 会额外执行 `@lychee-ripe/contracts#verify` 与 `@lychee-ripe/python-shared#verify`
 - `bun run verify` 还必须校验 `tooling/configs/{model,service,gateway}.yaml.example` 存在
+- 直接执行 `bun run --filter <workspace> verify` 时，各 workspace 通过 `tooling/scripts/workspace-verify.mjs` 运行本包真实校验；根 `bun run verify` 仍由 Turbo 聚合
 - `bun run test:stack` 会自动拉起联调链路并在结束后清理进程
 
 ### 3.5 Turbo 约定
@@ -121,6 +122,7 @@ Gateway 运行语义：
 - Python 任务显式声明 `LYCHEE_PY_TARGET`
 - `shared/contracts` 与 `shared/python/lychee_common` 的变化必须触发依赖任务重算
 - `verify` 是 Turbo 聚合任务，不再依赖包内 shell 串联
+- `bun run dev` 虽然只过滤 `@lychee-ripe/orchard-console`，但会通过 Turbo 的 `with` 关系联动带起 `gateway` 与 `inference-api`
 - 远程缓存保持平台中立，通过 `TURBO_TOKEN`、`TURBO_TEAM`、可选 `TURBO_API` 在环境中开启
 - 工程工具缓存统一收口到根 `.cache/`，当前包括 `go-build`、`uv`、`xdg`、`torchinductor`
 

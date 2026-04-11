@@ -40,9 +40,6 @@
     },
     "shared/contracts": {
       "name": "@lychee-ripe/contracts",
-      "dependencies": {
-        "yaml": "^2.8.1",
-      },
     },
     "shared/python": {
       "name": "@lychee-ripe/python-shared",
