@@ -21,6 +21,7 @@
     "verify": "bun ./tooling/scripts/turbo-task.mjs verify"
   },
   "devDependencies": {
-    "turbo": "^2.9.6"
+    "turbo": "^2.9.6",
+    "yaml": "^2.8.3"
   }
 }

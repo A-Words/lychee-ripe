@@ -6,6 +6,7 @@
       "name": "lychee-ripe",
       "devDependencies": {
         "turbo": "^2.9.6",
+        "yaml": "^2.8.3",
       },
     },
     "clients/orchard-console": {
