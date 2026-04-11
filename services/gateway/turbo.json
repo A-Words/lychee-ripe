@@ -8,7 +8,7 @@
         "$TURBO_ROOT$/shared/contracts/schemas/**",
         "$TURBO_ROOT$/tooling/configs/gateway*.yaml"
       ],
-      "outputs": ["dist/**"]
+      "outputs": ["../../.cache/bin/gateway", "../../.cache/bin/gateway.exe"]
     },
     "dev": {
       "env": [

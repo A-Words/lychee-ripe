@@ -44,6 +44,19 @@ if (command === 'run') {
     env,
     stdio: 'inherit'
   })
+} else if (command === 'build') {
+  const [packagePath, ...buildArgs] = args
+  if (!packagePath) {
+    console.error('Missing package path for go build. Expected a package such as ./cmd/gateway.')
+    process.exit(1)
+  }
+
+  const outputArgs = buildArgs.includes('-o') ? buildArgs : ['-o', gatewayBinary, ...buildArgs]
+  result = spawnSync('go', ['build', ...outputArgs, packagePath], {
+    env,
+    shell: process.platform === 'win32',
+    stdio: 'inherit'
+  })
 } else {
   result = spawnSync('go', [command, ...args], {
     env,

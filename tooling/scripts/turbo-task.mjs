@@ -1,3 +1,4 @@
+import { existsSync } from 'node:fs'
 import { spawnSync } from 'node:child_process'
 import { fileURLToPath } from 'node:url'
 
@@ -16,6 +17,10 @@ const turboBin = fileURLToPath(new URL('../../node_modules/turbo/bin/turbo', imp
 if (!['cpu', 'cu128'].includes(target)) {
   console.error(`Invalid --target '${target}'. Expected cpu|cu128.`)
   process.exit(1)
+}
+
+if (task === 'verify') {
+  verifyConfigExamples()
 }
 
 const result = spawnSync(
@@ -53,4 +58,23 @@ function parseArgs(args) {
   }
 
   return { target, turboArgs }
+}
+
+function verifyConfigExamples() {
+  const requiredFiles = [
+    'tooling/configs/model.yaml.example',
+    'tooling/configs/service.yaml.example',
+    'tooling/configs/gateway.yaml.example'
+  ]
+
+  const missing = requiredFiles.filter((relativePath) =>
+    !existsSync(fileURLToPath(new URL(`../../${relativePath}`, import.meta.url)))
+  )
+
+  if (missing.length > 0) {
+    for (const relativePath of missing) {
+      console.error(`Missing required config example: ${relativePath}`)
+    }
+    process.exit(1)
+  }
 }

@@ -138,6 +138,7 @@ bun run --filter @lychee-ripe/orchard-console generate
 
 `bun run verify` 会额外执行：
 
+- `tooling/configs/{model,service,gateway}.yaml.example` 存在性检查
 - `@lychee-ripe/contracts#verify`
 - `@lychee-ripe/python-shared#verify`
 

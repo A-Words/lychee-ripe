@@ -109,6 +109,7 @@ Gateway 运行语义：
   - `bun run --filter @lychee-ripe/orchard-console test`
   - `bun run --filter @lychee-ripe/orchard-console generate`
 - `bun run verify` 会额外执行 `@lychee-ripe/contracts#verify` 与 `@lychee-ripe/python-shared#verify`
+- `bun run verify` 还必须校验 `tooling/configs/{model,service,gateway}.yaml.example` 存在
 - `bun run test:stack` 会自动拉起联调链路并在结束后清理进程
 
 ### 3.5 Turbo 约定
