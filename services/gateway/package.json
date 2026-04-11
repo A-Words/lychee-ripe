@@ -5,6 +5,6 @@
     "dev": "bun ./scripts/go-task.mjs run ./cmd/gateway",
     "build": "bun ./scripts/go-task.mjs build ./cmd/gateway",
     "test": "bun ./scripts/go-task.mjs test ./...",
-    "verify": "bun -e \"process.exit(0)\""
+    "verify": "bun ../../tooling/scripts/workspace-verify.mjs --command \"bun run test\""
   }
 }
