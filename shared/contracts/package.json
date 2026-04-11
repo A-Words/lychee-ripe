@@ -3,8 +3,5 @@
   "private": true,
   "scripts": {
     "verify": "bun ./scripts/verify.mjs"
-  },
-  "dependencies": {
-    "yaml": "^2.8.1"
   }
 }
