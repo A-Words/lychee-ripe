@@ -1,4 +1,4 @@
-import { mkdirSync, readFileSync, rmSync, writeFileSync } from 'node:fs'
+import { existsSync, mkdirSync, readFileSync, rmSync, writeFileSync } from 'node:fs'
 import { spawn, spawnSync } from 'node:child_process'
 import { isAbsolute, resolve } from 'node:path'
 import { fileURLToPath } from 'node:url'
@@ -11,9 +11,11 @@ const parsed = parseArgs(process.argv.slice(2))
 const target = parsed.target ?? process.env.LYCHEE_PY_TARGET ?? 'cpu'
 const frontendBase = process.env.FRONTEND_BASE ?? 'http://localhost:3000'
 const gatewayBase = process.env.GATEWAY_BASE ?? 'http://127.0.0.1:9000'
+const inferenceBase = 'http://127.0.0.1:8000'
 const timeoutMs = parsed.timeoutMs ?? 120_000
 const frontendEndpoint = parseHttpEndpoint(frontendBase, 'FRONTEND_BASE')
 const gatewayEndpoint = parseHttpEndpoint(gatewayBase, 'GATEWAY_BASE')
+const inferenceEndpoint = parseHttpEndpoint(inferenceBase, 'INFERENCE_BASE')
 const stackCacheDir = fileURLToPath(new URL('../../.cache/test-stack/', import.meta.url))
 const generatedGatewayConfigPath = fileURLToPath(new URL('../../.cache/test-stack/gateway.stack.yaml', import.meta.url))
 
@@ -28,6 +30,7 @@ writeGatewayStackConfig({
   destinationPath: generatedGatewayConfigPath,
   frontendOrigin: frontendEndpoint.origin,
   gatewayOrigin: gatewayEndpoint.origin,
+  upstreamOrigin: inferenceEndpoint.origin,
   gatewayHost: gatewayEndpoint.host,
   gatewayPort: gatewayEndpoint.port
 })
@@ -162,12 +165,34 @@ function parseHttpEndpoint(rawUrl, envName) {
 }
 
 function resolveConfigPath(rawPath) {
+  const defaultConfigPath = fileURLToPath(new URL('../../tooling/configs/gateway.yaml', import.meta.url))
+  const exampleConfigPath = fileURLToPath(new URL('../../tooling/configs/gateway.yaml.example', import.meta.url))
+
   if (!rawPath) {
-    return fileURLToPath(new URL('../../tooling/configs/gateway.yaml', import.meta.url))
+    if (existsSync(defaultConfigPath)) {
+      return defaultConfigPath
+    }
+
+    if (existsSync(exampleConfigPath)) {
+      console.warn(
+        'tooling/configs/gateway.yaml is missing; test:stack is temporarily using tooling/configs/gateway.yaml.example.'
+      )
+      return exampleConfigPath
+    }
+
+    console.error(
+      'Missing tooling/configs/gateway.yaml and tooling/configs/gateway.yaml.example. Restore the example config before running test:stack.'
+    )
+    process.exit(1)
   }
 
   try {
-    return isAbsolute(rawPath) ? rawPath : resolve(repoRoot, rawPath)
+    const resolvedPath = isAbsolute(rawPath) ? rawPath : resolve(repoRoot, rawPath)
+    if (!existsSync(resolvedPath)) {
+      console.error(`LYCHEE_GATEWAY_CONFIG does not exist: ${resolvedPath}`)
+      process.exit(1)
+    }
+    return resolvedPath
   } catch {
     console.error(`Invalid LYCHEE_GATEWAY_CONFIG path: ${rawPath}`)
     process.exit(1)
@@ -179,6 +204,7 @@ function writeGatewayStackConfig({
   destinationPath,
   frontendOrigin,
   gatewayOrigin,
+  upstreamOrigin,
   gatewayHost,
   gatewayPort
 }) {
@@ -210,6 +236,8 @@ function writeGatewayStackConfig({
       output.push(`${indentText}${key}: "${gatewayHost}"`)
     } else if (currentPath === 'server.port') {
       output.push(`${indentText}${key}: ${gatewayPort}`)
+    } else if (currentPath === 'upstream.base_url') {
+      output.push(`${indentText}${key}: "${upstreamOrigin}"`)
     } else if (currentPath === 'auth.web.public_base_url') {
       output.push(`${indentText}${key}: "${gatewayOrigin}"`)
     } else if (currentPath === 'auth.web.app_base_url') {
