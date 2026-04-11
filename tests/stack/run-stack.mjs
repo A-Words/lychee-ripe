@@ -194,17 +194,13 @@ function resolveConfigPath(rawPath) {
     process.exit(1)
   }
 
-  try {
-    const resolvedPath = isAbsolute(rawPath) ? rawPath : resolve(repoRoot, rawPath)
-    if (!existsSync(resolvedPath)) {
-      console.error(`LYCHEE_GATEWAY_CONFIG does not exist: ${resolvedPath}`)
-      process.exit(1)
-    }
-    return resolvedPath
-  } catch {
-    console.error(`Invalid LYCHEE_GATEWAY_CONFIG path: ${rawPath}`)
+  const resolvedPath = isAbsolute(rawPath) ? rawPath : resolve(repoRoot, rawPath)
+  if (!existsSync(resolvedPath)) {
+    console.error(`LYCHEE_GATEWAY_CONFIG does not exist: ${resolvedPath}`)
     process.exit(1)
   }
+
+  return resolvedPath
 }
 
 function writeGatewayStackConfig({
