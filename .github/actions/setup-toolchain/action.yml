@@ -1,0 +1,45 @@
+name: Setup Toolchain
+description: Install Bun, Go, Python, uv and project dependencies
+
+runs:
+  using: composite
+  steps:
+    - name: Setup Bun
+      uses: oven-sh/setup-bun@v2
+      with:
+        bun-version: 1.2.23
+
+    - name: Cache Bun packages
+      uses: actions/cache@v4
+      with:
+        path: ~/.bun/install/cache
+        key: ${{ runner.os }}-bun-${{ hashFiles('bun.lock') }}
+        restore-keys: |
+          ${{ runner.os }}-bun-
+
+    - name: Setup Go
+      uses: actions/setup-go@v5
+      with:
+        go-version-file: go.work
+        cache: true
+        cache-dependency-path: |
+          go.work.sum
+          services/gateway/go.sum
+
+    - name: Setup Python
+      uses: actions/setup-python@v5
+      with:
+        python-version-file: services/inference-api/pyproject.toml
+
+    - name: Setup uv
+      uses: astral-sh/setup-uv@v6
+      with:
+        enable-cache: true
+
+    - name: Install JS dependencies
+      shell: bash
+      run: bun install --frozen-lockfile
+
+    - name: Sync Python dependencies
+      shell: bash
+      run: uv sync --project services/inference-api --extra cpu --frozen
