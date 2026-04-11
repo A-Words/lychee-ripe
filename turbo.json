@@ -1,48 +1,54 @@
 {
-  "$schema": "https://turbo.build/schema.json",
+  "$schema": "https://v2-9-6.turborepo.dev/schema.json",
+  "cacheDir": ".turbo/cache",
+  "envMode": "strict",
+  "futureFlags": {
+    "affectedUsingTaskInputs": true,
+    "filterUsingTasks": true,
+    "watchUsingTaskInputs": true
+  },
+  "globalDependencies": [
+    "package.json",
+    "bun.lock",
+    "turbo.json",
+    "tooling/configs/*.yaml.example",
+    "tooling/configs/gateway.compose.yaml"
+  ],
   "tasks": {
     "build": {
-      "dependsOn": [
-        "^build"
-      ],
-      "outputs": [
-        ".output/**",
-        "dist/**"
-      ]
+      "dependsOn": ["^build"],
+      "outputs": [".output/**", "dist/**"],
+      "outputLogs": "new-only"
     },
     "dev": {
       "cache": false,
-      "persistent": true
+      "interruptible": true,
+      "persistent": true,
+      "outputLogs": "new-only"
     },
     "eval": {
-      "cache": false
+      "cache": false,
+      "outputLogs": "new-only"
     },
     "generate": {
-      "dependsOn": [
-        "^build"
-      ],
-      "outputs": [
-        ".output/**",
-        "dist/**"
-      ]
+      "outputs": [".output/**"],
+      "outputLogs": "new-only"
     },
     "test": {
-      "dependsOn": [
-        "^test"
-      ],
-      "outputs": []
+      "outputs": [],
+      "outputLogs": "new-only"
+    },
+    "train": {
+      "cache": false,
+      "outputLogs": "new-only"
     },
     "typecheck": {
-      "dependsOn": [
-        "^typecheck"
-      ],
-      "outputs": []
+      "outputs": [],
+      "outputLogs": "new-only"
     },
     "verify": {
-      "dependsOn": [
-        "^verify"
-      ],
-      "outputs": []
+      "outputs": [],
+      "outputLogs": "new-only"
     }
   }
 }

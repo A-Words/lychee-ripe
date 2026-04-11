@@ -12,6 +12,7 @@ param(
 
 Set-StrictMode -Version Latest
 $ErrorActionPreference = "Stop"
+. (Join-Path $PSScriptRoot "cache-env.ps1")
 
 $modelPath = Join-Path "mlops/artifacts/models" "$Exp/weights/best.pt"
 if (-not (Test-Path $modelPath)) {

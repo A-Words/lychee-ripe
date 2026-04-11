@@ -1,0 +1,88 @@
+{
+  "extends": ["//"],
+  "tasks": {
+    "build": {
+      "dependsOn": ["typecheck", "test"],
+      "env": [
+        "NUXT_PUBLIC_GATEWAY_BASE",
+        "NUXT_PUBLIC_AUTH_MODE",
+        "NUXT_PUBLIC_OIDC_ISSUER_URL",
+        "NUXT_PUBLIC_OIDC_TAURI_CLIENT_ID",
+        "NUXT_PUBLIC_OIDC_SCOPE"
+      ],
+      "inputs": [
+        "$TURBO_DEFAULT$",
+        "$TURBO_ROOT$/shared/contracts/constants/**",
+        "$TURBO_ROOT$/shared/contracts/schemas/**"
+      ],
+      "outputs": [".output/**"]
+    },
+    "dev": {
+      "env": [
+        "NUXT_PUBLIC_GATEWAY_BASE",
+        "NUXT_PUBLIC_AUTH_MODE",
+        "NUXT_PUBLIC_OIDC_ISSUER_URL",
+        "NUXT_PUBLIC_OIDC_TAURI_CLIENT_ID",
+        "NUXT_PUBLIC_OIDC_SCOPE"
+      ],
+      "inputs": [
+        "$TURBO_DEFAULT$",
+        "$TURBO_ROOT$/shared/contracts/constants/**",
+        "$TURBO_ROOT$/shared/contracts/schemas/**"
+      ],
+      "with": ["@lychee-ripe/gateway#dev", "@lychee-ripe/inference-api#dev"]
+    },
+    "generate": {
+      "dependsOn": ["typecheck", "test"],
+      "env": [
+        "NUXT_PUBLIC_GATEWAY_BASE",
+        "NUXT_PUBLIC_AUTH_MODE",
+        "NUXT_PUBLIC_OIDC_ISSUER_URL",
+        "NUXT_PUBLIC_OIDC_TAURI_CLIENT_ID",
+        "NUXT_PUBLIC_OIDC_SCOPE"
+      ],
+      "inputs": [
+        "$TURBO_DEFAULT$",
+        "$TURBO_ROOT$/shared/contracts/constants/**",
+        "$TURBO_ROOT$/shared/contracts/schemas/**"
+      ],
+      "outputs": [".output/**"]
+    },
+    "test": {
+      "env": [
+        "NUXT_PUBLIC_GATEWAY_BASE",
+        "NUXT_PUBLIC_AUTH_MODE",
+        "NUXT_PUBLIC_OIDC_ISSUER_URL",
+        "NUXT_PUBLIC_OIDC_TAURI_CLIENT_ID",
+        "NUXT_PUBLIC_OIDC_SCOPE"
+      ],
+      "inputs": [
+        "$TURBO_DEFAULT$",
+        "$TURBO_ROOT$/shared/contracts/constants/**",
+        "$TURBO_ROOT$/shared/contracts/schemas/**"
+      ]
+    },
+    "typecheck": {
+      "env": [
+        "NUXT_PUBLIC_GATEWAY_BASE",
+        "NUXT_PUBLIC_AUTH_MODE",
+        "NUXT_PUBLIC_OIDC_ISSUER_URL",
+        "NUXT_PUBLIC_OIDC_TAURI_CLIENT_ID",
+        "NUXT_PUBLIC_OIDC_SCOPE"
+      ],
+      "inputs": [
+        "$TURBO_DEFAULT$",
+        "$TURBO_ROOT$/shared/contracts/constants/**",
+        "$TURBO_ROOT$/shared/contracts/schemas/**"
+      ]
+    },
+    "verify": {
+      "dependsOn": ["typecheck", "test", "generate"],
+      "inputs": [
+        "$TURBO_DEFAULT$",
+        "$TURBO_ROOT$/shared/contracts/constants/**",
+        "$TURBO_ROOT$/shared/contracts/schemas/**"
+      ]
+    }
+  }
+}

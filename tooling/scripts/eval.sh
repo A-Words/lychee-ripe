@@ -1,6 +1,8 @@
 #!/usr/bin/env sh
 set -eu
 
+. "$(CDPATH= cd -- "$(dirname -- "$0")" && pwd)/cache-env.sh"
+
 DATA=""
 EXP="lychee_v1"
 IMGSZ="640"

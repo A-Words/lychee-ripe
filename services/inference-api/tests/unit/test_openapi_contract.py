@@ -79,7 +79,7 @@ def test_create_batch_response_codes_and_security() -> None:
     responses = operation["responses"]
 
     assert {"201", "202", "409"}.issubset(set(responses.keys()))
-    assert operation["security"] == [{"ApiKeyAuth": []}]
+    assert operation["security"] == [{"CookieAuth": []}, {"BearerAuth": []}]
 
 
 def test_trace_endpoint_is_public() -> None:
@@ -88,7 +88,7 @@ def test_trace_endpoint_is_public() -> None:
     assert operation["security"] == []
 
 
-def test_write_endpoints_declare_apikey_auth() -> None:
+def test_write_endpoints_declare_session_or_bearer_auth() -> None:
     doc = _load_openapi()
     secure_ops = [
         doc["paths"]["/v1/batches"]["post"],
@@ -97,7 +97,7 @@ def test_write_endpoints_declare_apikey_auth() -> None:
         doc["paths"]["/v1/batches/reconcile"]["post"],
     ]
     for op in secure_ops:
-        assert {"ApiKeyAuth": []} in op["security"]
+        assert op["security"] == [{"CookieAuth": []}, {"BearerAuth": []}]
 
 
 def test_batch_summary_contains_unripe_fields() -> None:
@@ -119,7 +119,7 @@ def test_unripe_handling_enum_is_frozen() -> None:
 def test_verify_status_enum_values() -> None:
     doc = _load_openapi()
     enum_values = doc["components"]["schemas"]["VerifyStatus"]["enum"]
-    assert enum_values == ["pass", "fail", "pending"]
+    assert enum_values == ["pass", "fail", "pending", "recorded"]
 
 
 def test_prd_field_names_match_contract() -> None:
@@ -144,4 +144,4 @@ def test_prd_field_names_match_contract() -> None:
     assert "unripe_count" in summary_props
     assert "unripe_ratio" in summary_props
     assert "unripe_handling" in summary_props
-    assert verify_enum == ["pass", "fail", "pending"]
+    assert verify_enum == ["pass", "fail", "pending", "recorded"]

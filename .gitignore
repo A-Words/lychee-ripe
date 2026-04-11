@@ -14,6 +14,7 @@ logs/
 *.onnx
 *.pt
 .idea/
+.cache/
 .turbo/
 node_modules/
 mlops/data/

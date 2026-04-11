@@ -1,0 +1,7 @@
+{
+  "name": "@lychee-ripe/python-shared",
+  "private": true,
+  "scripts": {
+    "verify": "python ./scripts/verify.py"
+  }
+}

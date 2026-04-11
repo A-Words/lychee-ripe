@@ -79,13 +79,14 @@
 
 1. 展示实时识别与成熟度汇总。
 2. 支持录入果园、地块、采摘时间、备注。
-3. 提交后返回批次信息、`trace_code`、`trace_mode`、`status`。
-4. 文案要求：
+3. 当未熟果比例超过阈值时，提交请求必须显式携带 `confirm_unripe=true` 才允许建批。
+4. 提交后返回批次信息、`trace_code`、`trace_mode`、`status`。
+5. 文案要求：
    - `database + stored`：`已入库` / `数据库存证`
    - `blockchain + anchored`：`上链成功`
    - `blockchain + pending_anchor`：`已保存待补链`
    - `blockchain + anchor_failed`：`补链失败`
-5. 仅在存在链上 proof 时展示链交易信息。
+6. 仅在存在链上 proof 时展示链交易信息。
 
 ### 5.2 公开查询页 `/trace` 与 `/trace/{trace_code}`
 
@@ -120,9 +121,18 @@
 | trace_code | string | 对外溯源码 |
 | trace_mode | enum | `database \| blockchain` |
 | status | enum | `stored \| pending_anchor \| anchored \| anchor_failed` |
-| summary | object | 成熟度汇总 |
+| summary | object | 成熟度汇总，至少包含 `unripe_count`、`unripe_ratio`、`unripe_handling` |
 | created_at | string(date-time) | 创建时间 |
 | anchor_proof | AnchorProof/null | 仅链模式且有锚定证明时返回 |
+
+#### `BatchCreateRequest`
+
+| 字段 | 类型 | 说明 |
+| --- | --- | --- |
+| summary | object | 建批输入汇总，按识别结果填写 |
+| confirm_unripe | boolean | 当 `summary` 计算出的未熟果比例超过阈值时必须为 `true` |
+
+字段路径约束：`summary.unripe_count`、`summary.unripe_ratio`、`summary.unripe_handling` 必须作为批次聚合摘要对外返回。
 
 #### `AnchorProof`
 

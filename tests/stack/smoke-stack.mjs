@@ -1,5 +1,5 @@
-const frontendBase = process.env.FRONTEND_BASE ?? 'http://127.0.0.1:3000'
-const gatewayBase = process.env.GATEWAY_BASE ?? 'http://127.0.0.1:9000'
+const defaultFrontendBase = process.env.FRONTEND_BASE ?? 'http://localhost:3000'
+const defaultGatewayBase = process.env.GATEWAY_BASE ?? 'http://127.0.0.1:9000'
 
 async function assertOk(url, expectedType) {
   const response = await fetch(url)
@@ -13,8 +13,16 @@ async function assertOk(url, expectedType) {
   }
 }
 
-await assertOk(`${frontendBase}/`, 'text/html')
-await assertOk(`${gatewayBase}/healthz`, 'application/json')
-await assertOk(`${gatewayBase}/v1/health`, 'application/json')
+export async function runStackSmoke({
+  frontendBase = defaultFrontendBase,
+  gatewayBase = defaultGatewayBase
+} = {}) {
+  await assertOk(`${frontendBase}/`, 'text/html')
+  await assertOk(`${gatewayBase}/healthz`, 'application/json')
+  await assertOk(`${gatewayBase}/v1/health`, 'application/json')
+}
 
-console.log('Stack smoke passed for frontend -> gateway -> api URLs.')
+if (import.meta.main) {
+  await runStackSmoke()
+  console.log('Stack smoke passed for frontend -> gateway -> api URLs.')
+}

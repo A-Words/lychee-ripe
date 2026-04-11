@@ -2,13 +2,47 @@
   "extends": ["//"],
   "tasks": {
     "dev": {
-      "env": ["LYCHEE_PY_TARGET"]
+      "env": ["LYCHEE_PY_TARGET", "LYCHEE_MODEL_CONFIG", "LYCHEE_SERVICE_CONFIG"],
+      "inputs": [
+        "$TURBO_DEFAULT$",
+        "$TURBO_ROOT$/shared/contracts/constants/**",
+        "$TURBO_ROOT$/shared/contracts/schemas/**",
+        "$TURBO_ROOT$/shared/python/lychee_common/**",
+        "$TURBO_ROOT$/shared/python/pyproject.toml",
+        "$TURBO_ROOT$/tooling/configs/model.yaml",
+        "$TURBO_ROOT$/tooling/configs/model.yaml.example",
+        "$TURBO_ROOT$/tooling/configs/service.yaml",
+        "$TURBO_ROOT$/tooling/configs/service.yaml.example"
+      ]
     },
     "test": {
-      "env": ["LYCHEE_PY_TARGET"]
+      "env": ["LYCHEE_PY_TARGET", "LYCHEE_MODEL_CONFIG", "LYCHEE_SERVICE_CONFIG"],
+      "inputs": [
+        "$TURBO_DEFAULT$",
+        "$TURBO_ROOT$/shared/contracts/constants/**",
+        "$TURBO_ROOT$/shared/contracts/schemas/**",
+        "$TURBO_ROOT$/shared/python/lychee_common/**",
+        "$TURBO_ROOT$/shared/python/pyproject.toml",
+        "$TURBO_ROOT$/tooling/configs/model.yaml",
+        "$TURBO_ROOT$/tooling/configs/model.yaml.example",
+        "$TURBO_ROOT$/tooling/configs/service.yaml",
+        "$TURBO_ROOT$/tooling/configs/service.yaml.example"
+      ]
     },
     "verify": {
-      "env": ["LYCHEE_PY_TARGET"]
+      "dependsOn": ["test"],
+      "env": ["LYCHEE_PY_TARGET", "LYCHEE_MODEL_CONFIG", "LYCHEE_SERVICE_CONFIG"],
+      "inputs": [
+        "$TURBO_DEFAULT$",
+        "$TURBO_ROOT$/shared/contracts/constants/**",
+        "$TURBO_ROOT$/shared/contracts/schemas/**",
+        "$TURBO_ROOT$/shared/python/lychee_common/**",
+        "$TURBO_ROOT$/shared/python/pyproject.toml",
+        "$TURBO_ROOT$/tooling/configs/model.yaml",
+        "$TURBO_ROOT$/tooling/configs/model.yaml.example",
+        "$TURBO_ROOT$/tooling/configs/service.yaml",
+        "$TURBO_ROOT$/tooling/configs/service.yaml.example"
+      ]
     }
   }
 }

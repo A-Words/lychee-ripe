@@ -1,0 +1,90 @@
+{
+  "extends": ["//"],
+  "tasks": {
+    "build": {
+      "inputs": [
+        "$TURBO_DEFAULT$",
+        "$TURBO_ROOT$/shared/contracts/constants/**",
+        "$TURBO_ROOT$/shared/contracts/schemas/**",
+        "$TURBO_ROOT$/tooling/configs/gateway*.yaml"
+      ],
+      "outputs": ["../../.cache/bin/gateway", "../../.cache/bin/gateway.exe"]
+    },
+    "dev": {
+      "env": [
+        "LYCHEE_GATEWAY_CONFIG",
+        "LYCHEE_AUTH_MODE",
+        "LYCHEE_AUTH_OIDC_ISSUER_URL",
+        "LYCHEE_AUTH_OIDC_AUDIENCE",
+        "LYCHEE_AUTH_OIDC_WEB_CLIENT_ID",
+        "LYCHEE_AUTH_BOOTSTRAP_ADMIN_EMAIL",
+        "LYCHEE_AUTH_WEB_PUBLIC_BASE_URL",
+        "LYCHEE_AUTH_WEB_APP_BASE_URL",
+        "LYCHEE_AUTH_WEB_COOKIE_NAME",
+        "LYCHEE_AUTH_WEB_COOKIE_SECURE",
+        "LYCHEE_AUTH_WEB_COOKIE_SAME_SITE",
+        "LYCHEE_AUTH_WEB_SESSION_TTL_S",
+        "LYCHEE_SEED_DEFAULT_RESOURCES_ENABLED",
+        "LYCHEE_CORS_ALLOW_CREDENTIALS",
+        "LYCHEE_GATEWAY_TEST_PG_DSN"
+      ],
+      "inputs": [
+        "$TURBO_DEFAULT$",
+        "$TURBO_ROOT$/shared/contracts/constants/**",
+        "$TURBO_ROOT$/shared/contracts/schemas/**",
+        "$TURBO_ROOT$/tooling/configs/gateway*.yaml"
+      ]
+    },
+    "test": {
+      "env": [
+        "LYCHEE_GATEWAY_CONFIG",
+        "LYCHEE_AUTH_MODE",
+        "LYCHEE_AUTH_OIDC_ISSUER_URL",
+        "LYCHEE_AUTH_OIDC_AUDIENCE",
+        "LYCHEE_AUTH_OIDC_WEB_CLIENT_ID",
+        "LYCHEE_AUTH_BOOTSTRAP_ADMIN_EMAIL",
+        "LYCHEE_AUTH_WEB_PUBLIC_BASE_URL",
+        "LYCHEE_AUTH_WEB_APP_BASE_URL",
+        "LYCHEE_AUTH_WEB_COOKIE_NAME",
+        "LYCHEE_AUTH_WEB_COOKIE_SECURE",
+        "LYCHEE_AUTH_WEB_COOKIE_SAME_SITE",
+        "LYCHEE_AUTH_WEB_SESSION_TTL_S",
+        "LYCHEE_SEED_DEFAULT_RESOURCES_ENABLED",
+        "LYCHEE_CORS_ALLOW_CREDENTIALS",
+        "LYCHEE_GATEWAY_TEST_PG_DSN"
+      ],
+      "inputs": [
+        "$TURBO_DEFAULT$",
+        "$TURBO_ROOT$/shared/contracts/constants/**",
+        "$TURBO_ROOT$/shared/contracts/schemas/**",
+        "$TURBO_ROOT$/tooling/configs/gateway*.yaml"
+      ]
+    },
+    "verify": {
+      "dependsOn": ["test"],
+      "env": [
+        "LYCHEE_GATEWAY_CONFIG",
+        "LYCHEE_AUTH_MODE",
+        "LYCHEE_AUTH_OIDC_ISSUER_URL",
+        "LYCHEE_AUTH_OIDC_AUDIENCE",
+        "LYCHEE_AUTH_OIDC_WEB_CLIENT_ID",
+        "LYCHEE_AUTH_BOOTSTRAP_ADMIN_EMAIL",
+        "LYCHEE_AUTH_WEB_PUBLIC_BASE_URL",
+        "LYCHEE_AUTH_WEB_APP_BASE_URL",
+        "LYCHEE_AUTH_WEB_COOKIE_NAME",
+        "LYCHEE_AUTH_WEB_COOKIE_SECURE",
+        "LYCHEE_AUTH_WEB_COOKIE_SAME_SITE",
+        "LYCHEE_AUTH_WEB_SESSION_TTL_S",
+        "LYCHEE_SEED_DEFAULT_RESOURCES_ENABLED",
+        "LYCHEE_CORS_ALLOW_CREDENTIALS",
+        "LYCHEE_GATEWAY_TEST_PG_DSN"
+      ],
+      "inputs": [
+        "$TURBO_DEFAULT$",
+        "$TURBO_ROOT$/shared/contracts/constants/**",
+        "$TURBO_ROOT$/shared/contracts/schemas/**",
+        "$TURBO_ROOT$/tooling/configs/gateway*.yaml"
+      ]
+    }
+  }
+}

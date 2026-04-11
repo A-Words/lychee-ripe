@@ -2,9 +2,9 @@
   "name": "@lychee-ripe/gateway",
   "private": true,
   "scripts": {
-    "dev": "go run ./cmd/gateway",
+    "dev": "bun ./scripts/go-task.mjs run ./cmd/gateway",
     "build": "bun ./scripts/go-task.mjs build ./cmd/gateway",
     "test": "bun ./scripts/go-task.mjs test ./...",
-    "verify": "bun ./scripts/go-task.mjs test ./..."
+    "verify": "bun ../../tooling/scripts/workspace-verify.mjs --command \"bun run test\""
   }
 }

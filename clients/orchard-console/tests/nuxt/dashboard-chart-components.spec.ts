@@ -20,7 +20,7 @@ describe('dashboard chart components', () => {
       }
     })
 
-    const chartWrapper = wrapper.findAll('div').find((candidate) =>
+    const chartWrapper = wrapper.findAll('div').find((candidate: { classes(): string[] }) =>
       candidate.classes().includes('h-72') && candidate.classes().includes('w-full')
     )
     const chart = wrapper.get('[data-stub="VChart"]')
@@ -48,7 +48,7 @@ describe('dashboard chart components', () => {
       }
     })
 
-    const chartWrapper = wrapper.findAll('div').find((candidate) =>
+    const chartWrapper = wrapper.findAll('div').find((candidate: { classes(): string[] }) =>
       candidate.classes().includes('h-72') && candidate.classes().includes('w-full')
     )
     const chart = wrapper.get('[data-stub="VChart"]')
