@@ -70,8 +70,17 @@ explicit = true
 
 [tool.pytest.ini_options]
 pythonpath = ["."]
-addopts = "-q"
+addopts = "-q --cov=app --cov-report=term-missing --cov-report=xml:../../.cache/pytest/inference-api-coverage.xml"
 testpaths = ["tests"]
 markers = [
   "perf: performance tests"
+]
+
+[tool.coverage.run]
+source = ["app"]
+relative_files = true
+
+[tool.coverage.report]
+omit = [
+  "tests/*"
 ]

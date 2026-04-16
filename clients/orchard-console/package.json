@@ -9,7 +9,8 @@
     "preview": "nuxt preview",
     "typecheck": "nuxt typecheck",
     "test": "vitest run",
-    "verify": "bun ../../tooling/scripts/workspace-verify.mjs --command \"bun run typecheck\" --command \"bun run test\" --command \"bun run generate\"",
+    "test:coverage": "vitest run --coverage",
+    "verify": "bun ../../tooling/scripts/workspace-verify.mjs --command \"bun run typecheck\" --command \"bun run test:coverage\" --command \"bun run generate\"",
     "tauri:dev": "tauri dev",
     "tauri:build": "tauri build",
     "postinstall": "nuxt prepare"

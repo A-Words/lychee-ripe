@@ -33,7 +33,7 @@
       "with": ["@lychee-ripe/gateway#dev", "@lychee-ripe/inference-api#dev"]
     },
     "generate": {
-      "dependsOn": ["typecheck", "test"],
+      "dependsOn": ["typecheck"],
       "env": [
         "NUXT_PUBLIC_GATEWAY_BASE",
         "NUXT_PUBLIC_AUTH_MODE",
@@ -62,6 +62,20 @@
         "$TURBO_ROOT$/shared/contracts/schemas/**"
       ]
     },
+    "test:coverage": {
+      "env": [
+        "NUXT_PUBLIC_GATEWAY_BASE",
+        "NUXT_PUBLIC_AUTH_MODE",
+        "NUXT_PUBLIC_OIDC_ISSUER_URL",
+        "NUXT_PUBLIC_OIDC_TAURI_CLIENT_ID",
+        "NUXT_PUBLIC_OIDC_SCOPE"
+      ],
+      "inputs": [
+        "$TURBO_DEFAULT$",
+        "$TURBO_ROOT$/shared/contracts/constants/**",
+        "$TURBO_ROOT$/shared/contracts/schemas/**"
+      ]
+    },
     "typecheck": {
       "env": [
         "NUXT_PUBLIC_GATEWAY_BASE",
@@ -77,7 +91,7 @@
       ]
     },
     "verify": {
-      "dependsOn": ["typecheck", "test", "generate"],
+      "dependsOn": ["typecheck", "test:coverage", "generate"],
       "inputs": [
         "$TURBO_DEFAULT$",
         "$TURBO_ROOT$/shared/contracts/constants/**",

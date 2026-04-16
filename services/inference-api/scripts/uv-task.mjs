@@ -20,11 +20,12 @@ if (!['cpu', 'cu128'].includes(target)) {
 const serviceDir = fileURLToPath(new URL('../', import.meta.url))
 const repoRoot = fileURLToPath(new URL('../../../', import.meta.url))
 const cacheRoot = fileURLToPath(new URL('../../../.cache/', import.meta.url))
+const pytestCacheDir = fileURLToPath(new URL('../../../.cache/pytest', import.meta.url))
 const uvCacheDir = fileURLToPath(new URL('../../../.cache/uv', import.meta.url))
 const xdgCacheHome = fileURLToPath(new URL('../../../.cache/xdg', import.meta.url))
 const torchInductorCacheDir = fileURLToPath(new URL('../../../.cache/torchinductor', import.meta.url))
 
-for (const path of [cacheRoot, uvCacheDir, xdgCacheHome, torchInductorCacheDir]) {
+for (const path of [cacheRoot, pytestCacheDir, uvCacheDir, xdgCacheHome, torchInductorCacheDir]) {
   mkdirSync(path, { recursive: true })
 }
 

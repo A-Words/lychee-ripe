@@ -29,6 +29,12 @@ export default defineConfig({
     alias
   },
   test: {
+    coverage: {
+      provider: 'v8',
+      reporter: ['text', 'lcov'],
+      include: ['app/**/*.{ts,vue}'],
+      reportsDirectory: './coverage'
+    },
     projects: [
       {
         resolve: {

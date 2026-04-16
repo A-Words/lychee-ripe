@@ -38,6 +38,10 @@
       "outputs": [],
       "outputLogs": "new-only"
     },
+    "test:coverage": {
+      "outputs": [],
+      "outputLogs": "new-only"
+    },
     "train": {
       "cache": false,
       "outputLogs": "new-only"
