@@ -16,6 +16,7 @@ import (
 	"github.com/lychee-ripe/gateway/internal/config"
 	"github.com/lychee-ripe/gateway/internal/domain"
 	"github.com/lychee-ripe/gateway/internal/repository"
+	"github.com/lychee-ripe/gateway/internal/testutil"
 	gormpostgres "gorm.io/driver/postgres"
 	gormsqlite "gorm.io/driver/sqlite"
 	"gorm.io/gorm"
@@ -196,14 +197,7 @@ func TestListPendingBatchesAndPersistenceAfterRestartSQLite(t *testing.T) {
 	ctx := context.Background()
 	dbPath := filepath.Join(t.TempDir(), "gateway.db")
 
-	repo, sqlDB := mustNewRepoWithConfig(t, config.DBConfig{
-		Driver:           "sqlite",
-		DSN:              dbPath,
-		MaxOpenConns:     10,
-		MaxIdleConns:     5,
-		ConnMaxLifetimeS: 300,
-		SQLite:           config.SQLiteDBConfig{JournalMode: "WAL", BusyTimeoutMS: 5000},
-	})
+	repo, sqlDB := mustNewRepoWithConfig(t, testutil.SQLiteDBConfig(dbPath))
 	_, err := repo.CreateBatch(ctx, sampleCreateBatchParams("batch-3", "trace-3"))
 	if err != nil {
 		t.Fatalf("create batch-3: %v", err)
@@ -227,14 +221,7 @@ func TestListPendingBatchesAndPersistenceAfterRestartSQLite(t *testing.T) {
 		t.Fatalf("close db: %v", err)
 	}
 
-	reopenedRepo, reopenedSQLDB := mustNewRepoWithConfig(t, config.DBConfig{
-		Driver:           "sqlite",
-		DSN:              dbPath,
-		MaxOpenConns:     10,
-		MaxIdleConns:     5,
-		ConnMaxLifetimeS: 300,
-		SQLite:           config.SQLiteDBConfig{JournalMode: "WAL", BusyTimeoutMS: 5000},
-	})
+	reopenedRepo, reopenedSQLDB := mustNewRepoWithConfig(t, testutil.SQLiteDBConfig(dbPath))
 	defer reopenedSQLDB.Close()
 	reopened, err := reopenedRepo.GetBatchByID(ctx, "batch-3", domain.TraceModeBlockchain)
 	if err != nil {
@@ -746,17 +733,7 @@ func TestResolvePrincipalConcurrentFirstBindPreservesSingleSubjectSQLite(t *test
 
 	ctx := context.Background()
 	dbPath := filepath.Join(t.TempDir(), "gateway-resolve-principal.db")
-	cfg := config.DBConfig{
-		Driver:           "sqlite",
-		DSN:              dbPath,
-		MaxOpenConns:     10,
-		MaxIdleConns:     5,
-		ConnMaxLifetimeS: 300,
-		SQLite: config.SQLiteDBConfig{
-			JournalMode:   "WAL",
-			BusyTimeoutMS: 5000,
-		},
-	}
+	cfg := testutil.SQLiteDBConfig(dbPath)
 	repoA, sqlDBA := mustNewRepoWithConfig(t, cfg)
 	defer sqlDBA.Close()
 	repoB, sqlDBB := mustNewRepoWithConfig(t, cfg)
@@ -1051,17 +1028,7 @@ func TestUpdateUserConcurrentDemotionsPreserveActiveAdmin(t *testing.T) {
 
 	ctx := context.Background()
 	dbPath := filepath.Join(t.TempDir(), "gateway-users.db")
-	cfg := config.DBConfig{
-		Driver:           "sqlite",
-		DSN:              dbPath,
-		MaxOpenConns:     10,
-		MaxIdleConns:     5,
-		ConnMaxLifetimeS: 300,
-		SQLite: config.SQLiteDBConfig{
-			JournalMode:   "WAL",
-			BusyTimeoutMS: 5000,
-		},
-	}
+	cfg := testutil.SQLiteDBConfig(dbPath)
 	repoA, sqlDBA := mustNewRepoWithConfig(t, cfg)
 	defer sqlDBA.Close()
 	repoB, sqlDBB := mustNewRepoWithConfig(t, cfg)
@@ -1274,17 +1241,7 @@ func TestArchiveOrchardAndCreatePlotGuardedConcurrentPreserveInvariantSQLite(t *
 
 	ctx := context.Background()
 	dbPath := filepath.Join(t.TempDir(), "gateway-orchards.db")
-	cfg := config.DBConfig{
-		Driver:           "sqlite",
-		DSN:              dbPath,
-		MaxOpenConns:     10,
-		MaxIdleConns:     5,
-		ConnMaxLifetimeS: 300,
-		SQLite: config.SQLiteDBConfig{
-			JournalMode:   "WAL",
-			BusyTimeoutMS: 5000,
-		},
-	}
+	cfg := testutil.SQLiteDBConfig(dbPath)
 	repoA, sqlDBA := mustNewRepoWithConfig(t, cfg)
 	defer sqlDBA.Close()
 	repoB, sqlDBB := mustNewRepoWithConfig(t, cfg)
@@ -1357,17 +1314,7 @@ func TestArchiveOrchardAndUpdatePlotGuardedConcurrentPreserveInvariantSQLite(t *
 
 	ctx := context.Background()
 	dbPath := filepath.Join(t.TempDir(), "gateway-orchards-move.db")
-	cfg := config.DBConfig{
-		Driver:           "sqlite",
-		DSN:              dbPath,
-		MaxOpenConns:     10,
-		MaxIdleConns:     5,
-		ConnMaxLifetimeS: 300,
-		SQLite: config.SQLiteDBConfig{
-			JournalMode:   "WAL",
-			BusyTimeoutMS: 5000,
-		},
-	}
+	cfg := testutil.SQLiteDBConfig(dbPath)
 	repoA, sqlDBA := mustNewRepoWithConfig(t, cfg)
 	defer sqlDBA.Close()
 	repoB, sqlDBB := mustNewRepoWithConfig(t, cfg)
@@ -1477,17 +1424,7 @@ func assertNoArchivedOrchardWithActivePlots(t *testing.T, repo *Repository, orch
 
 func mustNewSQLiteRepo(t *testing.T) (*Repository, *sql.DB) {
 	t.Helper()
-	cfg := config.DBConfig{
-		Driver:           "sqlite",
-		DSN:              filepath.Join(t.TempDir(), "gateway.db"),
-		MaxOpenConns:     10,
-		MaxIdleConns:     5,
-		ConnMaxLifetimeS: 300,
-		SQLite: config.SQLiteDBConfig{
-			JournalMode:   "WAL",
-			BusyTimeoutMS: 5000,
-		},
-	}
+	cfg := testutil.TempSQLiteDBConfig(t, "gateway.db")
 	return mustNewRepoWithConfig(t, cfg)
 }
 

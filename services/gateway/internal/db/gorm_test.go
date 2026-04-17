@@ -4,29 +4,19 @@ import (
 	"context"
 	"fmt"
 	"os"
-	"path/filepath"
 	"strings"
 	"testing"
 	"time"
 
 	"github.com/lychee-ripe/gateway/internal/config"
+	"github.com/lychee-ripe/gateway/internal/testutil"
 )
 
 func TestOpenGORMAndAutoMigrateSQLite(t *testing.T) {
 	t.Parallel()
 
 	ctx := context.Background()
-	cfg := config.DBConfig{
-		Driver:           "sqlite",
-		DSN:              filepath.Join(t.TempDir(), "gateway.db"),
-		MaxOpenConns:     10,
-		MaxIdleConns:     5,
-		ConnMaxLifetimeS: 300,
-		SQLite: config.SQLiteDBConfig{
-			JournalMode:   "WAL",
-			BusyTimeoutMS: 5000,
-		},
-	}
+	cfg := testutil.TempSQLiteDBConfig(t, "gateway.db")
 
 	gdb, err := OpenGORM(ctx, cfg)
 	if err != nil {
