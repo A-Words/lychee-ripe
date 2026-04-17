@@ -27,11 +27,9 @@ jobs:
       - name: Setup toolchain
         uses: ./.github/actions/setup-toolchain
 
-      - name: Prepare CI artifacts directory
-        run: mkdir -p artifacts/logs
-
       - name: Run verify
         run: |
+          mkdir -p artifacts/logs
           set -o pipefail
           bun run verify | tee artifacts/logs/verify.log
 
@@ -40,5 +38,9 @@ jobs:
         uses: actions/upload-artifact@v7
         with:
           name: verify-artifacts
-          path: artifacts/logs/verify.log
+          path: |
+            artifacts/logs/verify.log
+            .cache/pytest/inference-api-coverage.xml
+            .cache/gateway-go-cover.out
+            clients/orchard-console/coverage/lcov.info
           if-no-files-found: ignore

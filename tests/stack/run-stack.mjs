@@ -21,6 +21,9 @@ const stackCacheDir = fileURLToPath(new URL('../../.cache/test-stack/', import.m
 const generatedGatewayConfigPath = fileURLToPath(
   new URL(`../../.cache/test-stack/gateway.stack.${process.pid}.yaml`, import.meta.url)
 )
+const generatedGatewayDbPath = fileURLToPath(
+  new URL(`../../.cache/test-stack/gateway.stack.${process.pid}.db`, import.meta.url)
+)
 
 if (!['cpu', 'cu128'].includes(target)) {
   console.error(`Invalid --target '${target}'. Expected cpu|cu128.`)
@@ -31,6 +34,7 @@ mkdirSync(stackCacheDir, { recursive: true })
 writeGatewayStackConfig({
   sourcePath: resolveConfigPath(process.env.LYCHEE_GATEWAY_CONFIG),
   destinationPath: generatedGatewayConfigPath,
+  databasePath: generatedGatewayDbPath,
   frontendOrigin: frontendEndpoint.origin,
   gatewayOrigin: gatewayEndpoint.origin,
   upstreamOrigin: inferenceEndpoint.origin,
@@ -90,6 +94,9 @@ const cleanup = () => {
   }
 
   rmSync(generatedGatewayConfigPath, { force: true })
+  rmSync(generatedGatewayDbPath, { force: true })
+  rmSync(`${generatedGatewayDbPath}-shm`, { force: true })
+  rmSync(`${generatedGatewayDbPath}-wal`, { force: true })
 }
 
 for (const signal of ['SIGINT', 'SIGTERM']) {
@@ -103,6 +110,11 @@ try {
   await Promise.all([
     waitForService(`${frontendEndpoint.origin}/`, {
       expectedType: 'text/html',
+      timeoutMs,
+      managedProcesses
+    }),
+    waitForService(`${gatewayEndpoint.origin}/healthz`, {
+      expectedType: 'application/json',
       timeoutMs,
       managedProcesses
     }),
@@ -206,6 +218,7 @@ function resolveConfigPath(rawPath) {
 function writeGatewayStackConfig({
   sourcePath,
   destinationPath,
+  databasePath,
   frontendOrigin,
   gatewayOrigin,
   upstreamOrigin,
@@ -216,6 +229,11 @@ function writeGatewayStackConfig({
   document.setIn(['server', 'host'], gatewayHost)
   document.setIn(['server', 'port'], Number(gatewayPort))
   document.setIn(['upstream', 'base_url'], upstreamOrigin)
+  document.setIn(['db', 'driver'], 'sqlite')
+  document.setIn(['db', 'dsn'], databasePath)
+  document.setIn(['seed', 'default_resources_enabled'], false)
+  document.setIn(['trace', 'mode'], 'database')
+  document.setIn(['auth', 'mode'], 'disabled')
   document.setIn(['auth', 'web', 'public_base_url'], gatewayOrigin)
   document.setIn(['auth', 'web', 'app_base_url'], frontendOrigin)
   document.setIn(['cors', 'allowed_origins'], [frontendOrigin])
@@ -225,6 +243,7 @@ function writeGatewayStackConfig({
 async function waitForService(url, { expectedType, timeoutMs, managedProcesses }) {
   const start = Date.now()
   let lastError = new Error(`Timed out waiting for ${url}`)
+  let attempt = 0
 
   while (Date.now() - start < timeoutMs) {
     for (const child of managedProcesses) {
@@ -244,7 +263,15 @@ async function waitForService(url, { expectedType, timeoutMs, managedProcesses }
       lastError = error instanceof Error ? error : new Error(String(error))
     }
 
-    await sleep(1_000)
+    const elapsedMs = Date.now() - start
+    const remainingMs = timeoutMs - elapsedMs
+    if (remainingMs <= 0) {
+      break
+    }
+
+    const nextDelayMs = Math.min(5_000, 250 * 2 ** Math.min(attempt, 5))
+    attempt += 1
+    await sleep(Math.min(nextDelayMs, remainingMs))
   }
 
   throw lastError
