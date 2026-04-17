@@ -1,52 +1,22 @@
 from __future__ import annotations
 
-import numpy as np
-from fastapi.testclient import TestClient
-
-from app.inference.adapters.base import DetectorAdapter, RawDetection
-from app.inference.pipeline import InferencePipeline
-from app.main import app
-from app.paths import resolve_repo_path
+from tests.factories import build_raw_detection
 
 
-class FakeDetector(DetectorAdapter):
-    name = 'fake'
+def test_health_and_image_infer(test_client, install_pipeline, decode_image_to_frame, sample_image_bytes, fake_detector_factory) -> None:
+    decode_image_to_frame()
+    install_pipeline(
+        detector=fake_detector_factory(
+            detections=[build_raw_detection(bbox=(5, 5, 30, 30), class_id=2, confidence=0.8)],
+            ripeness="red",
+        )
+    )
 
-    def __init__(self) -> None:
-        self._loaded = True
+    health = test_client.get("/v1/health")
+    assert health.status_code == 200
+    assert health.json()["status"] == "ok"
 
-    @property
-    def loaded(self) -> bool:
-        return self._loaded
-
-    def load(self) -> None:
-        self._loaded = True
-
-    def warmup(self) -> None:
-        return
-
-    def predict(self, frame: np.ndarray):
-        return [RawDetection(bbox=(5, 5, 30, 30), class_id=2, confidence=0.8)]
-
-    def ripeness_from_class_id(self, class_id: int) -> str:
-        return 'red'
-
-
-def test_health_and_image_infer(monkeypatch) -> None:
-    from app.api.v1 import endpoints
-
-    monkeypatch.setenv('LYCHEE_MODEL_CONFIG', str(resolve_repo_path('tooling/configs/model.yaml.example')))
-    monkeypatch.setenv('LYCHEE_SERVICE_CONFIG', str(resolve_repo_path('tooling/configs/service.yaml.example')))
-    monkeypatch.setattr(endpoints, '_decode_image_bytes', lambda _: np.zeros((64, 64, 3), dtype=np.uint8))
-
-    with TestClient(app) as client:
-        app.state.pipeline = InferencePipeline(FakeDetector(), model_version='1.0.0', schema_version='v1')
-
-        health = client.get('/v1/health')
-        assert health.status_code == 200
-        assert health.json()['status'] == 'ok'
-
-        resp = client.post('/v1/infer/image', files={'file': ('x.jpg', b'raw-bytes', 'image/jpeg')})
-        assert resp.status_code == 200
-        body = resp.json()
-        assert body['result']['frame_summary']['red'] == 1
+    resp = test_client.post("/v1/infer/image", files={"file": ("x.jpg", sample_image_bytes, "image/jpeg")})
+    assert resp.status_code == 200
+    body = resp.json()
+    assert body["result"]["frame_summary"]["red"] == 1
